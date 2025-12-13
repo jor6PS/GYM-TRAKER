@@ -219,7 +219,11 @@ export default function App() {
     if (!currentUser) return;
     const planPayload = { name: plan.name, exercises: plan.exercises, user_id: currentUser.id };
 
-    if (plan.id && !plan.id.startsWith('temp-') && !plan.id.startsWith('default-')) {
+    // Check if the plan actually exists in our local state to determine UPDATE vs INSERT.
+    // The Modal generates a random ID for new plans, so simply checking if ID exists is not enough.
+    const isExistingPlan = plans.some(p => p.id === plan.id);
+
+    if (isExistingPlan) {
         const { error } = await supabase.from('workout_plans').update(planPayload).eq('id', plan.id);
         if (!error) setPlans(prev => prev.map(p => p.id === plan.id ? { ...p, ...planPayload } : p));
     } else {
