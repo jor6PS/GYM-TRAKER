@@ -1,9 +1,16 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { WorkoutData } from "../types";
 
-// Initialize AI
-// The API key must be obtained from the environment variable process.env.API_KEY.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Helper to safely get the AI instance only when needed
+const getAIClient = () => {
+  // Use a safer check for the API KEY
+  const apiKey = process.env.API_KEY;
+  
+  if (!apiKey) {
+     throw new Error("API Key is missing. Ensure process.env.API_KEY is configured.");
+  }
+  return new GoogleGenAI({ apiKey });
+};
 
 const WORKOUT_SCHEMA = {
   type: Type.OBJECT,
@@ -67,11 +74,10 @@ const validateData = (data: any): WorkoutData => {
  * Core Service Function: Processes audio blob into structured workout data.
  */
 export const processWorkoutAudio = async (audioBase64: string, mimeType: string): Promise<WorkoutData> => {
-  if (!process.env.API_KEY) {
-     throw new Error("API Key is missing. Ensure process.env.API_KEY is configured.");
-  }
-
   try {
+    // Initialize AI here instead of top-level
+    const ai = getAIClient();
+    
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: {
@@ -122,11 +128,10 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
  * Processes raw text input into structured workout data.
  */
 export const processWorkoutText = async (text: string): Promise<WorkoutData> => {
-  if (!process.env.API_KEY) {
-     throw new Error("API Key is missing. Ensure process.env.API_KEY is configured.");
-  }
-
   try {
+    // Initialize AI here instead of top-level
+    const ai = getAIClient();
+
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: {

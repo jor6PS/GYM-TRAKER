@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GymTracker AI</title>
     
+    <!-- Emergency Polyfill for libraries expecting Node.js environment -->
+    <script>
+      window.process = {
+        env: {
+          NODE_ENV: 'production'
+        }
+      };
+      console.log("🚀 GymTracker App Starting...");
+    </script>
+
     <!-- Import Inter Font for a premium app feel -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
