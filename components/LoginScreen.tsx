@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Dumbbell, ArrowRight, Lock, Mail, Loader2, AlertCircle, User as UserIcon, CheckCircle2, Copy, Check } from 'lucide-react';
+import React, { useState } from 'react';
+import { Dumbbell, ArrowRight, Lock, Mail, Loader2, AlertCircle, User as UserIcon, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 
 interface LoginScreenProps {
@@ -16,23 +16,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmationSent, setConfirmationSent] = useState(false);
-  
-  // Dev helper state
-  const [currentOrigin, setCurrentOrigin] = useState('');
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-        // Get the current URL origin (e.g., https://your-project.stackblitz.io)
-        setCurrentOrigin(window.location.origin);
-    }
-  }, []);
-
-  const copyOrigin = () => {
-      navigator.clipboard.writeText(currentOrigin);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,10 +77,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
         <h2 className="text-2xl font-bold text-white mb-2">Check your inbox</h2>
         <p className="text-zinc-400 max-w-xs mx-auto mb-8">
           We've sent a confirmation link to <span className="text-white font-mono">{email}</span>. Please verify your email to continue.
-        </p>
-        <p className="text-zinc-500 text-xs mb-8 border border-white/10 p-2 rounded bg-zinc-900/50">
-           <strong>Developer Tip:</strong> Since you are in a preview environment, links might fail. 
-           Go to Supabase &gt; Auth &gt; Providers &gt; Email and disable "Confirm email" to skip this step.
         </p>
         <button 
            onClick={() => setConfirmationSent(false)}
@@ -210,33 +189,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
             </button>
         </div>
         
-        {/* Supabase URL Helper */}
-        <div className="mt-8 pt-4 border-t border-white/5 w-full">
-            <p className="text-[10px] text-zinc-600 font-mono mb-2 text-center">Supabase Configuration</p>
-            
-            <div className="bg-zinc-900 border border-white/10 rounded-lg p-2 flex items-center gap-2">
-                <input 
-                    type="text" 
-                    readOnly 
-                    value={currentOrigin} 
-                    onClick={(e) => e.currentTarget.select()}
-                    className="bg-transparent text-[10px] text-zinc-400 font-mono w-full focus:outline-none selection:bg-primary selection:text-black"
-                />
-                <button 
-                    onClick={copyOrigin}
-                    className="text-zinc-500 hover:text-primary transition-colors p-1 shrink-0"
-                    title="Copy URL"
-                >
-                    {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-                </button>
-            </div>
-            <p className="text-[9px] text-zinc-700 mt-2 text-center leading-relaxed">
-                1. Copy this URL above.<br/>
-                2. Go to <strong>Supabase &gt; Authentication &gt; URL Configuration</strong>.<br/>
-                3. Add it to "Redirect URLs".
-            </p>
-        </div>
-
       </div>
     </div>
   );
