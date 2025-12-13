@@ -17,7 +17,7 @@ const IconWrapper = ({ children, className }: { children?: React.ReactNode, clas
   </svg>
 );
 
-// --- NEW APP LOGO: MOUNTAINS + DUMBBELL ---
+// --- NEW APP LOGO: MOUNTAINS + DUMBBELL (Night Mode / Crescent Moon) ---
 export const AppLogo = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
     <defs>
@@ -27,10 +27,15 @@ export const AppLogo = ({ className }: { className?: string }) => (
       </linearGradient>
     </defs>
 
-    {/* 1. BACKGROUND: NATURE (Sun & Mountains) */}
+    {/* 1. BACKGROUND: NATURE (Crescent Moon & Mountains) */}
     
-    {/* Sun (Vitality/Outdoors) */}
-    <circle cx="18.5" cy="6.5" r="2.5" fill="url(#voltGradient)" className="opacity-90" />
+    {/* Crescent Moon (Media Luna) - Moved Top-Right for separation */}
+    {/* Path creates a crescent shape using two arcs */}
+    <path 
+      d="M21 2.5 A 2.5 2.5 0 0 1 21 7.5 A 3.5 3.5 0 0 0 21 2.5 Z" 
+      fill="#FFFFFF" 
+      className="opacity-90 shadow-glow" 
+    />
     
     {/* Mountain Range (Background) - Dark Grey Strokes */}
     <path 
