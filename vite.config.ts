@@ -7,8 +7,9 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     define: {
-      // Esto permite usar process.env.API_KEY en el código del cliente
-      // sin que la aplicación rompa por no encontrar 'process'.
+      // Prevents "ReferenceError: process is not defined"
+      'process.env': {}, 
+      // Replaces specific env var usage
       'process.env.API_KEY': JSON.stringify(env.API_KEY),
     },
   };
