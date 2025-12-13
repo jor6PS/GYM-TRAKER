@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     
-    <!-- Tailwind via CDN (Mantaining as requested for simplicity, though local install is recommended for production) -->
+    <!-- Tailwind via CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -21,15 +21,15 @@
           },
           extend: {
             colors: {
-              background: '#050505', /* Deep Obsidian */
-              surface: '#121212',    /* Soft Black Card */
+              background: '#050505',
+              surface: '#121212',
               surfaceHighlight: '#1E1E1E',
-              primary: '#D4FF00',    /* VOLT LIME - Trendy & Sporty */
+              primary: '#D4FF00',
               primaryHover: '#B8E600', 
-              secondary: '#FFFFFF',  /* Pure White for contrast */
+              secondary: '#FFFFFF',
               text: '#FFFFFF',       
-              subtext: '#888888',    /* Neutral Grey */
-              border: '#2A2A2A',     /* Subtle Borders */
+              subtext: '#888888',
+              border: '#2A2A2A',
               danger: '#FF4444',
             },
             boxShadow: {
@@ -54,23 +54,16 @@
       }
     </script>
     <style>
-      /* Smooth scrolling */
       html { scroll-behavior: smooth; }
-      
-      /* Hide scrollbar */
       .no-scrollbar::-webkit-scrollbar { display: none; }
       .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      
       body {
         background-color: #050505;
         min-height: 100vh;
         color: #FFFFFF;
-        /* Ambient Spotlight Effect at the top */
         background-image: radial-gradient(circle at 50% -20%, rgba(212, 255, 0, 0.08), transparent 70%);
         background-attachment: fixed;
       }
-      
-      /* Modern Glass Blur Utilities */
       .glass-panel {
         background: rgba(18, 18, 18, 0.7);
         backdrop-filter: blur(12px);
@@ -98,7 +91,6 @@
 </head>
   <body class="antialiased selection:bg-primary selection:text-black">
     <div id="root"></div>
-    <!-- Entry Point for Vite -->
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>
