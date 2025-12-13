@@ -79,46 +79,54 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onWorkoutProcessed
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2">
-      {error && (
-        <div className="bg-red-500/10 border border-red-500/50 text-red-500 font-mono text-xs px-3 py-2 rounded mb-2 shadow-lg backdrop-blur flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
-           <AlertCircle className="w-4 h-4" /> {error}
-        </div>
-      )}
+    <div className="flex flex-col items-center gap-2 relative">
+      {/* Status Messages - Floating above the dock now */}
+      <div className="absolute bottom-full mb-4 w-max flex flex-col items-center pointer-events-none">
+        {error && (
+            <div className="bg-red-500/10 border border-red-500/50 text-red-500 font-mono text-xs px-3 py-2 rounded shadow-lg backdrop-blur flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 mb-2">
+            <AlertCircle className="w-4 h-4" /> {error}
+            </div>
+        )}
 
-      {/* Status Label */}
-      {(isRecording || isProcessing) && (
-        <div className="bg-black/80 border border-primary/50 text-primary font-mono text-xs px-4 py-2 rounded mb-2 shadow-glow flex items-center gap-2">
-          {isRecording && (
-            <>
-              <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse shadow-[0_0_10px_red]" />
-              REC_ON
-            </>
-          )}
-          {isProcessing && (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin text-primary" />
-              PROCESSING_DATA...
-            </>
-          )}
-        </div>
-      )}
+        {(isRecording || isProcessing) && (
+            <div className="bg-black/80 border border-primary/50 text-primary font-mono text-xs px-4 py-2 rounded-full shadow-glow flex items-center gap-2 backdrop-blur-md">
+            {isRecording && (
+                <>
+                <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse shadow-[0_0_10px_red]" />
+                LISTENING...
+                </>
+            )}
+            {isProcessing && (
+                <>
+                <Loader2 className="w-3 h-3 animate-spin text-primary" />
+                PROCESSING...
+                </>
+            )}
+            </div>
+        )}
+      </div>
 
+      {/* Main Mic Button */}
       <button
         onClick={isRecording ? stopRecording : startRecording}
         disabled={isProcessing}
         className={clsx(
-          "w-16 h-16 rounded flex items-center justify-center shadow-lg transition-all duration-300 transform hover:scale-105 active:scale-95 border-2",
-          isRecording ? "bg-red-500/10 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]" : "bg-primary border-primary hover:bg-primaryHover hover:shadow-glow",
+          "w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 relative group",
+          isRecording ? "bg-red-500 text-white shadow-[0_0_20px_rgba(239,68,68,0.6)] scale-110" : "bg-primary text-black hover:bg-primaryHover hover:shadow-glow hover:scale-105",
           isProcessing ? "opacity-50 cursor-not-allowed grayscale" : "opacity-100"
         )}
       >
+        {/* Ripple effect when recording */}
+        {isRecording && (
+            <span className="absolute inset-0 rounded-full border-2 border-red-500 animate-ping opacity-75"></span>
+        )}
+
         {isRecording ? (
-          <Square className="w-6 h-6 text-red-500 fill-current" />
+          <Square className="w-6 h-6 fill-current" />
         ) : isProcessing ? (
-          <Loader2 className="w-8 h-8 text-black animate-spin" />
+          <Loader2 className="w-6 h-6 animate-spin" />
         ) : (
-          <Mic className="w-8 h-8 text-black" />
+          <Mic className="w-7 h-7" />
         )}
       </button>
     </div>

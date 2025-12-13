@@ -27,7 +27,8 @@ import {
   ChevronRight,
   TrendingUp,
   Keyboard,
-  Dumbbell
+  Dumbbell,
+  Mic
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -313,7 +314,7 @@ export default function App() {
   const canEdit = !isFuture(selectedDate);
 
   return (
-    <div className="min-h-screen pb-32 relative font-sans text-text selection:bg-primary selection:text-black">
+    <div className="min-h-screen pb-40 relative font-sans text-text selection:bg-primary selection:text-black">
       
       {/* IMPERSONATION BANNER */}
       {realAdminUser && (
@@ -463,7 +464,7 @@ export default function App() {
                   <Activity className="w-8 h-8" />
                </div>
                <p className="text-zinc-500 text-sm font-medium">No activity recorded.</p>
-               {canEdit && <p className="text-zinc-600 text-xs mt-1">Record audio or add manually.</p>}
+               {canEdit && <p className="text-zinc-600 text-xs mt-1">Tap the mic below to start.</p>}
             </div>
           ) : (
             <div className="space-y-4">
@@ -538,20 +539,37 @@ export default function App() {
 
       </main>
 
-      {/* FLOATING ACTION BUTTONS */}
+      {/* --- NEW ACTION ISLAND DOCK --- */}
       {canEdit && (
-        <>
-          <div className="fixed bottom-6 right-24 z-50">
-            <button
-              onClick={() => setShowManualEntry(true)}
-              className="w-14 h-14 bg-surface border border-white/10 hover:border-primary text-zinc-400 hover:text-white rounded-full flex items-center justify-center shadow-2xl transition-all active:scale-90"
-            >
-              <Keyboard className="w-6 h-6" />
-            </button>
+        <div className="fixed bottom-8 left-0 right-0 z-50 flex flex-col items-center justify-end pointer-events-none">
+          
+          {/* Label Hint */}
+          <div className="mb-2 bg-black/50 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-[10px] font-bold text-zinc-400 tracking-widest uppercase shadow-lg animate-in fade-in slide-in-from-bottom-2">
+            Log Activity
           </div>
 
-          <AudioRecorder onWorkoutProcessed={handleWorkoutProcessed} />
-        </>
+          {/* Glass Dock */}
+          <div className="pointer-events-auto bg-surfaceHighlight/80 backdrop-blur-xl border border-white/10 rounded-full p-2 pl-4 pr-2 shadow-[0_0_50px_rgba(0,0,0,0.5)] flex items-center gap-4 transition-transform hover:scale-105 duration-300">
+            
+            {/* Manual Button (Left) */}
+            <button
+              onClick={() => setShowManualEntry(true)}
+              className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors group"
+            >
+              <div className="p-2 rounded-full bg-white/5 group-hover:bg-white/10 border border-white/5 transition-colors">
+                <Keyboard className="w-5 h-5" />
+              </div>
+              <span className="text-xs font-bold hidden sm:block">MANUAL</span>
+            </button>
+
+            {/* Vertical Divider */}
+            <div className="w-px h-8 bg-white/10"></div>
+
+            {/* AI Mic Button (Right/Center - handled by component) */}
+            <AudioRecorder onWorkoutProcessed={handleWorkoutProcessed} />
+          
+          </div>
+        </div>
       )}
       
       {/* MODALS */}
