@@ -2,11 +2,14 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { WorkoutData } from "../types";
 
 // This file represents the "Service Layer".
-// We use process.env.API_KEY as per Google GenAI SDK guidelines.
+// We use VITE_ variables for browser compatibility.
+
+// Using type assertion to bypass TypeScript error with ImportMeta
+const API_KEY = (import.meta as any).env?.VITE_GOOGLE_API_KEY || '';
 
 // Initialize AI
-// The API key must be obtained exclusively from the environment variable process.env.API_KEY.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// The API key must be obtained from the environment variable.
+const ai = new GoogleGenAI({ apiKey: API_KEY });
 
 const WORKOUT_SCHEMA = {
   type: Type.OBJECT,
@@ -42,7 +45,7 @@ const WORKOUT_SCHEMA = {
  * Core Service Function: Processes audio blob into structured workout data.
  */
 export const processWorkoutAudio = async (audioBase64: string, mimeType: string): Promise<WorkoutData> => {
-  // process.env.API_KEY is assumed to be valid and available.
+  if (!API_KEY) throw new Error("Google API Key is missing. Please set VITE_GOOGLE_API_KEY in Vercel.");
 
   try {
     const response = await ai.models.generateContent({
@@ -90,7 +93,7 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
  * Processes raw text input into structured workout data.
  */
 export const processWorkoutText = async (text: string): Promise<WorkoutData> => {
-  // process.env.API_KEY is assumed to be valid.
+  if (!API_KEY) throw new Error("Google API Key is missing. Please set VITE_GOOGLE_API_KEY in Vercel.");
 
   try {
     const response = await ai.models.generateContent({
