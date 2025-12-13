@@ -1,0 +1,7 @@
+{
+  "name": "GymTracker AI",
+  "description": "A PWA workout tracker using AI to parse voice notes into structured data.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
