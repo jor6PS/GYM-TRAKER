@@ -3,11 +3,15 @@ import { WorkoutData } from "../types";
 
 // Helper to safely get the AI instance only when needed
 const getAIClient = () => {
-  // Use a safer check for the API KEY
-  const apiKey = process.env.API_KEY;
+  // Robustly check for API Key in multiple places:
+  // 1. process.env.API_KEY (Injected via vite.config.ts define)
+  // 2. import.meta.env.VITE_API_KEY (Standard Vite env var)
+  // 3. import.meta.env.API_KEY (Direct access if allowed)
+  const apiKey = process.env.API_KEY || (import.meta as any).env?.VITE_API_KEY || (import.meta as any).env?.API_KEY;
   
   if (!apiKey) {
-     throw new Error("API Key is missing. Ensure process.env.API_KEY is configured.");
+     console.error("DEBUG: API Keys checked were empty. Ensure 'API_KEY' is set in Vercel Environment Variables.");
+     throw new Error("API Key configuration missing. If you just set it in Vercel, please REDEPLOY the project for changes to take effect.");
   }
   return new GoogleGenAI({ apiKey });
 };

@@ -26,7 +26,8 @@ import {
   Calendar,
   ChevronRight,
   TrendingUp,
-  Keyboard
+  Keyboard,
+  Dumbbell
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -379,54 +380,67 @@ export default function App() {
 
         {/* PLANS (Horizontal Scroll - COMPACT) */}
         {canEdit && (
-          <section className="-mx-4 px-4 overflow-x-auto no-scrollbar py-1">
-             <div className="flex gap-3">
-                {/* CREATE NEW BUTTON */}
-                <button 
-                  onClick={() => { setEditingPlan(null); setShowCreatePlan(true); }}
-                  className="flex flex-col items-center justify-center gap-2 w-[100px] h-[100px] rounded-2xl border border-dashed border-white/10 hover:border-primary/50 bg-white/5 hover:bg-primary/5 transition-all shrink-0 group"
-                >
-                   <div className="w-8 h-8 rounded-full bg-surface border border-white/10 flex items-center justify-center text-zinc-500 group-hover:text-primary group-hover:border-primary transition-all">
-                     <Plus className="w-4 h-4" />
-                   </div>
-                   <span className="text-[10px] font-bold text-zinc-500 group-hover:text-primary tracking-wide">NEW</span>
-                </button>
-                
-                {/* PLAN CARDS */}
-                {plans.map(plan => (
-                   <div
-                    key={plan.id}
-                    onClick={() => handleApplyPlan(plan)}
-                    className="w-[120px] h-[100px] rounded-2xl bg-surfaceHighlight border border-white/5 p-3 flex flex-col justify-between shrink-0 hover:border-primary/50 transition-all cursor-pointer group shadow-lg active:scale-95 relative overflow-hidden"
-                  >
-                    <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <div className="bg-primary/20 text-primary text-[8px] font-bold px-1.5 py-0.5 rounded-full border border-primary/20">RUN</div>
-                    </div>
+          <section>
+             {/* Header Section for Plans - Matches 'Today' style */}
+             <div className="flex items-center justify-between mb-3 px-2">
+                <h2 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-primary" />
+                  WORKOUT ROUTINES
+                </h2>
+                <span className="text-xs font-medium text-zinc-600 bg-white/5 px-2 py-1 rounded-md">
+                  {plans.length} Saved
+                </span>
+             </div>
 
-                    <div>
-                      <div className="w-6 h-6 rounded-full bg-white/5 flex items-center justify-center mb-2">
-                         <Zap className="w-3 h-3 text-primary" />
-                      </div>
-                      <h3 className="text-xs font-bold text-white leading-tight truncate">{plan.name}</h3>
-                      <p className="text-[9px] text-zinc-500 font-medium">{plan.exercises.length} Items</p>
-                    </div>
+             <div className="-mx-4 px-4 overflow-x-auto no-scrollbar py-1">
+                 <div className="flex gap-3">
+                    {/* CREATE NEW BUTTON */}
+                    <button 
+                      onClick={() => { setEditingPlan(null); setShowCreatePlan(true); }}
+                      className="flex flex-col items-center justify-center gap-2 w-[100px] h-[100px] rounded-2xl border border-dashed border-white/10 hover:border-primary/50 bg-white/5 hover:bg-primary/5 transition-all shrink-0 group"
+                    >
+                       <div className="w-8 h-8 rounded-full bg-surface border border-white/10 flex items-center justify-center text-zinc-500 group-hover:text-primary group-hover:border-primary transition-all">
+                         <Plus className="w-4 h-4" />
+                       </div>
+                       <span className="text-[10px] font-bold text-zinc-500 group-hover:text-primary tracking-wide">NEW</span>
+                    </button>
                     
-                    <div className="flex items-center gap-2 pt-2 border-t border-white/5 mt-auto">
-                        <button 
-                           onClick={(e) => { e.stopPropagation(); setEditingPlan(plan); setShowCreatePlan(true); }}
-                           className="p-1 rounded hover:bg-white/10 text-zinc-500 hover:text-white transition-colors"
-                        >
-                           <Pencil className="w-3 h-3" />
-                        </button>
-                        <button 
-                           onClick={(e) => { e.stopPropagation(); setDeletePlanConfirmation({ planId: plan.id, planName: plan.name }); }}
-                           className="p-1 rounded hover:bg-white/10 text-zinc-500 hover:text-danger transition-colors ml-auto"
-                        >
-                           <Trash2 className="w-3 h-3" />
-                        </button>
-                    </div>
-                  </div>
-                ))}
+                    {/* PLAN CARDS */}
+                    {plans.map(plan => (
+                       <div
+                        key={plan.id}
+                        onClick={() => handleApplyPlan(plan)}
+                        className="w-[120px] h-[100px] rounded-2xl bg-surfaceHighlight border border-white/5 p-3 flex flex-col justify-between shrink-0 hover:border-primary/50 transition-all cursor-pointer group shadow-lg active:scale-95 relative overflow-hidden"
+                      >
+                        <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="bg-primary/20 text-primary text-[8px] font-bold px-1.5 py-0.5 rounded-full border border-primary/20">RUN</div>
+                        </div>
+
+                        <div>
+                          <div className="w-6 h-6 rounded-full bg-white/5 flex items-center justify-center mb-2">
+                             <Dumbbell className="w-3 h-3 text-primary" />
+                          </div>
+                          <h3 className="text-xs font-bold text-white leading-tight truncate">{plan.name}</h3>
+                          <p className="text-[9px] text-zinc-500 font-medium">{plan.exercises.length} Items</p>
+                        </div>
+                        
+                        <div className="flex items-center gap-2 pt-2 border-t border-white/5 mt-auto">
+                            <button 
+                               onClick={(e) => { e.stopPropagation(); setEditingPlan(plan); setShowCreatePlan(true); }}
+                               className="p-1 rounded hover:bg-white/10 text-zinc-500 hover:text-white transition-colors"
+                            >
+                               <Pencil className="w-3 h-3" />
+                            </button>
+                            <button 
+                               onClick={(e) => { e.stopPropagation(); setDeletePlanConfirmation({ planId: plan.id, planName: plan.name }); }}
+                               className="p-1 rounded hover:bg-white/10 text-zinc-500 hover:text-danger transition-colors ml-auto"
+                            >
+                               <Trash2 className="w-3 h-3" />
+                            </button>
+                        </div>
+                      </div>
+                    ))}
+                 </div>
              </div>
           </section>
         )}
@@ -436,7 +450,7 @@ export default function App() {
           <div className="flex items-center justify-between mb-4 px-2">
             <h2 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
               <Activity className="w-4 h-4 text-primary" />
-              {isSameDay(selectedDate, new Date()) ? 'Today' : format(selectedDate, 'MMMM do')}
+              {isSameDay(selectedDate, new Date()) ? 'TODAY\'S LOG' : format(selectedDate, 'MMMM do').toUpperCase()}
             </h2>
             <span className="text-xs font-medium text-zinc-600 bg-white/5 px-2 py-1 rounded-md">
               {selectedWorkouts.length} Logs
