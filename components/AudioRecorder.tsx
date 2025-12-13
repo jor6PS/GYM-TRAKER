@@ -65,9 +65,9 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onWorkoutProcessed
         try {
           const data = await processWorkoutAudio(rawBase64, 'audio/webm');
           onWorkoutProcessed(data);
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            setError("Failed to process audio.");
+            setError(err.message || "Failed to process audio.");
         } finally {
             setIsProcessing(false);
         }

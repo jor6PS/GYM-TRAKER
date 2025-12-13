@@ -32,8 +32,10 @@ export const ManualEntryModal: React.FC<ManualEntryModalProps> = ({
       onWorkoutProcessed(data);
       setText('');
       onClose();
-    } catch (err) {
-      setError("Failed to process text. Please try again.");
+    } catch (err: any) {
+      console.error(err);
+      // Show the actual error message (e.g., "API Key missing")
+      setError(err.message || "Failed to process text. Please try again.");
     } finally {
       setIsProcessing(false);
     }
@@ -77,7 +79,7 @@ export const ManualEntryModal: React.FC<ManualEntryModalProps> = ({
 
           {error && (
             <div className="text-red-500 font-mono text-xs px-2 flex items-center gap-2 border-l-2 border-red-500 bg-red-900/10 py-1">
-              <span>ERROR:</span>
+              <span className="font-bold">ERROR:</span>
               {error}
             </div>
           )}

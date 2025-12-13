@@ -21,7 +21,7 @@ import {
   ResponsiveContainer,
   Cell
 } from 'recharts';
-import { format, subDays, isSameDay } from 'date-fns';
+import { format, isSameDay } from 'date-fns';
 
 interface AdminDashboardProps {
   currentUser: User;
@@ -49,7 +49,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   ).length;
 
   const last7Days = Array.from({ length: 7 }, (_, i) => {
-    const d = subDays(new Date(), 6 - i);
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    
     return {
       name: format(d, 'MM/dd'),
       workouts: allWorkouts.filter(w => isSameDay(parseDate(w.date), d)).length

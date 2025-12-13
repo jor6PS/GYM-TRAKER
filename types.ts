@@ -38,6 +38,7 @@ export interface User {
   name: string;
   role: UserRole;
   created_at: string;
+  avatar_url?: string;
 }
 
 export interface PersonalRecord {
