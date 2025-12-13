@@ -2,8 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>GymTracker AI</title>
+    <!-- We keep Tailwind CDN for simplicity in styles, though npm installation is also possible -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -46,16 +47,17 @@
   <script type="importmap">
 {
   "imports": {
-    "lucide-react": "https://esm.sh/lucide-react@0.454.0?external=react,react-dom",
-    "react-dom/": "https://esm.sh/react-dom@18.3.1/",
-    "react-dom": "https://esm.sh/react-dom@18.3.1",
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.87.1",
-    "react/": "https://esm.sh/react@18.3.1/",
-    "react": "https://esm.sh/react@18.3.1",
-    "date-fns": "https://esm.sh/date-fns@^2.30.0",
     "@google/genai": "https://esm.sh/@google/genai@^1.33.0",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "recharts": "https://esm.sh/recharts@^3.5.1",
+    "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "vite": "https://esm.sh/vite@^7.2.7",
     "clsx": "https://esm.sh/clsx@^2.1.1",
-    "recharts": "https://esm.sh/recharts@2.12.0?external=react,react-dom"
+    "date-fns": "https://esm.sh/date-fns@^4.1.0"
   }
 }
 </script>
