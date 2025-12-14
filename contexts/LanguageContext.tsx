@@ -11,7 +11,7 @@ const translations = {
     save: "Guardar",
     delete: "Eliminar",
     edit: "Editar",
-    abort: "Abortar", // ADDED
+    abort: "Abortar",
     
     // Header
     viewing_as: "Viendo como",
@@ -36,6 +36,7 @@ const translations = {
     send_recovery: "Enviar Enlace",
     recovery_sent_title: "Correo enviado",
     recovery_sent_desc: "Si existe una cuenta con ese correo, recibirás un enlace para restablecer tu contraseña.",
+    username_taken: "Este nombre de usuario ya está en uso.", // ADDED
     
     // Dashboard
     routines: "RUTINAS",
@@ -89,14 +90,14 @@ const translations = {
     save_session: "Guardar Sesión",
     back: "Atrás",
     added: "Añadido",
-    manual_entry: "Entrada Manual", // ADDED
-    no_exercises_added: "No has añadido ejercicios.", // ADDED
-    start_adding_below: "Usa el buscador para añadir.", // ADDED
-    search_exercise: "Buscar ejercicio...", // ADDED
-    add_custom: "Añadir Personalizado", // ADDED
-    confirm_exercise: "Confirmar Ejercicio", // ADDED
-    notes_placeholder: "Notas sobre el entrenamiento...", // ADDED
-    finish_workout: "Finalizar Entrenamiento", // ADDED
+    manual_entry: "Entrada Manual",
+    no_exercises_added: "No has añadido ejercicios.",
+    start_adding_below: "Usa el buscador para añadir.",
+    search_exercise: "Buscar ejercicio...",
+    add_custom: "Añadir Personalizado",
+    confirm_exercise: "Confirmar Ejercicio",
+    notes_placeholder: "Notas sobre el entrenamiento...",
+    finish_workout: "Finalizar Entrenamiento",
     
     // Profile
     profile: "Perfil",
@@ -138,7 +139,7 @@ const translations = {
     save: "Save",
     delete: "Delete",
     edit: "Edit",
-    abort: "Abort", // ADDED
+    abort: "Abort",
     
     // Header
     viewing_as: "Viewing as",
@@ -163,6 +164,7 @@ const translations = {
     send_recovery: "Send Link",
     recovery_sent_title: "Email sent",
     recovery_sent_desc: "If an account exists with this email, you will receive a password reset link.",
+    username_taken: "This username is already taken.", // ADDED
     
     // Dashboard
     routines: "WORKOUT ROUTINES",
@@ -216,14 +218,14 @@ const translations = {
     save_session: "Save Session",
     back: "Back",
     added: "Added",
-    manual_entry: "Manual Entry", // ADDED
-    no_exercises_added: "No exercises added.", // ADDED
-    start_adding_below: "Use search to add exercises.", // ADDED
-    search_exercise: "Search exercise...", // ADDED
-    add_custom: "Add Custom", // ADDED
-    confirm_exercise: "Confirm Exercise", // ADDED
-    notes_placeholder: "Workout notes...", // ADDED
-    finish_workout: "Finish Workout", // ADDED
+    manual_entry: "Manual Entry",
+    no_exercises_added: "No exercises added.",
+    start_adding_below: "Use search to add exercises.",
+    search_exercise: "Search exercise...",
+    add_custom: "Add Custom",
+    confirm_exercise: "Confirm Exercise",
+    notes_placeholder: "Workout notes...",
+    finish_workout: "Finish Workout",
     
     // Profile
     profile: "Profile",

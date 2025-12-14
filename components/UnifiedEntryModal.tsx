@@ -250,14 +250,20 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                                             </div>
                                             <div className="col-span-4">
                                                 <input 
-                                                    type="number" value={set.weight} onChange={(e) => handleUpdateSet(idx, 'weight', Number(e.target.value))}
+                                                    type="number" 
+                                                    value={set.weight === 0 ? '' : set.weight} 
+                                                    onChange={(e) => handleUpdateSet(idx, 'weight', Number(e.target.value))}
                                                     className="w-full bg-zinc-900 border border-white/10 rounded p-2 text-center text-white font-bold text-lg focus:border-green-400 focus:outline-none"
+                                                    placeholder="0"
                                                 />
                                             </div>
                                             <div className="col-span-4">
                                                 <input 
-                                                    type="number" value={set.reps} onChange={(e) => handleUpdateSet(idx, 'reps', Number(e.target.value))}
+                                                    type="number" 
+                                                    value={set.reps === 0 ? '' : set.reps} 
+                                                    onChange={(e) => handleUpdateSet(idx, 'reps', Number(e.target.value))}
                                                     className="w-full bg-zinc-900 border border-white/10 rounded p-2 text-center text-white font-bold text-lg focus:border-green-400 focus:outline-none"
+                                                    placeholder="0"
                                                 />
                                             </div>
                                             <div className="col-span-2 flex justify-center">

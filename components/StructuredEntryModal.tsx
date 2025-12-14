@@ -235,14 +235,20 @@ export const StructuredEntryModal: React.FC<StructuredEntryModalProps> = ({ isOp
                                 </div>
                                 <div className="col-span-3">
                                     <input 
-                                        type="number" value={set.weight} onChange={(e) => handleSetChange(idx, 'weight', Number(e.target.value))}
+                                        type="number" 
+                                        value={set.weight === 0 ? '' : set.weight} 
+                                        onChange={(e) => handleSetChange(idx, 'weight', Number(e.target.value))}
                                         className="w-full bg-zinc-900 border border-white/10 rounded p-2 text-center text-sm font-bold text-white focus:border-primary focus:outline-none"
+                                        placeholder="0"
                                     />
                                 </div>
                                 <div className="col-span-3">
                                     <input 
-                                        type="number" value={set.reps} onChange={(e) => handleSetChange(idx, 'reps', Number(e.target.value))}
+                                        type="number" 
+                                        value={set.reps === 0 ? '' : set.reps} 
+                                        onChange={(e) => handleSetChange(idx, 'reps', Number(e.target.value))}
                                         className="w-full bg-zinc-900 border border-white/10 rounded p-2 text-center text-sm text-white focus:border-primary focus:outline-none"
+                                        placeholder="0"
                                     />
                                 </div>
                                 <div className="col-span-3 relative">

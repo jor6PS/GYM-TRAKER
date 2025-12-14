@@ -511,7 +511,14 @@ function App() {
   // Also get selected friends workouts for this day
   const friendsSelectedWorkouts = calendarFriendsData.flatMap(fd => {
       const daysWorkouts = fd.workouts.filter(w => isSameDay(parseLocalDate(w.date), selectedDate));
-      return daysWorkouts.map(w => ({ ...w, _friendColor: fd.color, _friendId: fd.userId }));
+      // Find the name from activeFriends
+      const friendName = activeFriends.find(f => f.userId === fd.userId)?.name || 'Friend';
+      return daysWorkouts.map(w => ({ 
+          ...w, 
+          _friendColor: fd.color, 
+          _friendId: fd.userId,
+          _friendName: friendName // Add name property
+      }));
   });
 
   const canEdit = !isFuture(selectedDate);
@@ -853,7 +860,7 @@ function App() {
                 <div key={workout.id} className="bg-surface rounded-3xl p-5 border border-border shadow-sm relative overflow-hidden opacity-90" style={{ borderColor: `${(workout as any)._friendColor}40` }}>
                    {/* Friend Indicator */}
                    <div className="absolute top-0 right-0 px-3 py-1 text-[10px] font-bold uppercase text-black rounded-bl-xl" style={{ backgroundColor: (workout as any)._friendColor }}>
-                      Friend Log
+                      {(workout as any)._friendName}
                    </div>
 
                    <div className="flex items-center justify-between mb-4 relative z-10">

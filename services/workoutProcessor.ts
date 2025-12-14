@@ -372,6 +372,12 @@ export const generateGroupAnalysis = async (
             return { exercise: displayExName, results, winnerName };
         });
 
+        // DETECT DRAW CONDITION (TIE)
+        // If top 2 users have same points AND no common exercises to break tie
+        const isTie = pointsTable.length > 1 && 
+                      pointsTable[0].points === pointsTable[1].points &&
+                      comparisonTable.length === 0;
+
         const ai = getAIClient();
 
         const context = {
@@ -384,7 +390,8 @@ export const generateGroupAnalysis = async (
                     acc[getLocalizedName(id, 'en')] = w; 
                     return acc;
                 }, {})
-            }))
+            })),
+            is_draw_condition: isTie // Pass this to AI
         };
 
         const prompt = `
@@ -392,9 +399,11 @@ export const generateGroupAnalysis = async (
             **DATA:** ${JSON.stringify(context)}
             
             **INSTRUCTIONS:**
-            1. Rank ALL participants. 1st is "Alpha" (Winner), Last is "Beta" (Loser).
-            2. Short ranking reason (max 5 words).
-            3. Roast summarizing the group.
+            1. Rank participants.
+            2. CRITICAL: If 'is_draw_condition' is true, return 'DRAW' for both the winner's name and the roast. Do NOT pick a winner arbitrarily.
+            3. Otherwise, 1st is "Alpha" (Winner), Last is "Beta" (Loser).
+            4. Short ranking reason (max 5 words).
+            5. Roast summarizing the group.
             
             **OUTPUT JSON:**
             {
@@ -433,6 +442,18 @@ export const generateGroupAnalysis = async (
         const text = cleanJson(response.text || "{}");
         const aiResult = JSON.parse(text);
         const sortedRankings = (aiResult.rankings || []).sort((a: any, b: any) => a.rank - b.rank);
+        
+        // Force Draw logic if AI was ambiguous or to be safe
+        if (isTie) {
+            return {
+                winner: "DRAW",
+                loser: "DRAW",
+                rankings: sortedRankings,
+                roast: "Empate Técnico. A entrenar más.",
+                comparison_table: comparisonTable,
+                points_table: pointsTable
+            };
+        }
 
         return {
             winner: sortedRankings.length > 0 ? sortedRankings[0].name : "Unknown",

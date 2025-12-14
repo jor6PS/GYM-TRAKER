@@ -215,7 +215,13 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
                  </div>
                  <div>
                     <label className="text-[10px] text-subtext uppercase">Default Kg</label>
-                    <input type="number" value={newExWeight} onChange={e => setNewExWeight(Number(e.target.value))} className="w-full bg-surface border border-white/10 rounded p-1 text-center text-sm" />
+                    <input 
+                        type="number" 
+                        value={newExWeight === 0 ? '' : newExWeight} 
+                        onChange={e => setNewExWeight(Number(e.target.value))} 
+                        className="w-full bg-surface border border-white/10 rounded p-1 text-center text-sm"
+                        placeholder="0"
+                    />
                  </div>
              </div>
 

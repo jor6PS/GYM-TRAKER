@@ -28,9 +28,24 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
     
     try {
       if (authMode === 'signup') {
+        const cleanName = name.trim();
         if (!identifier.includes('@')) throw new Error("Please enter a valid email.");
+        if (cleanName.length < 3) throw new Error("Username must be at least 3 characters.");
+
+        // CHECK USERNAME UNIQUENESS
+        // We check the profiles table. Note: 'ilike' makes it case insensitive.
+        const { data: existingUser } = await supabase
+            .from('profiles')
+            .select('id')
+            .ilike('name', cleanName)
+            .maybeSingle();
+
+        if (existingUser) {
+            throw new Error(t('username_taken'));
+        }
+
         const { data, error: signUpError } = await supabase.auth.signUp({
-          email: identifier, password, options: { data: { name: name }, emailRedirectTo: window.location.origin },
+          email: identifier, password, options: { data: { name: cleanName }, emailRedirectTo: window.location.origin },
         });
         if (signUpError) throw signUpError;
         if (data.session) return;

@@ -18,7 +18,7 @@ import {
   Star
 } from 'lucide-react';
 import { User as UserType, Workout } from '../types';
-import { uploadAvatar, updateUserProfile, updateUserPassword } from '../services/supabase';
+import { uploadAvatar, updateUserProfile, updateUserPassword, supabase } from '../services/supabase';
 import { format } from 'date-fns';
 import { useLanguage } from '../contexts/LanguageContext';
 
@@ -114,8 +114,23 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     try {
       // 1. Update Name if changed
       if (name !== user.name) {
-        await updateUserProfile(user.id, { name });
-        onUpdateUser({ name });
+        const cleanName = name.trim();
+        if (cleanName.length < 3) throw new Error("Username too short.");
+
+        // Check Uniqueness
+        const { data: conflict } = await supabase
+            .from('profiles')
+            .select('id')
+            .ilike('name', cleanName)
+            .neq('id', user.id) // Exclude current user
+            .maybeSingle();
+        
+        if (conflict) {
+            throw new Error(t('username_taken'));
+        }
+
+        await updateUserProfile(user.id, { name: cleanName });
+        onUpdateUser({ name: cleanName });
       }
 
       // 2. Update Password if provided

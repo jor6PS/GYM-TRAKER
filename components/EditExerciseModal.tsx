@@ -89,18 +89,20 @@ export const EditExerciseModal: React.FC<EditExerciseModalProps> = ({ isOpen, on
                <div className="col-span-3">
                  <input 
                    type="number"
-                   value={set.weight}
+                   value={set.weight === 0 ? '' : set.weight}
                    onChange={(e) => handleSetChange(idx, 'weight', Number(e.target.value))}
                    className="w-full bg-surface border border-border rounded p-2 text-center text-sm font-bold text-primary focus:border-primary focus:outline-none"
+                   placeholder="0"
                  />
                </div>
 
                <div className="col-span-3">
                  <input 
                    type="number"
-                   value={set.reps}
+                   value={set.reps === 0 ? '' : set.reps}
                    onChange={(e) => handleSetChange(idx, 'reps', Number(e.target.value))}
                    className="w-full bg-surface border border-border rounded p-2 text-center text-sm text-text focus:border-primary focus:outline-none"
+                   placeholder="0"
                  />
                </div>
 
