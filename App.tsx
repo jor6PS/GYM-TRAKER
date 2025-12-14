@@ -4,7 +4,7 @@ import { AudioRecorder } from './components/AudioRecorder';
 import { RestTimer } from './components/RestTimer';
 import { LoginScreen } from './components/LoginScreen';
 import { Workout, WorkoutData, WorkoutPlan, Exercise, User, UserRole } from './types';
-import { supabase, getCurrentProfile, getFriendWorkouts, getPendingRequestsCount } from './services/supabase';
+import { supabase, getCurrentProfile, getFriendWorkouts, getPendingRequestsCount, isConfigured } from './services/supabase';
 import { format, isSameDay, isFuture } from 'date-fns';
 import es from 'date-fns/locale/es';
 import enUS from 'date-fns/locale/en-US';
@@ -26,7 +26,8 @@ import {
   Users,
   Swords,
   X,
-  Loader2
+  Loader2,
+  Settings
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -54,6 +55,32 @@ export default function AppWrapper() {
 function App() {
   const { t, language, setLanguage } = useLanguage();
   const dateLocale = language === 'es' ? es : enUS;
+
+  // --- SAFETY CHECK: MISSING KEYS ---
+  if (!isConfigured) {
+      return (
+          <div className="min-h-screen bg-black flex flex-col items-center justify-center p-8 text-center space-y-6">
+              <div className="w-24 h-24 bg-red-500/10 rounded-full flex items-center justify-center border border-red-500/30 animate-pulse">
+                  <Settings className="w-12 h-12 text-red-500" />
+              </div>
+              <div className="max-w-md">
+                  <h1 className="text-2xl font-bold text-white mb-2">Error de Configuración</h1>
+                  <p className="text-zinc-400 mb-4">
+                      No se han detectado las variables de entorno en el servidor. 
+                      Por razones de seguridad, la aplicación no puede iniciarse.
+                  </p>
+                  <p className="text-red-400 text-sm font-mono bg-red-900/10 p-3 rounded border border-red-500/20">
+                      VITE_SUPABASE_URL<br/>
+                      VITE_SUPABASE_ANON_KEY
+                  </p>
+              </div>
+              <div className="text-xs text-zinc-600 mt-8">
+                  Si estás desarrollando en local, asegúrate de tener el archivo .env.local<br/>
+                  Si ves esto tras un deploy, <b>haz rollback a la versión anterior</b>.
+              </div>
+          </div>
+      );
+  }
 
   // --- AUTH STATE ---
   const [currentUser, setCurrentUser] = useState<User | null>(null);
