@@ -27,42 +27,50 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onWorkoutProcessed
     }
   }, [error]);
 
-  // Detect supported MIME type for the browser (fixes iOS/Safari issues)
-  const getSupportedMimeType = () => {
-    if (typeof MediaRecorder === 'undefined') return null;
-    
-    const types = [
-      'audio/webm', // Desktop Chrome/Firefox
-      'audio/mp4',  // iOS Safari
-      'audio/ogg',
-      'audio/wav',
-      'audio/aac'
-    ];
-    
-    for (const type of types) {
-      if (MediaRecorder.isTypeSupported(type)) {
-        return type;
-      }
-    }
-    return ''; // Let browser pick default
-  };
-
   const startRecording = async () => {
     setError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1
+        } 
+      });
       
-      const supportedType = getSupportedMimeType();
-      if (supportedType === null) {
-         setError("Audio recording not supported in this browser.");
-         return;
+      // Priority list for Gemini compatibility
+      const mimeTypes = [
+        'audio/webm;codecs=opus',
+        'audio/mp4', // Better for iOS
+        'audio/webm',
+        'audio/ogg',
+        'audio/wav'
+      ];
+      
+      let selectedType = '';
+      for (const type of mimeTypes) {
+        if (MediaRecorder.isTypeSupported(type)) {
+          selectedType = type;
+          break;
+        }
       }
 
-      const options = supportedType ? { mimeType: supportedType } : undefined;
+      if (!selectedType) {
+         console.warn("No specific MIME type supported, letting browser decide.");
+         selectedType = ''; // Let browser use default
+      }
+
+      const options = selectedType ? { 
+        mimeType: selectedType,
+        audioBitsPerSecond: 128000 // Higher quality for better transcription
+      } : undefined;
+
       const mediaRecorder = new MediaRecorder(stream, options);
       
       // Store the actual mime type being used
-      mimeTypeRef.current = mediaRecorder.mimeType || supportedType || 'audio/webm';
+      mimeTypeRef.current = mediaRecorder.mimeType || selectedType || 'audio/webm';
+      console.log("Recording with MIME:", mimeTypeRef.current);
       
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
@@ -86,7 +94,7 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onWorkoutProcessed
       setIsRecording(true);
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "Could not access microphone.");
+      setError("No se pudo acceder al micrófono. Verifica permisos.");
     }
   };
 
@@ -109,22 +117,19 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onWorkoutProcessed
         const rawBase64 = base64data.split(',')[1];
         
         try {
-          // Use the actual detected mime type
-          const typeToSend = blob.type || mimeTypeRef.current || 'audio/webm';
-          console.log(`Sending audio to AI with mimeType: ${typeToSend}`);
-          
+          const typeToSend = blob.type || mimeTypeRef.current;
           const data = await processWorkoutAudio(rawBase64, typeToSend);
           onWorkoutProcessed(data);
         } catch (err: any) {
             console.error("AI Processing Error:", err);
-            setError(err.message || "Failed to process audio.");
+            setError(err.message || "No te he entendido bien.");
         } finally {
             setIsProcessing(false);
         }
       };
     } catch (e: any) {
       console.error("File Reader Error:", e);
-      setError("Error preparing audio file.");
+      setError("Error interno del audio.");
       setIsProcessing(false);
     }
   };
@@ -144,13 +149,13 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onWorkoutProcessed
             {isRecording && (
                 <>
                 <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse shadow-[0_0_10px_red]" />
-                LISTENING...
+                ESCUCHANDO...
                 </>
             )}
             {isProcessing && (
                 <>
                 <Loader2 className="w-3 h-3 animate-spin text-primary" />
-                PROCESSING...
+                PROCESANDO...
                 </>
             )}
             </div>

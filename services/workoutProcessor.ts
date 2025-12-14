@@ -4,11 +4,13 @@ import { format } from "date-fns";
 
 // Helper to safely get the AI instance only when needed
 const getAIClient = () => {
-  const apiKey = process.env.API_KEY || (import.meta as any).env?.VITE_API_KEY || (import.meta as any).env?.API_KEY;
+  // Accessing process.env.API_KEY directly as per vite config define
+  const apiKey = process.env.API_KEY;
   
   if (!apiKey) {
-     console.error("DEBUG: API Keys checked were empty. Ensure 'API_KEY' is set in Vercel Environment Variables.");
-     throw new Error("API Key configuration missing. If you just set it in Vercel, please REDEPLOY the project for changes to take effect.");
+     console.error("🚨 CRITICAL ERROR: Google Gemini API Key is missing.");
+     console.error("Ensure you have an Environment Variable named 'API_KEY' set in your deployment (Vercel/Netlify).");
+     throw new Error("Server Configuration Error: Gemini API Key is missing. Please contact the administrator.");
   }
   return new GoogleGenAI({ apiKey });
 };
@@ -63,10 +65,8 @@ const validateData = (data: any): WorkoutData => {
         throw new Error("Invalid data structure returned by AI.");
     }
     
-    // If empty array, it means the prompt correctly identified noise/no-data.
-    // We throw specific error to inform user.
     if (data.exercises.length === 0) {
-        throw new Error("I heard you, but didn't catch any specific exercises. Please try again clearly.");
+        throw new Error("No he detectado ejercicios en el audio. Intenta hablar más claro o acercarte al micro.");
     }
 
     return data as WorkoutData;
@@ -76,6 +76,7 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
   try {
     const ai = getAIClient();
     
+    // Improved Prompt with Few-Shot examples to be robust but accurate
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: {
@@ -88,16 +89,25 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
           },
           {
             text: `
-              You are a STRICT and PRECISE fitness data transcriber. 
+              You are an expert fitness transcriber. You understand gym slang, heavy breathing, and rapid speech.
               
-              INSTRUCTIONS:
-              1. Listen to the audio log provided.
-              2. Extract exercises, sets, reps, weights, and RPE.
-              3. IF THE AUDIO IS UNINTELLIGIBLE, SILENCE, NOISE, OR DOES NOT CONTAIN WORKOUT DATA: Return an empty "exercises" array: [].
-              4. DO NOT GUESS. DO NOT INVENT DATA. DO NOT HALLUCINATE.
-              5. Only include exercises that are explicitly spoken.
-              6. Normalize exercise names to standard gym terminology (e.g., "bench" -> "Bench Press").
-              7. Return ONLY valid JSON matching the schema.
+              YOUR GOAL: Extract workout data accurately. Do not fail easily. If you hear an exercise, record it.
+              
+              EXAMPLES:
+              Input: "Bench press 3 sets of 10 with 80 kilos"
+              Output: {"exercises": [{"name": "Bench Press", "sets": [{"reps": 10, "weight": 80, "unit": "kg"}, {"reps": 10, "weight": 80, "unit": "kg"}, {"reps": 10, "weight": 80, "unit": "kg"}]}]}
+              
+              Input: "Hice sentadillas, 100 kilos, 5 repeticiones, luego 4 repeticiones, luego 3"
+              Output: {"exercises": [{"name": "Squat", "sets": [{"reps": 5, "weight": 100, "unit": "kg"}, {"reps": 4, "weight": 100, "unit": "kg"}, {"reps": 3, "weight": 100, "unit": "kg"}]}]}
+              
+              RULES:
+              1. If weight is not mentioned, check context. If unknown, use 0.
+              2. Assume "kilos" or "kg" if unit is missing.
+              3. Normalize names (e.g., "pecho" -> "Chest Press" or "Bench Press" depending on context, "banca" -> "Bench Press").
+              4. IGNORE filler words like "um", "uh", "creo que", "bueno".
+              5. Extract RPE if mentioned (e.g., "costó mucho" -> RPE 9, "fácil" -> RPE 6).
+              
+              Return strictly JSON.
             `
           }
         ]
@@ -105,8 +115,7 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
       config: {
         responseMimeType: "application/json",
         responseSchema: WORKOUT_SCHEMA,
-        temperature: 0, // CRITICAL: Zero temperature to prevent hallucination
-        systemInstruction: "You are a robot. You do not imagine things. You only report what is heard perfectly clearly."
+        temperature: 0.1, // Slightly increased from 0 to allow flexible parsing of speech patterns without hallucinating content.
       }
     });
 
@@ -122,7 +131,7 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
   } catch (error: any) {
     console.error("Error processing workout audio:", error);
     if (error instanceof SyntaxError) {
-        throw new Error("AI returned invalid JSON. Please try again.");
+        throw new Error("Error de IA: Formato inválido.");
     }
     throw error;
   }
@@ -138,16 +147,15 @@ export const processWorkoutText = async (text: string): Promise<WorkoutData> => 
         parts: [
           {
             text: `
-              You are a STRICT fitness tracker. Parse the following workout text.
+              Parse this workout log into JSON.
               
-              CRITICAL RULES:
-              1. DO NOT INVENT DATA. If the text is gibberish, irrelevant, or unclear, return an empty "exercises" array.
-              2. Extract exercises, sets, reps, weights, and RPE accurately.
-              3. Normalize exercise names to standard gym terminology.
+              Input: "${text}"
               
-              Input Text: "${text}"
-              
-              Return ONLY valid JSON adhering to the schema.
+              Rules:
+              - Normalize exercise names to English standard (e.g. "Sentadilla" -> "Squat").
+              - Expand multiple sets if implied (e.g. "3x10").
+              - Default unit: kg.
+              - Return empty array ONLY if absolutely no workout data matches.
             `
           }
         ]
@@ -155,7 +163,7 @@ export const processWorkoutText = async (text: string): Promise<WorkoutData> => 
       config: {
         responseMimeType: "application/json",
         responseSchema: WORKOUT_SCHEMA,
-        temperature: 0 // Strict mode
+        temperature: 0.1
       }
     });
 
@@ -169,9 +177,6 @@ export const processWorkoutText = async (text: string): Promise<WorkoutData> => 
 
   } catch (error: any) {
     console.error("Error processing workout text:", error);
-    if (error instanceof SyntaxError) {
-        throw new Error("AI returned invalid JSON. Please try again.");
-    }
     throw error;
   }
 };

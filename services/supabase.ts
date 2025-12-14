@@ -4,7 +4,7 @@ import { Friend, Workout } from '../types';
 // --- CONFIGURATION ---
 const env = (import.meta as any).env;
 
-// Retrieve from Environment Variables
+// Retrieve from Environment Variables ONLY
 const SUPABASE_URL = env?.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = env?.VITE_SUPABASE_ANON_KEY;
 
@@ -16,8 +16,8 @@ if (!isConfigured) {
 }
 
 // Create the client
-// If keys are missing, we initialize with placeholders to prevent a crash on import.
-// The App component uses `isConfigured` to block the UI and show the error message.
+// We allow empty strings here so the import doesn't crash the entire app immediately.
+// The App.tsx component checks `isConfigured` and blocks the UI with a red screen if these are missing.
 export const supabase = createClient(
     SUPABASE_URL || 'https://placeholder.supabase.co', 
     SUPABASE_ANON_KEY || 'placeholder'
