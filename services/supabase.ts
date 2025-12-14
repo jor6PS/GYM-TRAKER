@@ -25,8 +25,6 @@ if (!isConfigured) {
 }
 
 // Create the client
-// We allow empty strings here so the import doesn't crash the entire app immediately.
-// The App.tsx component checks `isConfigured` and blocks the UI with a red screen if these are missing.
 export const supabase = createClient(
     SUPABASE_URL || 'https://placeholder.supabase.co', 
     SUPABASE_ANON_KEY || 'placeholder'
@@ -47,7 +45,6 @@ export const getCurrentProfile = async () => {
       .single();
 
     if (error) {
-      // Ignore error if it's just "row not found" (new user)
       if (error.code !== 'PGRST116') {
         console.warn("Profile fetch warning:", error.message);
       }
@@ -88,7 +85,8 @@ export const resolveUserEmail = async (identifier: string): Promise<string> => {
     console.warn("RPC get_email_by_username skipped:", e);
   }
 
-  // 2. Fallback to Table Select (requires 'profiles' table to be readable)
+  // 2. Fallback to Table Select
+  // This uses paramterized query internally, so special chars are safe here.
   const { data: tableData, error: tableError } = await supabase
     .from('profiles')
     .select('email')
@@ -96,10 +94,8 @@ export const resolveUserEmail = async (identifier: string): Promise<string> => {
     .maybeSingle();
 
   if (tableError) {
-    // FIX: Use JSON.stringify to ensure [object Object] is not printed in console
     console.error("User resolution error details:", JSON.stringify(tableError, null, 2));
     
-    // Handle "Relation does not exist" specifically (Error 42P01)
     if (tableError.code === '42P01') {
         throw new Error("System Error: Database table 'profiles' is missing. Please run the SQL setup script.");
     }
@@ -180,9 +176,14 @@ export const searchUsers = async (term: string) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
 
+    // Simple trim, preserving special characters (emojis, accents)
+    const cleanTerm = term.trim();
+    if (!cleanTerm) return [];
+
+    // 1. Try RPC (Optimized DB Search)
     try {
         const { data, error } = await supabase.rpc('search_users', { 
-            search_term: term,
+            search_term: cleanTerm,
             current_user_id: user.id 
         });
 
@@ -191,19 +192,47 @@ export const searchUsers = async (term: string) => {
         // Silent fail on RPC
     }
 
-    const { data: fallbackData, error: fallbackError } = await supabase
-        .from('profiles')
-        .select('id, name, avatar_url')
-        .or(`email.ilike.%${term}%,name.ilike.%${term}%`)
-        .neq('id', user.id)
-        .limit(5);
+    // 2. ROBUST FALLBACK (ID-Based Association)
+    // Instead of using a fragile .or() string which breaks with special chars,
+    // we run two safe parallel queries and merge by ID.
+    
+    try {
+        const [emailRes, nameRes] = await Promise.all([
+            supabase
+                .from('profiles')
+                .select('id, name, avatar_url')
+                .ilike('email', `%${cleanTerm}%`)
+                .neq('id', user.id)
+                .limit(5),
+            supabase
+                .from('profiles')
+                .select('id, name, avatar_url')
+                .ilike('name', `%${cleanTerm}%`) // .ilike handles parameter escaping safely
+                .neq('id', user.id)
+                .limit(5)
+        ]);
 
-    if (fallbackError) {
-        console.error("User search failed:", JSON.stringify(fallbackError, null, 2));
+        if (emailRes.error) console.error("Email search error:", emailRes.error);
+        if (nameRes.error) console.error("Name search error:", nameRes.error);
+
+        const emailMatches = emailRes.data || [];
+        const nameMatches = nameRes.data || [];
+
+        // Deduplicate based on unique ID
+        const uniqueUsersMap = new Map();
+        
+        [...emailMatches, ...nameMatches].forEach(u => {
+            if (!uniqueUsersMap.has(u.id)) {
+                uniqueUsersMap.set(u.id, u);
+            }
+        });
+
+        return Array.from(uniqueUsersMap.values()).slice(0, 5);
+
+    } catch (error) {
+        console.error("User search failed completely:", error);
         return [];
     }
-
-    return fallbackData || [];
 };
 
 export const sendFriendRequest = async (friendId: string) => {
@@ -307,6 +336,7 @@ export const respondToRequest = async (friendshipId: string, status: 'accepted' 
 export const getFriendWorkouts = async (friendIds: string[]) => {
     if (friendIds.length === 0) return [];
     
+    // STRICT ID ASSOCIATION: We query workouts solely by User ID, completely ignoring names here.
     const { data, error } = await supabase
         .from('workouts')
         .select('*')

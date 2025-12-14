@@ -3,6 +3,7 @@ import {
   Footprints,
   Dumbbell as LucideDumbbell
 } from 'lucide-react';
+import { Workout } from './types';
 
 // --- Shared Helpers ---
 
@@ -14,6 +15,26 @@ import {
 export const parseLocalDate = (dateStr: string) => {
     if (!dateStr) return new Date();
     return new Date(dateStr.includes('T') ? dateStr : `${dateStr}T00:00:00`);
+};
+
+/**
+ * Converts a Workout object into a string representation readable by the local parser.
+ * Format: "Exercise Name SetsxReps Weight(unit)"
+ */
+export const formatWorkoutToString = (workout: Workout): string => {
+  if (!workout.structured_data || !workout.structured_data.exercises) return "";
+
+  return workout.structured_data.exercises.map(ex => {
+    // Group sets if they are identical to make output cleaner
+    // For now, simpler approach: list the sets summary
+    // Logic: "ExerciseName 3x10 50kg"
+    
+    // We assume most sets in a block are similar for the "Quick Clone" text
+    const firstSet = ex.sets[0];
+    const setsCount = ex.sets.length;
+    
+    return `${ex.name} ${setsCount}x${firstSet.reps} ${firstSet.weight}${firstSet.unit}`;
+  }).join('\n');
 };
 
 // --- Custom SVG Components ---

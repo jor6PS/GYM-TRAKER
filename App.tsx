@@ -3,7 +3,7 @@ import { CalendarView } from './components/CalendarView';
 import { AudioRecorder } from './components/AudioRecorder';
 import { RestTimer } from './components/RestTimer';
 import { LoginScreen } from './components/LoginScreen';
-import { ResetPasswordScreen } from './components/ResetPasswordScreen'; // Import the new blocking screen
+import { ResetPasswordScreen } from './components/ResetPasswordScreen'; 
 import { Workout, WorkoutData, WorkoutPlan, Exercise, User, UserRole } from './types';
 import { supabase, getCurrentProfile, getFriendWorkouts, getPendingRequestsCount, isConfigured } from './services/supabase';
 import { format, isSameDay, isFuture } from 'date-fns';
@@ -21,7 +21,6 @@ import {
   Clock,
   EyeOff,
   Activity,
-  Keyboard,
   Dumbbell,
   Gauge,
   Users,
@@ -30,14 +29,13 @@ import {
   Loader2,
   Settings,
   Sparkles,
-  ListPlus
+  Edit3
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
 // --- LAZY LOADED COMPONENTS (Code Splitting) ---
 const AdminDashboard = lazy(() => import('./components/AdminDashboard').then(module => ({ default: module.AdminDashboard })));
-const ManualEntryModal = lazy(() => import('./components/ManualEntryModal').then(module => ({ default: module.ManualEntryModal })));
-const StructuredEntryModal = lazy(() => import('./components/StructuredEntryModal').then(module => ({ default: module.StructuredEntryModal }))); // NEW
+const UnifiedEntryModal = lazy(() => import('./components/UnifiedEntryModal').then(module => ({ default: module.UnifiedEntryModal }))); // NEW
 const PRModal = lazy(() => import('./components/PRModal').then(module => ({ default: module.PRModal })));
 const CreatePlanModal = lazy(() => import('./components/CreatePlanModal').then(module => ({ default: module.CreatePlanModal })));
 const EditExerciseModal = lazy(() => import('./components/EditExerciseModal').then(module => ({ default: module.EditExerciseModal })));
@@ -149,8 +147,7 @@ function App() {
   const [allWorkouts, setAllWorkouts] = useState<Workout[]>([]);
   
   const [isLoadingData, setIsLoadingData] = useState(false);
-  const [showManualEntry, setShowManualEntry] = useState(false);
-  const [showStructuredEntry, setShowStructuredEntry] = useState(false); // NEW STATE
+  const [showUnifiedEntry, setShowUnifiedEntry] = useState(false); // REPLACES MANUAL/STRUCTURED
   const [showPRModal, setShowPRModal] = useState(false);
   const [showCreatePlan, setShowCreatePlan] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -252,9 +249,6 @@ function App() {
         setSessionLoading(false);
     }
   };
-
-  // ... [DATA LOADING FUNCTIONS KEEP SAME] ...
-  // (Copied from existing, no changes needed for logic, just preserving context)
 
   useEffect(() => {
     if (currentUser) {
@@ -491,7 +485,6 @@ function App() {
   if (sessionLoading) return <div className="min-h-screen bg-background flex items-center justify-center"><div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div></div>;
 
   // --- RECOVERY MODE INTERCEPTION ---
-  // If user is in recovery mode, show the blocking screen instead of the App
   if (currentUser && isRecoveryMode) {
     return <ResetPasswordScreen onSuccess={() => setIsRecoveryMode(false)} />;
   }
@@ -660,7 +653,7 @@ function App() {
         {/* PLANS (Horizontal Scroll - COMPACT) */}
         {canEdit && (
           <section>
-             {/* Header Section for Plans - Matches 'Today' style */}
+             {/* Header Section for Plans */}
              <div className="flex items-center justify-between mb-3 px-2">
                 <h2 className="text-sm font-bold text-text tracking-tight flex items-center gap-2">
                   <Zap className="w-4 h-4 text-primary" />
@@ -671,10 +664,9 @@ function App() {
                 </span>
              </div>
 
-             {/* FIX: Increased padding-y (py-6) to prevent button cutoff/shadow clipping on Android/PC */}
              <div className="-mx-4 px-4 overflow-x-auto no-scrollbar py-6">
                  <div className="flex gap-4">
-                    {/* CREATE NEW BUTTON - Increased dimensions for better visibility on PC */}
+                    {/* CREATE NEW BUTTON */}
                     <button 
                       onClick={() => { setEditingPlan(null); setShowCreatePlan(true); }}
                       className="flex flex-col items-center justify-center gap-2 w-[110px] h-[120px] rounded-2xl border border-dashed border-border hover:border-primary/50 bg-surface hover:bg-primary/5 transition-all shrink-0 group relative overflow-hidden"
@@ -685,7 +677,7 @@ function App() {
                        <span className="text-[10px] font-bold text-subtext group-hover:text-primary tracking-wide">{t('new')}</span>
                     </button>
                     
-                    {/* PLAN CARDS - Increased width/height to fit buttons */}
+                    {/* PLAN CARDS */}
                     {plans.map(plan => (
                        <div
                         key={plan.id}
@@ -704,7 +696,6 @@ function App() {
                           <p className="text-[9px] text-subtext font-medium">{plan.exercises.length} Items</p>
                         </div>
                         
-                        {/* UPDATE: Buttons Logic (Edit - Add - Delete) */}
                         <div className="flex items-center justify-between pt-2 border-t border-border mt-auto gap-1">
                             {/* Edit */}
                             <button 
@@ -737,7 +728,7 @@ function App() {
           </section>
         )}
 
-        {/* WORKOUT FEED (Mine + Friends) */}
+        {/* WORKOUT FEED */}
         <section>
           <div className="flex items-center justify-between mb-4 px-2">
             <h2 className="text-sm font-bold text-text tracking-tight flex items-center gap-2">
@@ -900,7 +891,14 @@ function App() {
 
       </main>
 
-      {/* --- NEW ACTION ISLAND DOCK --- */}
+      {/* --- FLOATING TIMER (SEPARATED FROM INPUTS) --- */}
+      {canEdit && (
+        <div className="fixed bottom-28 left-4 z-50">
+            <RestTimer />
+        </div>
+      )}
+
+      {/* --- NEW ACTION ISLAND DOCK (INPUTS ONLY) --- */}
       {canEdit && (
         <div className="fixed bottom-8 left-0 right-0 z-50 flex flex-col items-center justify-end pointer-events-none">
           
@@ -909,66 +907,43 @@ function App() {
             {t('input_log')}
           </div>
 
-          {/* Glass Dock */}
-          <div className="pointer-events-auto bg-surfaceHighlight/80 backdrop-blur-xl border border-border rounded-full p-2 pl-4 pr-2 shadow-[0_0_50px_rgba(0,0,0,0.5)] flex items-center gap-4 transition-transform hover:scale-105 duration-300">
+          {/* Glass Dock - Input Actions Only */}
+          <div className="pointer-events-auto bg-surfaceHighlight/80 backdrop-blur-xl border border-border rounded-full p-2 pl-2 pr-2 shadow-[0_0_50px_rgba(0,0,0,0.5)] flex items-center gap-2 transition-transform hover:scale-105 duration-300">
             
-            {/* Structured Entry (List/Plus Icon) */}
+            {/* Unified Input Entry (Text/Cloning) */}
             <button
-              onClick={() => setShowStructuredEntry(true)}
-              className="flex items-center gap-2 text-subtext hover:text-text transition-colors group"
-              title="Manual Structured Entry"
+              onClick={() => setShowUnifiedEntry(true)}
+              className="flex items-center justify-center w-14 h-14 rounded-full bg-surface hover:bg-surfaceHighlight border border-border text-subtext hover:text-text transition-all group"
+              title="Input / Clone"
             >
-              <div className="p-2 rounded-full bg-surface group-hover:bg-surfaceHighlight border border-border transition-colors group-hover:border-primary/50">
-                <ListPlus className="w-5 h-5 group-hover:text-primary transition-colors" />
-              </div>
-            </button>
-
-            {/* AI Text Entry (Keyboard) */}
-            <button
-              onClick={() => setShowManualEntry(true)}
-              className="flex items-center gap-2 text-subtext hover:text-text transition-colors group"
-              title="AI Text Entry"
-            >
-              <div className="p-2 rounded-full bg-surface group-hover:bg-surfaceHighlight border border-border transition-colors">
-                <Keyboard className="w-5 h-5" />
-              </div>
+               <Edit3 className="w-6 h-6 group-hover:text-primary transition-colors" />
             </button>
             
             {/* Divider */}
             <div className="w-px h-8 bg-border"></div>
 
-            {/* Timer (Middle) */}
-            <div className="relative group">
-                <RestTimer />
-            </div>
-
-            {/* Divider */}
-            <div className="w-px h-8 bg-border"></div>
-
-            {/* AI Mic Button (Right/Center - handled by component) */}
+            {/* AI Mic Button */}
             <AudioRecorder onWorkoutProcessed={handleWorkoutProcessed} />
           
           </div>
         </div>
       )}
       
-      {/* MODALS - Wrapped in Suspense for Lazy Loading */}
+      {/* MODALS */}
       <Suspense fallback={null}>
-        {showManualEntry && <ManualEntryModal isOpen={showManualEntry} onClose={() => setShowManualEntry(false)} onWorkoutProcessed={handleWorkoutProcessed} />}
-        {showStructuredEntry && <StructuredEntryModal isOpen={showStructuredEntry} onClose={() => setShowStructuredEntry(false)} onWorkoutProcessed={handleWorkoutProcessed} />}
+        {showUnifiedEntry && <UnifiedEntryModal isOpen={showUnifiedEntry} onClose={() => setShowUnifiedEntry(false)} onWorkoutProcessed={handleWorkoutProcessed} pastWorkouts={workouts} />}
         {showPRModal && <PRModal isOpen={showPRModal} onClose={() => setShowPRModal(false)} workouts={workouts} initialExercise={selectedHistoryExercise} />}
         {showMonthlySummary && <MonthlySummaryModal isOpen={showMonthlySummary} onClose={() => setShowMonthlySummary(false)} viewDate={viewDate} workouts={workouts} />}
         {showCreatePlan && <CreatePlanModal isOpen={showCreatePlan} onClose={() => setShowCreatePlan(false)} onSave={handleSavePlan} initialPlan={editingPlan} />}
         {currentUser && showProfileModal && <ProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} user={currentUser} workouts={workouts} onUpdateUser={handleUpdateUser} onLogout={handleLogout} />}
         {editingExercise && <EditExerciseModal isOpen={!!editingExercise} onClose={() => setEditingExercise(null)} exercise={editingExercise.data} onSave={executeEdit} />}
         
-        {/* SOCIAL MODALS */}
         {currentUser && showSocialModal && (
             <SocialModal 
                 isOpen={showSocialModal} 
                 onClose={() => {
                     setShowSocialModal(false);
-                    checkPendingRequests(); // Refresh requests count on close
+                    checkPendingRequests(); 
                 }} 
                 currentUser={currentUser} 
                 activeFriends={activeFriends.map(f => f.userId)}
@@ -985,7 +960,7 @@ function App() {
         )}
       </Suspense>
 
-      {/* CONFIRMATION DIALOGS (Styled Modern) - Keep static as they are lightweight */}
+      {/* CONFIRMATION DIALOGS */}
       {[deleteConfirmation, deleteWorkoutConfirmation, deletePlanConfirmation].map((conf, i) => {
          if (!conf) return null;
          const title = deleteConfirmation ? t('delete_exercise_title') : deletePlanConfirmation ? t('delete_plan_title') : t('delete_workout_title');
