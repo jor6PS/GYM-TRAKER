@@ -3,8 +3,8 @@ import { WorkoutData, Workout, User, GroupAnalysisData, ComparisonRow } from "..
 import { format } from "date-fns";
 
 // --- CONFIGURATION ---
-// User explicitly requested gemini-1.5-flash for better free tier limits.
-const MODEL_NAME = 'gemini-1.5-flash'; 
+// User requested specific experimental model
+const MODEL_NAME = 'gemini-2.5-flash-exp'; 
 
 // Helper to safely get the AI instance only when needed
 const getAIClient = () => {
@@ -85,7 +85,7 @@ const handleAIError = (error: any) => {
         throw new Error(`Error: El modelo '${MODEL_NAME}' no ha sido encontrado. Revisa tu API Key o la región.`);
     }
     if (msg.includes('429') || msg.includes('Quota') || msg.includes('Too Many Requests')) {
-        throw new Error("⚠️ Has superado el límite gratuito de la IA (15 peticiones/min). Espera un momento.");
+        throw new Error("⚠️ Has superado el límite de cuota de la IA. Espera un momento.");
     }
     if (error instanceof SyntaxError) {
         throw new Error("Error de IA: Formato inválido.");
