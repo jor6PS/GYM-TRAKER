@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Square, Loader2, AlertCircle } from 'lucide-react';
 import { clsx } from 'clsx';
 import { processWorkoutAudio } from '../services/workoutProcessor';
@@ -16,6 +16,16 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onWorkoutProcessed
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const mimeTypeRef = useRef<string>("");
+
+  // Auto-dismiss error after 4 seconds
+  useEffect(() => {
+    if (error) {
+        const timer = setTimeout(() => {
+            setError(null);
+        }, 4000);
+        return () => clearTimeout(timer);
+    }
+  }, [error]);
 
   // Detect supported MIME type for the browser (fixes iOS/Safari issues)
   const getSupportedMimeType = () => {

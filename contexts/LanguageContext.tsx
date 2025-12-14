@@ -93,6 +93,20 @@ const translations = {
     
     // Rest Timer
     rest_timer: "Descanso",
+    
+    // ARENA / SOCIAL
+    enter_arena: "Entrar a la Arena",
+    opponents: "Oponentes",
+    judge_me: "JÚZGAME",
+    arena_title: "LA ARENA",
+    gladiators_ready: "Gladiadores Listos",
+    fight: "¡PELEA!",
+    judging: "JUZGANDO...",
+    alpha: "ALFA",
+    beta: "BETA",
+    consistency_points: "Puntos de Consistencia",
+    key_matchups: "Enfrentamientos Clave",
+    no_common_exercises: "No hay ejercicios en común entre todos.",
   },
   en: {
     // General
@@ -184,6 +198,20 @@ const translations = {
     
     // Rest Timer
     rest_timer: "Rest Timer",
+
+    // ARENA / SOCIAL
+    enter_arena: "Enter The Arena",
+    opponents: "Opponents",
+    judge_me: "JUDGE ME",
+    arena_title: "THE ARENA",
+    gladiators_ready: "Gladiators Ready",
+    fight: "FIGHT!",
+    judging: "JUDGING...",
+    alpha: "ALPHA",
+    beta: "BETA",
+    consistency_points: "Consistency Points",
+    key_matchups: "Key Matchups",
+    no_common_exercises: "No common exercises found between all participants.",
   }
 };
 

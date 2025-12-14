@@ -8,7 +8,7 @@ import { supabase, getCurrentProfile, getFriendWorkouts, getPendingRequestsCount
 import { format, isSameDay, isFuture } from 'date-fns';
 import es from 'date-fns/locale/es';
 import enUS from 'date-fns/locale/en-US';
-import { getExerciseIcon, AppLogo } from './utils';
+import { getExerciseIcon, AppLogo, parseLocalDate } from './utils';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { 
   Trophy,
@@ -41,14 +41,6 @@ const ProfileModal = lazy(() => import('./components/ProfileModal').then(module 
 const MonthlySummaryModal = lazy(() => import('./components/MonthlySummaryModal').then(module => ({ default: module.MonthlySummaryModal })));
 const SocialModal = lazy(() => import('./components/SocialModal').then(module => ({ default: module.SocialModal })));
 const ArenaModal = lazy(() => import('./components/ArenaModal').then(module => ({ default: module.ArenaModal })));
-
-// Helper for consistent date parsing (forces Local Time instead of UTC)
-const parseLocalDate = (dateStr: string) => {
-    if (!dateStr) return new Date();
-    // Appends T00:00:00 to force local time interpretation in most browsers
-    // preventing the "day before" bug due to timezone shifts.
-    return new Date(dateStr.includes('T') ? dateStr : `${dateStr}T00:00:00`);
-};
 
 // Wrapper to provide Context to the App Component
 export default function AppWrapper() {
@@ -478,6 +470,14 @@ function App() {
             
             <div className="flex items-center gap-1">
               
+               {/* LANGUAGE TOGGLE - RESTORED */}
+               <button 
+                onClick={toggleLanguage}
+                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surfaceHighlight transition-colors text-subtext hover:text-text font-mono text-xs font-bold"
+              >
+                {language.toUpperCase()}
+              </button>
+
               {/* SOCIAL BUTTON */}
               <button 
                 onClick={() => setShowSocialModal(true)}
@@ -569,11 +569,11 @@ function App() {
                             <Swords className="w-5 h-5 text-primary" />
                         </div>
                         <div className="text-left">
-                            <div className="text-sm font-bold text-white">Enter The Arena</div>
-                            <div className="text-[10px] text-zinc-400">Compare stats with {activeFriends.length} friends</div>
+                            <div className="text-sm font-bold text-white">{t('enter_arena')}</div>
+                            <div className="text-[10px] text-zinc-400">{activeFriends.length} {t('opponents')}</div>
                         </div>
                     </div>
-                    <div className="text-primary text-xs font-bold font-mono tracking-widest group-hover:underline">JUDGE ME &rarr;</div>
+                    <div className="text-primary text-xs font-bold font-mono tracking-widest group-hover:underline">{t('judge_me')} &rarr;</div>
                 </button>
             </section>
         )}
@@ -592,12 +592,13 @@ function App() {
                 </span>
              </div>
 
-             <div className="-mx-4 px-4 overflow-x-auto no-scrollbar py-1">
+             {/* FIX: Increased padding-y (py-4) to prevent button cutoff/shadow clipping on Android */}
+             <div className="-mx-4 px-4 overflow-x-auto no-scrollbar py-4">
                  <div className="flex gap-3">
-                    {/* CREATE NEW BUTTON */}
+                    {/* CREATE NEW BUTTON - Added shrink-0 explicitly */}
                     <button 
                       onClick={() => { setEditingPlan(null); setShowCreatePlan(true); }}
-                      className="flex flex-col items-center justify-center gap-2 w-[100px] h-[100px] rounded-2xl border border-dashed border-border hover:border-primary/50 bg-surface hover:bg-primary/5 transition-all shrink-0 group"
+                      className="flex flex-col items-center justify-center gap-2 w-[100px] h-[100px] rounded-2xl border border-dashed border-border hover:border-primary/50 bg-surface hover:bg-primary/5 transition-all shrink-0 group relative overflow-hidden"
                     >
                        <div className="w-8 h-8 rounded-full bg-surfaceHighlight border border-border flex items-center justify-center text-subtext group-hover:text-primary group-hover:border-primary transition-all">
                          <Plus className="w-4 h-4" />

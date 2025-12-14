@@ -51,10 +51,6 @@ La IA procesa el audio, extrae los ejercicios, normaliza los nombres y estructur
 *   Crea rutinas predefinidas (Push, Pull, Legs, etc.).
 *   **Smart Fill:** Al aplicar una rutina, la app rellena automáticamente los pesos basándose en tu última sesión histórica.
 
-### 📈 6. Progreso y Gráficos
-*   Cálculo automático de **1RM Estimado** (Fórmula Epley).
-*   Gráficos de volumen y progresión de cargas.
-
 ---
 
 ## 🛠️ Guía de Desarrollo (Self-Hosting)
@@ -87,16 +83,125 @@ VITE_SUPABASE_ANON_KEY=tu-clave-anonima-publica
 VITE_API_KEY=tu_clave_api_gemini
 ```
 
-### 3. Configuración de Base de Datos (SQL)
-Debes ejecutar el script SQL proporcionado (`database_setup.sql` o ver abajo) en el Editor SQL de Supabase para crear las tablas y funciones necesarias.
+### 3. Configuración de Base de Datos (IMPORTANTE)
+Copia y pega el siguiente bloque de código en el **SQL Editor** de tu proyecto de Supabase para configurar todas las tablas, funciones y permisos necesarios.
 
-**Estructura necesaria:**
-1.  **Tablas:** `profiles`, `workouts`, `workout_plans`, `friendships`.
-2.  **Storage:** Bucket público llamado `avatars`.
-3.  **Funciones RPC:** `search_users`, `get_email_by_username`.
-4.  **RLS Policies:** Configuradas para permitir la interacción social segura.
+```sql
+-- 1. Habilitar extensiones necesarias
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-*(Ver código fuente `services/supabase.ts` para inferir esquemas o solicitar el archivo SQL completo).*
+-- 2. Crear Tabla de Perfiles (Profiles)
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
+  email TEXT,
+  name TEXT,
+  avatar_url TEXT,
+  role TEXT DEFAULT 'user',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 3. Crear Tabla de Entrenamientos (Workouts)
+CREATE TABLE IF NOT EXISTS public.workouts (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+  date DATE NOT NULL,
+  structured_data JSONB NOT NULL,
+  source TEXT CHECK (source IN ('web', 'audio', 'manual')),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 4. Crear Tabla de Rutinas (Workout Plans)
+CREATE TABLE IF NOT EXISTS public.workout_plans (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+  name TEXT NOT NULL,
+  exercises JSONB NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 5. Crear Tabla de Amistades (Friendships)
+CREATE TABLE IF NOT EXISTS public.friendships (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+  friend_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+  status TEXT CHECK (status IN ('pending', 'accepted', 'rejected')) DEFAULT 'pending',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, friend_id)
+);
+
+-- 6. Habilitar Row Level Security (RLS)
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.workouts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.workout_plans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.friendships ENABLE ROW LEVEL SECURITY;
+
+-- 7. Políticas de Seguridad (Policies)
+
+-- PROFILES
+CREATE POLICY "Public profiles are viewable by everyone" ON public.profiles FOR SELECT USING (true);
+CREATE POLICY "Users can insert their own profile" ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
+CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
+
+-- WORKOUTS
+CREATE POLICY "Users can view own workouts" ON public.workouts FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "View friends workouts" ON public.workouts FOR SELECT USING (
+  EXISTS (
+    SELECT 1 FROM public.friendships
+    WHERE (user_id = auth.uid() AND friend_id = workouts.user_id AND status = 'accepted')
+    OR (friend_id = auth.uid() AND user_id = workouts.user_id AND status = 'accepted')
+  )
+);
+CREATE POLICY "Users can insert own workouts" ON public.workouts FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update own workouts" ON public.workouts FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Users can delete own workouts" ON public.workouts FOR DELETE USING (auth.uid() = user_id);
+
+-- PLANS
+CREATE POLICY "Users can manage own plans" ON public.workout_plans FOR ALL USING (auth.uid() = user_id);
+
+-- FRIENDSHIPS
+CREATE POLICY "Users can read own friendships" ON public.friendships FOR SELECT USING (auth.uid() = user_id OR auth.uid() = friend_id);
+CREATE POLICY "Users can insert friendships" ON public.friendships FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update own friendships" ON public.friendships FOR UPDATE USING (auth.uid() = user_id OR auth.uid() = friend_id);
+
+-- 8. Configurar Storage (Imágenes)
+-- Intentar crear bucket. Si falla por permisos, crear manualmente 'avatars' (Public) en el Dashboard.
+INSERT INTO storage.buckets (id, name, public) VALUES ('avatars', 'avatars', true) ON CONFLICT (id) DO NOTHING;
+
+CREATE POLICY "Avatar images are publicly accessible" ON storage.objects FOR SELECT USING ( bucket_id = 'avatars' );
+CREATE POLICY "Authenticated users can upload avatars" ON storage.objects FOR INSERT WITH CHECK ( bucket_id = 'avatars' AND auth.role() = 'authenticated' );
+
+-- 9. Triggers y Funciones
+
+-- Trigger: Crear perfil automáticamente al registrarse en Auth
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, name, avatar_url)
+  VALUES (new.id, new.email, new.raw_user_meta_data->>'name', new.raw_user_meta_data->>'avatar_url');
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
+-- RPC: Buscar usuarios por nombre/email (Seguro)
+CREATE OR REPLACE FUNCTION search_users(search_term TEXT, current_user_id UUID)
+RETURNS TABLE (id UUID, name TEXT, avatar_url TEXT)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT p.id, p.name, p.avatar_url
+  FROM profiles p
+  WHERE (p.name ILIKE '%' || search_term || '%' OR p.email ILIKE '%' || search_term || '%')
+  AND p.id != current_user_id
+  LIMIT 10;
+END;
+$$;
+```
 
 ### 4. Ejecutar en Desarrollo
 ```bash
@@ -108,7 +213,6 @@ La aplicación estará disponible en `http://localhost:5173`.
 ```bash
 npm run build
 ```
-Esto generará la carpeta `dist/` optimizada con Code Splitting y PWA manifest listos para desplegar en Vercel, Netlify o cualquier servidor estático.
 
 ---
 

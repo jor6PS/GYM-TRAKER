@@ -4,21 +4,21 @@ import {
   Dumbbell as LucideDumbbell
 } from 'lucide-react';
 
+// --- Shared Helpers ---
+
+/**
+ * Helper for consistent date parsing.
+ * Forces Local Time instead of UTC to prevent off-by-one day errors.
+ * Appends T00:00:00 to force local time interpretation in most browsers.
+ */
+export const parseLocalDate = (dateStr: string) => {
+    if (!dateStr) return new Date();
+    return new Date(dateStr.includes('T') ? dateStr : `${dateStr}T00:00:00`);
+};
+
 // --- Custom SVG Components ---
 
-const IconWrapper = ({ children, className }: { children?: React.ReactNode, className?: string }) => (
-  <svg 
-    xmlns="http://www.w3.org/2000/svg" 
-    viewBox="0 0 24 24" 
-    fill="none" 
-    className={className}
-  >
-    {children}
-  </svg>
-);
-
 // --- NEW APP LOGO: MOUNTAINS + DUMBBELL ---
-// Updated to use currentColor for fills to adapt to Light/Dark modes
 export const AppLogo = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
     <defs>
@@ -77,9 +77,6 @@ export const AppLogo = ({ className }: { className?: string }) => (
     <path d="M20 16V18" stroke="#D4FF00" strokeWidth="1.5" strokeLinecap="round" />
   </svg>
 );
-
-// Backward compatibility if needed, though we replace usage
-export const HackerLifterIcon = AppLogo;
 
 // --- OTHER ICONS (Standard) ---
 

@@ -16,6 +16,7 @@ import { clsx } from 'clsx';
 import { ChevronLeft, ChevronRight, RotateCcw, Sparkles } from 'lucide-react';
 import { Workout } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
+import { parseLocalDate } from '../utils';
 
 interface CalendarViewProps {
   viewDate: Date;
@@ -29,12 +30,6 @@ interface CalendarViewProps {
 
 // Updated to start on Monday (M, T, W, T, F, S, S)
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; 
-
-// Helper for consistent date parsing (duplicated from App.tsx for independence)
-const parseLocalDate = (dateStr: string) => {
-    if (!dateStr) return new Date();
-    return new Date(dateStr.includes('T') ? dateStr : `${dateStr}T00:00:00`);
-};
 
 export const CalendarView: React.FC<CalendarViewProps> = ({ 
   viewDate,

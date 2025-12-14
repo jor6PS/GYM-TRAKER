@@ -3,6 +3,7 @@ import { X, Swords, Crown, Skull, Sparkles, Loader2, Trophy, Flame } from 'lucid
 import { generateGroupAnalysis } from '../services/workoutProcessor';
 import { Workout, User, GroupAnalysisData } from '../types';
 import { clsx } from 'clsx';
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface ArenaModalProps {
   isOpen: boolean;
@@ -14,6 +15,7 @@ interface ArenaModalProps {
 export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, currentUser, friendsData }) => {
   const [analysis, setAnalysis] = useState<GroupAnalysisData | null>(null);
   const [loading, setLoading] = useState(false);
+  const { t, language } = useLanguage();
 
   if (!isOpen) return null;
 
@@ -26,7 +28,7 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
             workouts: f.workouts
         }));
 
-        const result = await generateGroupAnalysis(usersPayload);
+        const result = await generateGroupAnalysis(usersPayload, language);
         setAnalysis(result);
     } catch (e) {
         console.error(e);
@@ -45,10 +47,10 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
         <div className="p-6 border-b border-border bg-gradient-to-r from-zinc-900 to-black flex justify-between items-center shrink-0">
              <div>
                  <h2 className="text-2xl font-black text-white italic tracking-tighter flex items-center gap-2">
-                    THE ARENA <Swords className="w-6 h-6 text-primary" />
+                    {t('arena_title')} <Swords className="w-6 h-6 text-primary" />
                  </h2>
                  <p className="text-xs text-subtext font-mono uppercase tracking-widest mt-1">
-                    {friendsData.length} Gladiators Ready
+                    {friendsData.length} {t('gladiators_ready')}
                  </p>
              </div>
              <button onClick={onClose} className="text-subtext hover:text-white"><X className="w-6 h-6" /></button>
@@ -76,9 +78,9 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                         style={{ clipPath: 'polygon(10% 0, 100% 0, 90% 100%, 0% 100%)' }}
                      >
                         {loading ? (
-                            <span className="flex items-center gap-2"><Loader2 className="animate-spin" /> JUDGING...</span>
+                            <span className="flex items-center gap-2"><Loader2 className="animate-spin" /> {t('judging')}</span>
                         ) : (
-                            <span className="flex items-center gap-2">FIGHT! <Swords className="w-5 h-5" /></span>
+                            <span className="flex items-center gap-2">{t('fight')} <Swords className="w-5 h-5" /></span>
                         )}
                      </button>
                      <p className="mt-4 text-xs text-subtext font-mono">
@@ -92,12 +94,12 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                     <div className="grid grid-cols-2 gap-4">
                         <div className="bg-yellow-500/10 border border-yellow-500/30 p-4 rounded-2xl flex flex-col items-center text-center relative overflow-hidden">
                              <div className="absolute top-0 right-0 p-2 opacity-20"><Crown className="w-12 h-12 text-yellow-500" /></div>
-                             <span className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest mb-1">ALPHA</span>
+                             <span className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest mb-1">{t('alpha')}</span>
                              <h3 className="text-xl md:text-2xl font-black text-white truncate w-full">{analysis.winner}</h3>
                         </div>
                         <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-2xl flex flex-col items-center text-center relative overflow-hidden">
                              <div className="absolute top-0 right-0 p-2 opacity-20"><Skull className="w-12 h-12 text-red-500" /></div>
-                             <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-1">BETA</span>
+                             <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-1">{t('beta')}</span>
                              <h3 className="text-xl md:text-2xl font-black text-white truncate w-full">{analysis.loser}</h3>
                         </div>
                     </div>
@@ -108,7 +110,7 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                         {/* Points Leaderboard */}
                         <div>
                             <h3 className="text-xs font-bold text-subtext uppercase tracking-widest mb-3 flex items-center gap-2">
-                                <Trophy className="w-4 h-4 text-yellow-500" /> Consistency Points
+                                <Trophy className="w-4 h-4 text-yellow-500" /> {t('consistency_points')}
                             </h3>
                             <div className="space-y-2">
                                 {analysis.points_table.map((p, i) => (
@@ -132,12 +134,12 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                         {/* Comparison Table */}
                         <div>
                             <h3 className="text-xs font-bold text-subtext uppercase tracking-widest mb-3 flex items-center gap-2">
-                                <Sparkles className="w-4 h-4 text-primary" /> Enfrentamientos Clave
+                                <Sparkles className="w-4 h-4 text-primary" /> {t('key_matchups')}
                             </h3>
                             
                             {analysis.comparison_table.length === 0 ? (
                                 <div className="text-center py-4 text-xs text-subtext border border-dashed border-white/10 rounded-lg">
-                                    No common exercises found between all participants.
+                                    {t('no_common_exercises')}
                                 </div>
                             ) : (
                                 <div className="space-y-2">
