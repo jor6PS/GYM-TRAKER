@@ -9,7 +9,7 @@ interface SocialModalProps {
   onClose: () => void;
   currentUser: User;
   activeFriends: string[]; // IDs of friends selected for calendar
-  onToggleFriend: (friendId: string, color: string) => void;
+  onToggleFriend: (friendId: string, friendName: string, color: string) => void;
 }
 
 const FRIEND_COLORS = ['#38bdf8', '#f472b6', '#a78bfa', '#fb923c', '#2dd4bf'];
@@ -134,7 +134,7 @@ export const SocialModal: React.FC<SocialModalProps> = ({ isOpen, onClose, curre
                                     </div>
                                     
                                     <button 
-                                        onClick={() => onToggleFriend(friend.id, color)}
+                                        onClick={() => onToggleFriend(friend.id, friend.name, color)}
                                         className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${
                                             isActive 
                                             ? 'bg-black text-white border-white/20' 

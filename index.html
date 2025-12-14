@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="description" content="Intelligent AI Workout Tracker" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <title>GymTracker AI</title>
     
     <!-- Emergency Polyfill for libraries expecting Node.js environment -->
@@ -12,7 +15,6 @@
           NODE_ENV: 'production'
         }
       };
-      console.log("🚀 GymTracker App Starting...");
     </script>
 
     <!-- Import Inter Font -->
@@ -62,7 +64,7 @@
     <style>
       :root {
         /* Light Mode Defaults - Improved Contrast */
-        --background: #F0F0F3; /* Slightly darker gray to make white surface pop */
+        --background: #F0F0F3; 
         --surface: #FFFFFF;
         --surface-highlight: #F4F4F5;
         --text: #09090B;
@@ -97,6 +99,7 @@
         min-height: 100vh;
         color: var(--text);
         transition: background-color 0.3s ease, color 0.3s ease;
+        overscroll-behavior-y: none; /* Prevents pull-to-refresh on mobile which feels nicer for apps */
       }
       
       .glass-panel {
@@ -105,18 +108,10 @@
         -webkit-backdrop-filter: blur(12px);
         border: 1px solid var(--border);
       }
-      
-      /* Force dark background for specific elements if needed */
-      .always-dark {
-        background-color: #050505;
-        color: white;
-      }
     </style>
     
     <!-- Theme Script -->
     <script>
-      // On page load or when changing themes, best to add inline in `head` to avoid FOUC
-      // Logic updated: Defaults to DARK unless 'light' is explicitly stored in localStorage.
       if (localStorage.theme === 'dark' || (!('theme' in localStorage))) {
         document.documentElement.classList.add('dark')
       } else {
@@ -137,7 +132,8 @@
     "recharts": "https://esm.sh/recharts@^3.5.1",
     "vite": "https://esm.sh/vite@^7.2.7",
     "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
-    "date-fns/": "https://esm.sh/date-fns@^4.1.0/"
+    "date-fns/": "https://esm.sh/date-fns@^4.1.0/",
+    "vite-plugin-pwa": "https://esm.sh/vite-plugin-pwa@^1.2.0"
   }
 }
 </script>

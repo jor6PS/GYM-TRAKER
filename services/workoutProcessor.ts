@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { WorkoutData, Workout, User, GroupAnalysisData } from "../types";
+import { WorkoutData, Workout, User, GroupAnalysisData, ComparisonRow } from "../types";
 import { format } from "date-fns";
 
 // Helper to safely get the AI instance only when needed
@@ -278,51 +278,116 @@ export const generateMonthlyReport = async (
     }
 };
 
+// Helper for fuzzy normalization
+const normalizeExerciseName = (name: string): string => {
+    // 1. Lowercase
+    let n = name.toLowerCase();
+    // 2. Remove text in parentheses e.g. "bench press (barbell)" -> "bench press"
+    n = n.replace(/\(.*\)/g, '');
+    // 3. Trim whitespace
+    return n.trim();
+};
+
 export const generateGroupAnalysis = async (
     usersData: { name: string; workouts: Workout[] }[],
     language: 'es' | 'en' = 'es'
 ): Promise<GroupAnalysisData> => {
     try {
-        const ai = getAIClient();
+        // --- 1. LOCAL DETERMINISTIC CALCULATION (Math not Opinion) ---
+        
+        // A. Calculate Points (Unique Days Active)
+        const pointsTable = usersData.map(u => {
+            // Fix: Normalize date here too if necessary, though uniqueness check usually fine on string
+            const uniqueDays = new Set(u.workouts.map(w => w.date)).size;
+            return { name: u.name, points: uniqueDays };
+        }).sort((a, b) => b.points - a.points); // Sort descending
 
-        // Simplify data for AI to save tokens and focus on highlights
-        const context = usersData.map(u => {
-            const exercises = u.workouts.flatMap(w => w.structured_data.exercises);
-            const summary = exercises.reduce((acc: any, ex) => {
-                const maxWeight = Math.max(...ex.sets.map(s => s.weight));
-                if (!acc[ex.name] || maxWeight > acc[ex.name]) {
-                    acc[ex.name] = maxWeight;
-                }
-                return acc;
-            }, {});
+        // B. Calculate Comparison Table (Intersection of Exercises + Max PRs)
+        
+        // Get all exercises per user with their Max PR
+        const userMaxes: Record<string, Record<string, number>> = {};
+        
+        usersData.forEach(u => {
+            userMaxes[u.name] = {};
+            u.workouts.forEach(w => {
+                w.structured_data.exercises.forEach(ex => {
+                    const normName = normalizeExerciseName(ex.name); // Normalize for key
+                    const maxSet = Math.max(...ex.sets.map(s => s.weight));
+                    
+                    if (!userMaxes[u.name][normName] || maxSet > userMaxes[u.name][normName]) {
+                        userMaxes[u.name][normName] = maxSet;
+                    }
+                });
+            });
+        });
+
+        // Find common exercises (Intersection)
+        // 1. Get all unique exercise keys from the first user
+        if (usersData.length === 0) throw new Error("No users");
+        
+        let commonExercises = Object.keys(userMaxes[usersData[0].name]);
+        
+        // 2. Filter to keep only those present in ALL other users
+        for (let i = 1; i < usersData.length; i++) {
+            const currentUserExercises = Object.keys(userMaxes[usersData[i].name]);
+            commonExercises = commonExercises.filter(ex => currentUserExercises.includes(ex));
+        }
+
+        // 3. Construct Comparison Table
+        const comparisonTable: ComparisonRow[] = commonExercises.map(exKey => {
+            // Find "Winner" for this exercise
+            let maxWeight = -1;
+            let winnerName = "";
             
+            const results = usersData.map(u => {
+                const weight = userMaxes[u.name][exKey];
+                if (weight > maxWeight) {
+                    maxWeight = weight;
+                    winnerName = u.name;
+                }
+                return { userName: u.name, weight };
+            });
+
+            // Re-format exercise name (capitalize)
+            const displayExName = exKey.charAt(0).toUpperCase() + exKey.slice(1);
+
             return {
-                user: u.name,
-                total_sessions: u.workouts.length,
-                best_lifts: summary
+                exercise: displayExName,
+                results,
+                winnerName
             };
         });
 
+        // --- 2. AI JUDGMENT (Personality Only) ---
+
+        const ai = getAIClient();
+
+        // Prepare context for AI
+        const context = {
+            points_standings: pointsTable,
+            head_to_head_results: comparisonTable.map(c => `${c.exercise}: Winner ${c.winnerName} (${Math.max(...c.results.map(r=>r.weight))}kg)`),
+            raw_data_summary: usersData.map(u => ({
+                name: u.name,
+                total_sessions: u.workouts.length,
+                top_lifts: userMaxes[u.name]
+            }))
+        };
+
         const prompt = `
-            Actúa como un juez despiadado de una competición de culturismo underground.
+            Role: Ruthless bodybuilding judge. Language: ${language === 'es' ? 'Spanish' : 'English'}.
             
-            **IDIOMA:** ${language === 'es' ? 'ESPAÑOL' : 'ENGLISH'}
-            
-            **TAREA:**
-            Analiza los datos de estos usuarios y compáralos brutalmente.
-            
-            **DATOS:**
+            **DATA:**
             ${JSON.stringify(context)}
             
-            **INSTRUCCIONES:**
-            Genera un JSON con:
-            1. "winner": Nombre del ganador (el Alpha).
-            2. "loser": Nombre del perdedor (el que necesita leche).
-            3. "roast": Un texto corto (Markdown) humillando al perdedor y alabando al ganador. Sé sarcástico. Compara sus estadísticas.
-            4. "comparison_table": Un array de objetos { "exercise": "Nombre", "details": ["UserA: 100kg", "UserB: 80kg"] } para los 3 ejercicios más relevantes donde compiten.
+            **INSTRUCTIONS:**
+            1. Determine the "Winner" (Alpha) and "Loser" (Beta). 
+               - Winner: Usually the one with most Points (consistency) AND strongest lifts in head-to-head.
+               - Loser: The one with weak lifts or low consistency.
+            2. Write a "Roast": A short, funny, savage paragraph comparing them based on the data provided. Use the points and lift numbers to insult or praise.
             
-            **TONO:**
-            Muy agresivo, divertido, jerga de gimnasio.
+            **OUTPUT:**
+            Return strictly valid JSON.
+            Keys: "winner", "loser", "roast".
         `;
 
         const response = await ai.models.generateContent({
@@ -336,23 +401,22 @@ export const generateGroupAnalysis = async (
                         winner: { type: Type.STRING },
                         loser: { type: Type.STRING },
                         roast: { type: Type.STRING },
-                        comparison_table: {
-                            type: Type.ARRAY,
-                            items: {
-                                type: Type.OBJECT,
-                                properties: {
-                                    exercise: { type: Type.STRING },
-                                    details: { type: Type.ARRAY, items: { type: Type.STRING } }
-                                }
-                            }
-                        }
-                    }
+                    },
+                    required: ["winner", "loser", "roast"]
                 }
             }
         });
 
-        const text = response.text || "{}";
-        return JSON.parse(text) as GroupAnalysisData;
+        const text = cleanJson(response.text || "{}");
+        const aiResult = JSON.parse(text);
+        
+        return {
+            winner: aiResult.winner || "Unknown",
+            loser: aiResult.loser || "Unknown",
+            roast: aiResult.roast || "Judge is silent.",
+            comparison_table: comparisonTable,
+            points_table: pointsTable
+        };
 
     } catch (error) {
         console.error("Group analysis error", error);

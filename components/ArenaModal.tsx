@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { X, Swords, Crown, Skull, Sparkles, Loader2 } from 'lucide-react';
+import { X, Swords, Crown, Skull, Sparkles, Loader2, Trophy, Flame } from 'lucide-react';
 import { generateGroupAnalysis } from '../services/workoutProcessor';
 import { Workout, User, GroupAnalysisData } from '../types';
+import { clsx } from 'clsx';
 
 interface ArenaModalProps {
   isOpen: boolean;
@@ -19,13 +20,11 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
   const handleBattle = async () => {
     setLoading(true);
     try {
+        // Prepare payload (using real names and workouts)
         const usersPayload = friendsData.map(f => ({
             name: f.name,
             workouts: f.workouts
         }));
-        // Add current user? Assuming currentUser workouts are passed in friendsData? 
-        // Wait, App passes currentUser separate. Let's make sure we include current User data if needed.
-        // For simplicity, we assume `friendsData` includes EVERYONE participating including "Me" logic from App.tsx.
 
         const result = await generateGroupAnalysis(usersPayload);
         setAnalysis(result);
@@ -43,7 +42,7 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
       <div className="relative w-full max-w-2xl bg-surface border border-primary/30 rounded-3xl shadow-[0_0_50px_rgba(212,255,0,0.1)] flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-300">
         
         {/* Header */}
-        <div className="p-6 border-b border-border bg-gradient-to-r from-zinc-900 to-black flex justify-between items-center">
+        <div className="p-6 border-b border-border bg-gradient-to-r from-zinc-900 to-black flex justify-between items-center shrink-0">
              <div>
                  <h2 className="text-2xl font-black text-white italic tracking-tighter flex items-center gap-2">
                     THE ARENA <Swords className="w-6 h-6 text-primary" />
@@ -58,22 +57,22 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 bg-background custom-scrollbar">
             
-            {/* Competitors Chips */}
-            <div className="flex flex-wrap gap-2 mb-8 justify-center">
-                {friendsData.map(f => (
-                    <div key={f.userId} className="px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-2" style={{ borderColor: f.color, color: f.color, backgroundColor: `${f.color}10` }}>
-                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: f.color }}></div>
-                        {f.name}
-                    </div>
-                ))}
-            </div>
-
             {!analysis ? (
-                <div className="flex flex-col items-center justify-center py-10">
+                <div className="flex flex-col items-center justify-center py-10 min-h-[300px]">
+                    {/* Competitors Chips (Only show before fight) */}
+                    <div className="flex flex-wrap gap-2 mb-10 justify-center">
+                        {friendsData.map(f => (
+                            <div key={f.userId} className="px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-2" style={{ borderColor: f.color, color: f.color, backgroundColor: `${f.color}10` }}>
+                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: f.color }}></div>
+                                {f.name}
+                            </div>
+                        ))}
+                    </div>
+
                      <button 
                         onClick={handleBattle}
                         disabled={loading}
-                        className="group relative px-8 py-4 bg-primary text-black font-black text-xl italic uppercase tracking-widest clip-path-polygon hover:scale-105 transition-transform disabled:opacity-50 disabled:scale-100"
+                        className="group relative px-8 py-4 bg-primary text-black font-black text-xl italic uppercase tracking-widest clip-path-polygon hover:scale-105 transition-transform disabled:opacity-50 disabled:scale-100 shadow-glow"
                         style={{ clipPath: 'polygon(10% 0, 100% 0, 90% 100%, 0% 100%)' }}
                      >
                         {loading ? (
@@ -83,51 +82,104 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                         )}
                      </button>
                      <p className="mt-4 text-xs text-subtext font-mono">
-                        The AI Judge will analyze volume, PRs, and consistency.
+                        Calculates PRs, Consistency (Points), and Volume.
                      </p>
                 </div>
             ) : (
                 <div className="space-y-8 animate-in slide-in-from-bottom-10 fade-in duration-500">
                     
-                    {/* Verdict Section */}
+                    {/* 1. Verdict Section (Alpha/Beta) */}
                     <div className="grid grid-cols-2 gap-4">
                         <div className="bg-yellow-500/10 border border-yellow-500/30 p-4 rounded-2xl flex flex-col items-center text-center relative overflow-hidden">
                              <div className="absolute top-0 right-0 p-2 opacity-20"><Crown className="w-12 h-12 text-yellow-500" /></div>
                              <span className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest mb-1">ALPHA</span>
-                             <h3 className="text-2xl font-black text-white">{analysis.winner}</h3>
+                             <h3 className="text-xl md:text-2xl font-black text-white truncate w-full">{analysis.winner}</h3>
                         </div>
                         <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-2xl flex flex-col items-center text-center relative overflow-hidden">
                              <div className="absolute top-0 right-0 p-2 opacity-20"><Skull className="w-12 h-12 text-red-500" /></div>
                              <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-1">BETA</span>
-                             <h3 className="text-2xl font-black text-white">{analysis.loser}</h3>
+                             <h3 className="text-xl md:text-2xl font-black text-white truncate w-full">{analysis.loser}</h3>
                         </div>
                     </div>
 
-                    {/* Roast */}
+                    {/* 2. Points & Comparison Table Container */}
+                    <div className="bg-zinc-900/40 border border-white/5 rounded-2xl p-4 md:p-6 space-y-6">
+                        
+                        {/* Points Leaderboard */}
+                        <div>
+                            <h3 className="text-xs font-bold text-subtext uppercase tracking-widest mb-3 flex items-center gap-2">
+                                <Trophy className="w-4 h-4 text-yellow-500" /> Consistency Points
+                            </h3>
+                            <div className="space-y-2">
+                                {analysis.points_table.map((p, i) => (
+                                    <div key={i} className="flex items-center justify-between p-2 rounded bg-black/40 border border-white/5">
+                                        <div className="flex items-center gap-3">
+                                            <span className={`text-xs font-mono w-4 ${i === 0 ? 'text-yellow-500 font-bold' : 'text-zinc-600'}`}>#{i+1}</span>
+                                            <span className="text-sm font-bold text-white">{p.name}</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 bg-white/5 px-2 py-0.5 rounded-full border border-white/5">
+                                            <Flame className="w-3 h-3 text-orange-500" />
+                                            <span className="text-xs font-mono font-bold text-white">{p.points} XP</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Divider */}
+                        <div className="h-px bg-white/5 w-full"></div>
+
+                        {/* Comparison Table */}
+                        <div>
+                            <h3 className="text-xs font-bold text-subtext uppercase tracking-widest mb-3 flex items-center gap-2">
+                                <Sparkles className="w-4 h-4 text-primary" /> Enfrentamientos Clave
+                            </h3>
+                            
+                            {analysis.comparison_table.length === 0 ? (
+                                <div className="text-center py-4 text-xs text-subtext border border-dashed border-white/10 rounded-lg">
+                                    No common exercises found between all participants.
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {analysis.comparison_table.map((row, i) => (
+                                        <div key={i} className="bg-black/40 p-3 rounded-xl border border-white/5 flex flex-col gap-2">
+                                            <div className="text-sm font-bold text-white/90 border-b border-white/5 pb-1 mb-1">
+                                                {row.exercise}
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                {row.results.map((res, j) => {
+                                                    const isWinner = res.userName === row.winnerName;
+                                                    return (
+                                                        <div key={j} className={clsx(
+                                                            "flex justify-between items-center text-xs px-2 py-1.5 rounded",
+                                                            isWinner ? "bg-primary/10 border border-primary/30" : "bg-white/5 border border-transparent"
+                                                        )}>
+                                                            <span className={isWinner ? "text-white font-bold" : "text-zinc-400"}>
+                                                                {res.userName}
+                                                            </span>
+                                                            <span className={clsx(
+                                                                "font-mono font-bold",
+                                                                isWinner ? "text-primary" : "text-zinc-500"
+                                                            )}>
+                                                                {res.weight}kg
+                                                            </span>
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* 3. Roast Section */}
                     <div className="bg-surfaceHighlight/30 p-6 rounded-2xl border border-white/5 relative">
                         <QuoteIcon className="absolute top-4 left-4 w-6 h-6 text-primary opacity-20" />
-                        <p className="text-sm text-zinc-300 leading-relaxed italic text-center font-medium">
+                        <p className="text-sm text-zinc-300 leading-relaxed italic text-center font-medium relative z-10 px-4">
                             "{analysis.roast}"
                         </p>
-                    </div>
-
-                    {/* Comparison Table */}
-                    <div>
-                        <h3 className="text-sm font-bold text-white uppercase tracking-widest mb-3 flex items-center gap-2">
-                            <Sparkles className="w-4 h-4 text-primary" /> Key Matchups
-                        </h3>
-                        <div className="space-y-2">
-                            {analysis.comparison_table.map((row, i) => (
-                                <div key={i} className="bg-black/40 p-3 rounded-xl border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                    <span className="text-sm font-bold text-primary">{row.exercise}</span>
-                                    <div className="flex gap-3 text-xs text-zinc-400 font-mono">
-                                        {row.details.map((d, j) => (
-                                            <span key={j} className="bg-white/5 px-2 py-1 rounded">{d}</span>
-                                        ))}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
                     </div>
 
                 </div>

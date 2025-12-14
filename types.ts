@@ -65,12 +65,16 @@ export interface Friend {
   color?: string; // UI Color assignment
 }
 
+export interface ComparisonRow {
+  exercise: string;
+  results: { userName: string; weight: number }[];
+  winnerName: string;
+}
+
 export interface GroupAnalysisData {
-  winner: string;
-  loser: string;
-  roast: string;
-  comparison_table: {
-      exercise: string;
-      details: string[];
-  }[];
+  winner: string; // From AI judgment
+  loser: string; // From AI judgment
+  roast: string; // From AI
+  comparison_table: ComparisonRow[]; // Calculated Locally
+  points_table: { name: string; points: number }[]; // Calculated Locally
 }

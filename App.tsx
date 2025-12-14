@@ -1,21 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { CalendarView } from './components/CalendarView';
 import { AudioRecorder } from './components/AudioRecorder';
-import { ManualEntryModal } from './components/ManualEntryModal';
-import { PRModal } from './components/PRModal';
-import { CreatePlanModal } from './components/CreatePlanModal';
-import { EditExerciseModal } from './components/EditExerciseModal';
-import { LoginScreen } from './components/LoginScreen';
-import { AdminDashboard } from './components/AdminDashboard';
-import { ProfileModal } from './components/ProfileModal';
 import { RestTimer } from './components/RestTimer';
-import { MonthlySummaryModal } from './components/MonthlySummaryModal';
-import { SocialModal } from './components/SocialModal';
-import { ArenaModal } from './components/ArenaModal';
+import { LoginScreen } from './components/LoginScreen';
 import { Workout, WorkoutData, WorkoutPlan, Exercise, User, UserRole } from './types';
-import { supabase, getCurrentProfile, getFriendWorkouts } from './services/supabase';
+import { supabase, getCurrentProfile, getFriendWorkouts, getPendingRequestsCount } from './services/supabase';
 import { format, isSameDay, isFuture } from 'date-fns';
-import { es, enUS } from 'date-fns/locale';
+import es from 'date-fns/locale/es';
+import enUS from 'date-fns/locale/en-US';
 import { getExerciseIcon, AppLogo } from './utils';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { 
@@ -30,13 +22,33 @@ import {
   Activity,
   Keyboard,
   Dumbbell,
-  Sun,
-  Moon,
   Gauge,
   Users,
-  Swords
+  Swords,
+  X,
+  Loader2
 } from 'lucide-react';
 import { clsx } from 'clsx';
+
+// --- LAZY LOADED COMPONENTS (Code Splitting) ---
+// Reduces initial bundle size by loading heavy components only when needed
+const AdminDashboard = lazy(() => import('./components/AdminDashboard').then(module => ({ default: module.AdminDashboard })));
+const ManualEntryModal = lazy(() => import('./components/ManualEntryModal').then(module => ({ default: module.ManualEntryModal })));
+const PRModal = lazy(() => import('./components/PRModal').then(module => ({ default: module.PRModal })));
+const CreatePlanModal = lazy(() => import('./components/CreatePlanModal').then(module => ({ default: module.CreatePlanModal })));
+const EditExerciseModal = lazy(() => import('./components/EditExerciseModal').then(module => ({ default: module.EditExerciseModal })));
+const ProfileModal = lazy(() => import('./components/ProfileModal').then(module => ({ default: module.ProfileModal })));
+const MonthlySummaryModal = lazy(() => import('./components/MonthlySummaryModal').then(module => ({ default: module.MonthlySummaryModal })));
+const SocialModal = lazy(() => import('./components/SocialModal').then(module => ({ default: module.SocialModal })));
+const ArenaModal = lazy(() => import('./components/ArenaModal').then(module => ({ default: module.ArenaModal })));
+
+// Helper for consistent date parsing (forces Local Time instead of UTC)
+const parseLocalDate = (dateStr: string) => {
+    if (!dateStr) return new Date();
+    // Appends T00:00:00 to force local time interpretation in most browsers
+    // preventing the "day before" bug due to timezone shifts.
+    return new Date(dateStr.includes('T') ? dateStr : `${dateStr}T00:00:00`);
+};
 
 // Wrapper to provide Context to the App Component
 export default function AppWrapper() {
@@ -63,10 +75,13 @@ function App() {
   const [plans, setPlans] = useState<WorkoutPlan[]>([]);
   
   // --- SOCIAL STATE ---
-  const [activeFriends, setActiveFriends] = useState<{ userId: string; color: string; }[]>([]);
+  // Updated to store name
+  const [activeFriends, setActiveFriends] = useState<{ userId: string; name: string; color: string; }[]>([]);
   const [friendsWorkouts, setFriendsWorkouts] = useState<{ userId: string; workouts: Workout[] }[]>([]);
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
 
   // --- THEME STATE ---
+  // Default to Dark Mode as per design request
   const [isDark, setIsDark] = useState(() => {
     if (typeof window !== 'undefined') {
       return document.documentElement.classList.contains('dark');
@@ -169,11 +184,18 @@ function App() {
   useEffect(() => {
     if (currentUser) {
         fetchData();
+        checkPendingRequests();
         if (currentUser.role === 'admin' || (realAdminUser?.role === 'admin')) {
             fetchAdminData();
         }
     }
   }, [currentUser, realAdminUser]);
+
+  const checkPendingRequests = async () => {
+      if (!currentUser) return;
+      const count = await getPendingRequestsCount();
+      setPendingRequestsCount(count);
+  };
 
   const fetchAdminData = async () => {
       const { data: profiles } = await supabase.from('profiles').select('*');
@@ -206,22 +228,26 @@ function App() {
   };
 
   // --- SOCIAL LOGIC ---
-  const handleToggleFriend = async (friendId: string, color: string) => {
+  const handleToggleFriend = async (friendId: string, friendName: string, color: string) => {
     // Check if already active
     const isActive = activeFriends.find(f => f.userId === friendId);
     
     if (isActive) {
         // Remove
         setActiveFriends(prev => prev.filter(f => f.userId !== friendId));
-        // We can keep the workout data cached, no need to clear it strictly
     } else {
         // Add
-        setActiveFriends(prev => [...prev, { userId: friendId, color }]);
-        // Fetch data if not already present
-        if (!friendsWorkouts.find(fw => fw.userId === friendId)) {
-            const wData = await getFriendWorkouts([friendId]);
-            setFriendsWorkouts(prev => [...prev, { userId: friendId, workouts: wData }]);
-        }
+        // Fetch data immediately
+        const wData = await getFriendWorkouts([friendId]);
+        
+        // Update state
+        setFriendsWorkouts(prev => {
+            // Remove old data for this user if exists to avoid dupes
+            const filtered = prev.filter(p => p.userId !== friendId);
+            return [...filtered, { userId: friendId, workouts: wData }];
+        });
+        
+        setActiveFriends(prev => [...prev, { userId: friendId, name: friendName, color }]);
     }
   };
 
@@ -232,19 +258,13 @@ function App() {
       workouts: friendsWorkouts.find(fw => fw.userId === f.userId)?.workouts || []
   }));
 
-  // Prepare data for Arena (Include current user as "Me")
+  // Prepare data for Arena (Include current user with REAL NAME)
   const arenaParticipants = [
-      { userId: currentUser?.id || 'me', name: 'Me', workouts: workouts, color: '#D4FF00' },
+      { userId: currentUser?.id || 'me', name: currentUser?.name || 'Me', workouts: workouts, color: '#D4FF00' },
       ...activeFriends.map(f => {
-          // We need names here. For now, since `SocialModal` fetches names locally, 
-          // we might need to store names in activeFriends or fetch from `friendsWorkouts` if we stored it there.
-          // Simplification: We'll assume the Arena Modal might re-fetch or we pass minimal data.
-          // Better: Pass `friendsWorkouts` and let Arena figure it out, but Arena needs names.
-          // Let's rely on ArenaModal fetching names or passing them from SocialModal selection?
-          // FIX: Let's store name in activeFriends for simplicity.
           return {
               userId: f.userId,
-              name: `Friend ${f.userId.substring(0,4)}`, // Fallback, real implementation should pass name
+              name: f.name, // Now using the correct name stored in state
               workouts: friendsWorkouts.find(fw => fw.userId === f.userId)?.workouts || [],
               color: f.color
           };
@@ -307,9 +327,10 @@ function App() {
 
     setWorkouts(prev => prev.map(w => w.id === tempId ? (inserted as Workout) : w));
 
-    if (!isSameDay(selectedDate, new Date(dateToSave + 'T00:00:00'))) {
-        setSelectedDate(new Date(dateToSave + 'T00:00:00'));
-        setViewDate(new Date(dateToSave + 'T00:00:00'));
+    if (!isSameDay(selectedDate, parseLocalDate(dateToSave))) {
+        const newDate = parseLocalDate(dateToSave);
+        setSelectedDate(newDate);
+        setViewDate(newDate);
     }
   };
 
@@ -406,15 +427,21 @@ function App() {
 
   if (!currentUser) return <LoginScreen />;
 
+  // Lazy load Admin Dashboard
   if (currentUser.role === 'admin' && !realAdminUser) {
-      return <AdminDashboard currentUser={currentUser} allUsers={allUsers} allWorkouts={allWorkouts} onImpersonate={handleImpersonate} onLogout={handleLogout} />;
+      return (
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>}>
+           <AdminDashboard currentUser={currentUser} allUsers={allUsers} allWorkouts={allWorkouts} onImpersonate={handleImpersonate} onLogout={handleLogout} />
+        </Suspense>
+      );
   }
 
-  const selectedWorkouts = workouts.filter(w => isSameDay(new Date(w.date + 'T00:00:00'), selectedDate));
+  // Use parseLocalDate to avoid UTC mismatches
+  const selectedWorkouts = workouts.filter(w => isSameDay(parseLocalDate(w.date), selectedDate));
   
   // Also get selected friends workouts for this day
   const friendsSelectedWorkouts = calendarFriendsData.flatMap(fd => {
-      const daysWorkouts = fd.workouts.filter(w => isSameDay(new Date(w.date), selectedDate));
+      const daysWorkouts = fd.workouts.filter(w => isSameDay(parseLocalDate(w.date), selectedDate));
       return daysWorkouts.map(w => ({ ...w, _friendColor: fd.color, _friendId: fd.userId }));
   });
 
@@ -457,8 +484,11 @@ function App() {
                 className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surfaceHighlight transition-colors text-subtext hover:text-blue-400 relative"
               >
                 <Users className="w-5 h-5" />
-                {activeFriends.length > 0 && (
-                    <span className="absolute top-1 right-1 w-2 h-2 bg-blue-400 rounded-full"></span>
+                {/* Pending Request Indicator (Red) has priority */}
+                {pendingRequestsCount > 0 ? (
+                     <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-surface"></span>
+                ) : activeFriends.length > 0 && (
+                     <span className="absolute top-1 right-1 w-2 h-2 bg-blue-400 rounded-full"></span>
                 )}
               </button>
 
@@ -489,6 +519,33 @@ function App() {
         
         {/* CALENDAR */}
         <section>
+          {/* Active Participants Strip */}
+          <div className="flex items-center gap-2 mb-2 px-1 overflow-x-auto no-scrollbar">
+             {/* Me */}
+             <div className="flex items-center gap-1.5 bg-primary/10 border border-primary/30 px-2 py-1 rounded-full shrink-0">
+                <div className="w-5 h-5 rounded-full bg-primary text-black text-[10px] flex items-center justify-center font-bold">
+                   {currentUser.name.charAt(0).toUpperCase()}
+                </div>
+                <span className="text-xs font-bold text-primary">Me</span>
+             </div>
+
+             {/* Friends */}
+             {activeFriends.map(friend => (
+                 <div key={friend.userId} className="flex items-center gap-1.5 bg-surfaceHighlight border px-2 py-1 rounded-full shrink-0 animate-in fade-in zoom-in" style={{ borderColor: `${friend.color}50` }}>
+                     <div className="w-5 h-5 rounded-full text-[10px] flex items-center justify-center font-bold shadow-sm" style={{ backgroundColor: friend.color, color: '#000' }}>
+                         {friend.name.charAt(0).toUpperCase()}
+                     </div>
+                     <span className="text-xs font-bold" style={{ color: friend.color }}>{friend.name}</span>
+                     <button 
+                        onClick={() => handleToggleFriend(friend.userId, friend.name, friend.color)}
+                        className="ml-1 text-subtext hover:text-white"
+                     >
+                         <X className="w-3 h-3" />
+                     </button>
+                 </div>
+             ))}
+          </div>
+
           <CalendarView 
             viewDate={viewDate}
             onViewDateChange={setViewDate}
@@ -567,16 +624,28 @@ function App() {
                           <p className="text-[9px] text-subtext font-medium">{plan.exercises.length} Items</p>
                         </div>
                         
-                        <div className="flex items-center gap-2 pt-2 border-t border-border mt-auto">
+                        {/* UPDATE: Buttons Logic (Edit - Add - Delete) */}
+                        <div className="flex items-center justify-between pt-2 border-t border-border mt-auto gap-1">
+                            {/* Edit */}
                             <button 
                                onClick={(e) => { e.stopPropagation(); setEditingPlan(plan); setShowCreatePlan(true); }}
-                               className="p-1 rounded hover:bg-surface text-subtext hover:text-text transition-colors"
+                               className="p-1.5 rounded hover:bg-surface text-subtext hover:text-text transition-colors"
                             >
                                <Pencil className="w-3 h-3" />
                             </button>
+                            
+                            {/* Add/Run Button */}
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); handleApplyPlan(plan); }}
+                                className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-black hover:bg-primaryHover hover:scale-110 transition-all shadow-sm"
+                            >
+                                <Plus className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Delete */}
                             <button 
                                onClick={(e) => { e.stopPropagation(); setDeletePlanConfirmation({ planId: plan.id, planName: plan.name }); }}
-                               className="p-1 rounded hover:bg-surface text-subtext hover:text-danger transition-colors ml-auto"
+                               className="p-1.5 rounded hover:bg-surface text-subtext hover:text-danger transition-colors"
                             >
                                <Trash2 className="w-3 h-3" />
                             </button>
@@ -792,34 +861,39 @@ function App() {
         </div>
       )}
       
-      {/* MODALS */}
-      <ManualEntryModal isOpen={showManualEntry} onClose={() => setShowManualEntry(false)} onWorkoutProcessed={handleWorkoutProcessed} />
-      <PRModal isOpen={showPRModal} onClose={() => setShowPRModal(false)} workouts={workouts} initialExercise={selectedHistoryExercise} />
-      <MonthlySummaryModal isOpen={showMonthlySummary} onClose={() => setShowMonthlySummary(false)} viewDate={viewDate} workouts={workouts} />
-      <CreatePlanModal isOpen={showCreatePlan} onClose={() => setShowCreatePlan(false)} onSave={handleSavePlan} initialPlan={editingPlan} />
-      {currentUser && <ProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} user={currentUser} workouts={workouts} onUpdateUser={handleUpdateUser} onLogout={handleLogout} />}
-      {editingExercise && <EditExerciseModal isOpen={!!editingExercise} onClose={() => setEditingExercise(null)} exercise={editingExercise.data} onSave={executeEdit} />}
-      
-      {/* SOCIAL MODALS */}
-      {currentUser && (
-          <>
+      {/* MODALS - Wrapped in Suspense for Lazy Loading */}
+      <Suspense fallback={null}>
+        {showManualEntry && <ManualEntryModal isOpen={showManualEntry} onClose={() => setShowManualEntry(false)} onWorkoutProcessed={handleWorkoutProcessed} />}
+        {showPRModal && <PRModal isOpen={showPRModal} onClose={() => setShowPRModal(false)} workouts={workouts} initialExercise={selectedHistoryExercise} />}
+        {showMonthlySummary && <MonthlySummaryModal isOpen={showMonthlySummary} onClose={() => setShowMonthlySummary(false)} viewDate={viewDate} workouts={workouts} />}
+        {showCreatePlan && <CreatePlanModal isOpen={showCreatePlan} onClose={() => setShowCreatePlan(false)} onSave={handleSavePlan} initialPlan={editingPlan} />}
+        {currentUser && showProfileModal && <ProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} user={currentUser} workouts={workouts} onUpdateUser={handleUpdateUser} onLogout={handleLogout} />}
+        {editingExercise && <EditExerciseModal isOpen={!!editingExercise} onClose={() => setEditingExercise(null)} exercise={editingExercise.data} onSave={executeEdit} />}
+        
+        {/* SOCIAL MODALS */}
+        {currentUser && showSocialModal && (
             <SocialModal 
                 isOpen={showSocialModal} 
-                onClose={() => setShowSocialModal(false)} 
+                onClose={() => {
+                    setShowSocialModal(false);
+                    checkPendingRequests(); // Refresh requests count on close
+                }} 
                 currentUser={currentUser} 
                 activeFriends={activeFriends.map(f => f.userId)}
                 onToggleFriend={handleToggleFriend}
             />
+        )}
+        {currentUser && showArenaModal && (
             <ArenaModal 
                 isOpen={showArenaModal} 
                 onClose={() => setShowArenaModal(false)} 
                 currentUser={currentUser}
                 friendsData={arenaParticipants}
             />
-          </>
-      )}
+        )}
+      </Suspense>
 
-      {/* CONFIRMATION DIALOGS (Styled Modern) */}
+      {/* CONFIRMATION DIALOGS (Styled Modern) - Keep static as they are lightweight */}
       {[deleteConfirmation, deleteWorkoutConfirmation, deletePlanConfirmation].map((conf, i) => {
          if (!conf) return null;
          const title = deleteConfirmation ? t('delete_exercise_title') : deletePlanConfirmation ? t('delete_plan_title') : t('delete_workout_title');

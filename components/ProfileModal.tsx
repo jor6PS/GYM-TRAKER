@@ -14,7 +14,8 @@ import {
   Lock,
   Activity,
   Trophy,
-  Flame
+  Flame,
+  Star
 } from 'lucide-react';
 import { User as UserType, Workout } from '../types';
 import { uploadAvatar, updateUserProfile, updateUserPassword } from '../services/supabase';
@@ -56,7 +57,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth(); // 0-indexed
 
-    let total = uniqueDates.length;
+    let total = uniqueDates.length; // THIS IS THE "POINTS" / XP
     let year = 0;
     let month = 0;
 
@@ -211,6 +212,12 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                     <span className="text-xs font-mono text-zinc-500">
                         {t('joined')} {format(new Date(user.created_at), 'MMM yyyy')}
                     </span>
+                </div>
+                
+                {/* Level / Points Badge */}
+                <div className="mt-4 flex items-center gap-2 bg-gradient-to-r from-yellow-500/10 to-orange-500/10 px-4 py-1.5 rounded-full border border-yellow-500/20">
+                     <Star className="w-4 h-4 text-yellow-500 fill-current" />
+                     <span className="text-sm font-bold text-yellow-500">{stats.total} Points (XP)</span>
                 </div>
             </div>
 

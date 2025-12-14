@@ -143,21 +143,34 @@ export const searchUsers = async (term: string) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
 
-    // Try to use RPC if available for secure search
-    const { data, error } = await supabase.rpc('search_users', { 
-        search_term: term,
-        current_user_id: user.id 
-    });
+    try {
+        // Try to use RPC if available for secure search
+        const { data, error } = await supabase.rpc('search_users', { 
+            search_term: term,
+            current_user_id: user.id 
+        });
 
-    if (!error && data) return data;
+        if (!error && data) return data;
+        
+        if (error) {
+            console.warn("RPC search_users failed (function might not exist), falling back to simple select.", error);
+        }
+    } catch (e) {
+        console.warn("RPC call failed", e);
+    }
 
     // Fallback: Direct select (requires RLS to allow reading basic profile info)
-    const { data: fallbackData } = await supabase
+    const { data: fallbackData, error: fallbackError } = await supabase
         .from('profiles')
         .select('id, name, avatar_url')
         .or(`email.ilike.%${term}%,name.ilike.%${term}%`)
         .neq('id', user.id)
         .limit(5);
+
+    if (fallbackError) {
+        console.error("User search failed. Check RLS policies on 'profiles' table.", fallbackError);
+        return [];
+    }
 
     return fallbackData || [];
 };
@@ -167,11 +180,18 @@ export const sendFriendRequest = async (friendId: string) => {
     if (!user) throw new Error("Not logged in");
 
     // Check if exists
-    const { data: existing } = await supabase
+    const { data: existing, error: selectError } = await supabase
         .from('friendships')
         .select('*')
         .or(`and(user_id.eq.${user.id},friend_id.eq.${friendId}),and(user_id.eq.${friendId},friend_id.eq.${user.id})`)
         .single();
+
+    if (selectError && selectError.code !== 'PGRST116') { // PGRST116 is 'Row not found', which is fine here
+        if (selectError.code === '42P01') {
+             throw new Error("Database Error: Table 'friendships' missing. Please run the SQL setup script.");
+        }
+        throw selectError;
+    }
 
     if (existing) {
         if (existing.status === 'pending') throw new Error("Request already pending.");
@@ -182,7 +202,12 @@ export const sendFriendRequest = async (friendId: string) => {
         .from('friendships')
         .insert({ user_id: user.id, friend_id: friendId, status: 'pending' });
 
-    if (error) throw error;
+    if (error) {
+        if (error.code === '42P01') {
+             throw new Error("Database Error: Table 'friendships' missing. Please run the SQL setup script.");
+        }
+        throw error;
+    }
     return true;
 };
 
@@ -200,7 +225,12 @@ export const getFriendships = async (): Promise<Friend[]> => {
         `)
         .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`);
 
-    if (error || !data) return [];
+    if (error) {
+        console.error("Error fetching friends:", error);
+        return [];
+    }
+    
+    if (!data) return [];
 
     // Fetch details for the *other* person
     const friendPromises = data.map(async (f: any) => {
@@ -224,6 +254,20 @@ export const getFriendships = async (): Promise<Friend[]> => {
     });
 
     return Promise.all(friendPromises);
+};
+
+export const getPendingRequestsCount = async (): Promise<number> => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return 0;
+    
+    const { count, error } = await supabase
+        .from('friendships')
+        .select('*', { count: 'exact', head: true })
+        .eq('friend_id', user.id)
+        .eq('status', 'pending');
+    
+    if (error) return 0;
+    return count || 0;
 };
 
 export const respondToRequest = async (friendshipId: string, status: 'accepted' | 'rejected') => {

@@ -71,7 +71,7 @@ const translations = {
     delete_plan_desc: "La rutina se perderá para siempre.",
     
     // Modals
-    input_log: "Introducir Registro",
+    input_log: "Introducir Actividad",
     placeholder_log: "> Iniciar log: 3 series de press banca 80kg...",
     submit_log: "Enviar_Log",
     abort: "Abortar",

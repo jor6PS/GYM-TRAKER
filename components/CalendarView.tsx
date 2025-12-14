@@ -8,7 +8,10 @@ import {
   endOfWeek,
   addMonths
 } from 'date-fns';
-import { es, enUS } from 'date-fns/locale';
+import startOfWeek from 'date-fns/startOfWeek';
+import startOfMonth from 'date-fns/startOfMonth';
+import es from 'date-fns/locale/es';
+import enUS from 'date-fns/locale/en-US';
 import { clsx } from 'clsx';
 import { ChevronLeft, ChevronRight, RotateCcw, Sparkles } from 'lucide-react';
 import { Workout } from '../types';
@@ -24,18 +27,13 @@ interface CalendarViewProps {
   onSummaryClick: () => void;
 }
 
-const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']; 
+// Updated to start on Monday (M, T, W, T, F, S, S)
+const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; 
 
-const startOfMonth = (date: Date) => {
-  const d = new Date(date);
-  d.setDate(1); d.setHours(0, 0, 0, 0); return d;
-};
-
-const startOfWeek = (date: Date) => {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day;
-  d.setDate(diff); d.setHours(0, 0, 0, 0); return d;
+// Helper for consistent date parsing (duplicated from App.tsx for independence)
+const parseLocalDate = (dateStr: string) => {
+    if (!dateStr) return new Date();
+    return new Date(dateStr.includes('T') ? dateStr : `${dateStr}T00:00:00`);
 };
 
 export const CalendarView: React.FC<CalendarViewProps> = ({ 
@@ -52,8 +50,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   const monthStart = startOfMonth(viewDate);
   const monthEnd = endOfMonth(monthStart);
-  const startDate = startOfWeek(monthStart);
-  const endDate = endOfWeek(monthEnd);
+  
+  // Force week to start on Monday (1)
+  const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
+  const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
 
   const calendarDays = eachDayOfInterval({ start: startDate, end: endDate });
 
@@ -62,7 +62,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   
   const isCurrentMonth = isSameMonth(viewDate, new Date());
   
-  const workoutsInMonth = workouts.filter(w => isSameMonth(new Date(w.date), viewDate));
+  const workoutsInMonth = workouts.filter(w => isSameMonth(parseLocalDate(w.date), viewDate));
   const hasEnoughData = workoutsInMonth.length > 0;
 
   return (
@@ -111,8 +111,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       <div className="p-4">
         {/* Weekday Headers */}
         <div className="grid grid-cols-7 mb-2">
-          {WEEKDAYS.map((day) => (
-            <div key={day} className="text-center text-[10px] font-bold text-subtext">
+          {WEEKDAYS.map((day, i) => (
+            <div key={i} className="text-center text-[10px] font-bold text-subtext opacity-70">
               {day}
             </div>
           ))}
@@ -121,14 +121,15 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         {/* Days Grid */}
         <div className="grid grid-cols-7 gap-y-2 gap-x-1">
           {calendarDays.map((day) => {
-            const hasMyWorkout = workouts.some(w => isSameDay(new Date(w.date), day));
+            // Fix: Use parseLocalDate to ensure we match days correctly
+            const hasMyWorkout = workouts.some(w => isSameDay(parseLocalDate(w.date), day));
             const isSelected = isSameDay(day, selectedDate);
             const isMonthDay = isSameMonth(day, monthStart);
             const isToday = isSameDay(day, new Date());
 
             // Check friends workouts
             const friendDots = selectedFriendsWorkouts
-                .filter(fw => fw.workouts.some(w => isSameDay(new Date(w.date), day)))
+                .filter(fw => fw.workouts.some(w => isSameDay(parseLocalDate(w.date), day)))
                 .map(fw => fw.color);
 
             return (
@@ -139,20 +140,33 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   if (!isMonthDay) onViewDateChange(day);
                 }}
                 className={clsx(
-                  'relative h-11 w-full flex flex-col items-center justify-start pt-1 rounded-xl transition-all duration-300',
-                  !isMonthDay && 'opacity-20',
+                  'relative h-11 w-full flex flex-col items-center justify-start pt-1 rounded-xl transition-all duration-300 border box-border',
+                  
+                  // Visibility for days outside month
+                  !isMonthDay ? 'opacity-20 border-transparent' : '',
+                  
+                  // Selected State (High Priority)
                   isSelected 
-                    ? 'bg-surfaceHighlight border border-primary/50 scale-105 shadow-glow' 
-                    : 'hover:bg-surfaceHighlight',
-                  isToday && !isSelected && 'ring-1 ring-border bg-surfaceHighlight/30'
+                    ? 'bg-surfaceHighlight border-primary/50 scale-105 shadow-glow z-10' 
+                    : isToday 
+                        // Today State (Thin solid border, NO fill)
+                        ? 'border-text/30 border-solid' 
+                        // Default border
+                        : 'border-transparent',
+                  
+                  // Hover State (Only if not selected)
+                  !isSelected && 'hover:bg-surfaceHighlight'
                 )}
               >
-                <span className={clsx("text-xs font-bold mb-1", isSelected ? "text-primary" : "text-subtext")}>
+                <span className={clsx(
+                    "text-xs font-bold mb-1 transition-colors", 
+                    isSelected ? "text-primary" : "text-subtext"
+                )}>
                     {format(day, 'd')}
                 </span>
                 
                 {/* Dots Container - Multiplayer */}
-                <div className="flex gap-1 justify-center flex-wrap px-1 w-full">
+                <div className="flex gap-0.5 justify-center flex-wrap px-0.5 w-full absolute bottom-1 max-w-[90%]">
                     {/* My Dot */}
                     {hasMyWorkout && (
                         <div className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_5px_#D4FF00]"></div>
@@ -160,7 +174,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     
                     {/* Friends Dots */}
                     {friendDots.map((color, i) => (
-                        <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color, boxShadow: `0 0 5px ${color}` }}></div>
+                        <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color, boxShadow: `0 0 4px ${color}` }}></div>
                     ))}
                 </div>
               </button>

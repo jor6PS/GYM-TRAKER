@@ -2,8 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { X, Sparkles, Loader2, Calendar, Dumbbell, TrendingUp, Quote } from 'lucide-react';
 import { Workout } from '../types';
 import { generateMonthlyReport, MonthlyReportData } from '../services/workoutProcessor';
-import { startOfMonth, endOfMonth, subMonths, isWithinInterval, format } from 'date-fns';
-import { es, enUS } from 'date-fns/locale';
+import { endOfMonth, isWithinInterval, format } from 'date-fns';
+import startOfMonth from 'date-fns/startOfMonth';
+import subMonths from 'date-fns/subMonths';
+import es from 'date-fns/locale/es';
+import enUS from 'date-fns/locale/en-US';
 import { useLanguage } from '../contexts/LanguageContext';
 
 interface MonthlySummaryModalProps {
