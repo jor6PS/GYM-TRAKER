@@ -46,7 +46,7 @@ const translations = {
     tap_mic: "Toca el micro para empezar.",
     sets: "SERIES",
     vol: "VOL",
-    manual: "MANUAL",
+    manual: "AI TEXTO",
     listening: "ESCUCHANDO...",
     processing: "PROCESANDO...",
     
@@ -76,6 +76,17 @@ const translations = {
     submit_log: "Enviar_Log",
     abort: "Abortar",
     
+    // Manual Structured Entry (New)
+    manual_entry: "Registro Manual",
+    search_exercise: "Buscar Ejercicio...",
+    add_custom: "Añadir Personalizado",
+    add_set: "Añadir Serie",
+    confirm_exercise: "Confirmar Ejercicio",
+    finish_workout: "Finalizar Entreno",
+    no_exercises_added: "No has añadido ejercicios aún.",
+    start_adding_below: "Usa el buscador para empezar.",
+    notes_placeholder: "Notas generales (energía, molestias...)",
+    
     // Profile
     profile: "Perfil",
     joined: "Miembro desde",
@@ -99,7 +110,7 @@ const translations = {
     opponents: "Oponentes",
     judge_me: "GO!",
     arena_title: "LA ARENA",
-    gladiators_ready: "Gladiadores Listos",
+    gladiators_ready: "Gladiators Listos",
     fight: "¡PELEA!",
     judging: "JUZGANDO...",
     alpha: "ALFA",
@@ -151,7 +162,7 @@ const translations = {
     tap_mic: "Tap the mic below to start.",
     sets: "SETS",
     vol: "VOL",
-    manual: "MANUAL",
+    manual: "AI TEXT",
     listening: "LISTENING...",
     processing: "PROCESSING...",
     
@@ -180,6 +191,17 @@ const translations = {
     placeholder_log: "> Initialize log: 3 sets of bench press 80kg...",
     submit_log: "Submit_Log",
     abort: "Abort",
+
+    // Manual Structured Entry (New)
+    manual_entry: "Manual Entry",
+    search_exercise: "Search Exercise...",
+    add_custom: "Add Custom",
+    add_set: "Add Set",
+    confirm_exercise: "Confirm Exercise",
+    finish_workout: "Finish Workout",
+    no_exercises_added: "No exercises added yet.",
+    start_adding_below: "Use search to start adding.",
+    notes_placeholder: "General notes (energy, pain, etc...)",
     
     // Profile
     profile: "Profile",

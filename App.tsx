@@ -28,13 +28,16 @@ import {
   Swords,
   X,
   Loader2,
-  Settings
+  Settings,
+  Sparkles,
+  ListPlus
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
 // --- LAZY LOADED COMPONENTS (Code Splitting) ---
 const AdminDashboard = lazy(() => import('./components/AdminDashboard').then(module => ({ default: module.AdminDashboard })));
 const ManualEntryModal = lazy(() => import('./components/ManualEntryModal').then(module => ({ default: module.ManualEntryModal })));
+const StructuredEntryModal = lazy(() => import('./components/StructuredEntryModal').then(module => ({ default: module.StructuredEntryModal }))); // NEW
 const PRModal = lazy(() => import('./components/PRModal').then(module => ({ default: module.PRModal })));
 const CreatePlanModal = lazy(() => import('./components/CreatePlanModal').then(module => ({ default: module.CreatePlanModal })));
 const EditExerciseModal = lazy(() => import('./components/EditExerciseModal').then(module => ({ default: module.EditExerciseModal })));
@@ -115,6 +118,7 @@ function App() {
   
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [showManualEntry, setShowManualEntry] = useState(false);
+  const [showStructuredEntry, setShowStructuredEntry] = useState(false); // NEW STATE
   const [showPRModal, setShowPRModal] = useState(false);
   const [showCreatePlan, setShowCreatePlan] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -876,15 +880,26 @@ function App() {
           {/* Glass Dock */}
           <div className="pointer-events-auto bg-surfaceHighlight/80 backdrop-blur-xl border border-border rounded-full p-2 pl-4 pr-2 shadow-[0_0_50px_rgba(0,0,0,0.5)] flex items-center gap-4 transition-transform hover:scale-105 duration-300">
             
-            {/* Manual Button (Left) */}
+            {/* Structured Entry (List/Plus Icon) */}
+            <button
+              onClick={() => setShowStructuredEntry(true)}
+              className="flex items-center gap-2 text-subtext hover:text-text transition-colors group"
+              title="Manual Structured Entry"
+            >
+              <div className="p-2 rounded-full bg-surface group-hover:bg-surfaceHighlight border border-border transition-colors group-hover:border-primary/50">
+                <ListPlus className="w-5 h-5 group-hover:text-primary transition-colors" />
+              </div>
+            </button>
+
+            {/* AI Text Entry (Keyboard) */}
             <button
               onClick={() => setShowManualEntry(true)}
               className="flex items-center gap-2 text-subtext hover:text-text transition-colors group"
+              title="AI Text Entry"
             >
               <div className="p-2 rounded-full bg-surface group-hover:bg-surfaceHighlight border border-border transition-colors">
                 <Keyboard className="w-5 h-5" />
               </div>
-              <span className="text-xs font-bold hidden sm:block">{t('manual')}</span>
             </button>
             
             {/* Divider */}
@@ -908,6 +923,7 @@ function App() {
       {/* MODALS - Wrapped in Suspense for Lazy Loading */}
       <Suspense fallback={null}>
         {showManualEntry && <ManualEntryModal isOpen={showManualEntry} onClose={() => setShowManualEntry(false)} onWorkoutProcessed={handleWorkoutProcessed} />}
+        {showStructuredEntry && <StructuredEntryModal isOpen={showStructuredEntry} onClose={() => setShowStructuredEntry(false)} onWorkoutProcessed={handleWorkoutProcessed} />}
         {showPRModal && <PRModal isOpen={showPRModal} onClose={() => setShowPRModal(false)} workouts={workouts} initialExercise={selectedHistoryExercise} />}
         {showMonthlySummary && <MonthlySummaryModal isOpen={showMonthlySummary} onClose={() => setShowMonthlySummary(false)} viewDate={viewDate} workouts={workouts} />}
         {showCreatePlan && <CreatePlanModal isOpen={showCreatePlan} onClose={() => setShowCreatePlan(false)} onSave={handleSavePlan} initialPlan={editingPlan} />}
