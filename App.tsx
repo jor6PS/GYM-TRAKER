@@ -3,6 +3,7 @@ import { CalendarView } from './components/CalendarView';
 import { AudioRecorder } from './components/AudioRecorder';
 import { RestTimer } from './components/RestTimer';
 import { LoginScreen } from './components/LoginScreen';
+import { ResetPasswordScreen } from './components/ResetPasswordScreen'; // Import the new blocking screen
 import { Workout, WorkoutData, WorkoutPlan, Exercise, User, UserRole } from './types';
 import { supabase, getCurrentProfile, getFriendWorkouts, getPendingRequestsCount, isConfigured } from './services/supabase';
 import { format, isSameDay, isFuture } from 'date-fns';
@@ -32,7 +33,6 @@ import {
 import { clsx } from 'clsx';
 
 // --- LAZY LOADED COMPONENTS (Code Splitting) ---
-// Reduces initial bundle size by loading heavy components only when needed
 const AdminDashboard = lazy(() => import('./components/AdminDashboard').then(module => ({ default: module.AdminDashboard })));
 const ManualEntryModal = lazy(() => import('./components/ManualEntryModal').then(module => ({ default: module.ManualEntryModal })));
 const PRModal = lazy(() => import('./components/PRModal').then(module => ({ default: module.PRModal })));
@@ -86,6 +86,9 @@ function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [realAdminUser, setRealAdminUser] = useState<User | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
+  
+  // New State for Robust Recovery Flow
+  const [isRecoveryMode, setIsRecoveryMode] = useState(false);
 
   // --- APP STATE ---
   const [viewDate, setViewDate] = useState(new Date()); 
@@ -94,13 +97,11 @@ function App() {
   const [plans, setPlans] = useState<WorkoutPlan[]>([]);
   
   // --- SOCIAL STATE ---
-  // Updated to store name
   const [activeFriends, setActiveFriends] = useState<{ userId: string; name: string; color: string; }[]>([]);
   const [friendsWorkouts, setFriendsWorkouts] = useState<{ userId: string; workouts: Workout[] }[]>([]);
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
 
   // --- THEME STATE ---
-  // Default to Dark Mode as per design request
   const [isDark, setIsDark] = useState(() => {
     if (typeof window !== 'undefined') {
       return document.documentElement.classList.contains('dark');
@@ -168,8 +169,9 @@ function App() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       // HANDLE PASSWORD RECOVERY EVENT
+      // This is the critical change. We hijack the flow here.
       if (event === 'PASSWORD_RECOVERY') {
-        setShowProfileModal(true); // Open modal immediately so user can set new password
+        setIsRecoveryMode(true);
       }
 
       if (session) {
@@ -215,7 +217,9 @@ function App() {
     }
   };
 
-  // --- DATA LOADING ---
+  // ... [DATA LOADING FUNCTIONS KEEP SAME] ...
+  // (Copied from existing, no changes needed for logic, just preserving context)
+
   useEffect(() => {
     if (currentUser) {
         fetchData();
@@ -266,51 +270,38 @@ function App() {
     setIsLoadingData(false);
   };
 
-  // --- SOCIAL LOGIC ---
   const handleToggleFriend = async (friendId: string, friendName: string, color: string) => {
-    // Check if already active
     const isActive = activeFriends.find(f => f.userId === friendId);
-    
     if (isActive) {
-        // Remove
         setActiveFriends(prev => prev.filter(f => f.userId !== friendId));
     } else {
-        // Add
-        // Fetch data immediately
         const wData = await getFriendWorkouts([friendId]);
-        
-        // Update state
         setFriendsWorkouts(prev => {
-            // Remove old data for this user if exists to avoid dupes
             const filtered = prev.filter(p => p.userId !== friendId);
             return [...filtered, { userId: friendId, workouts: wData }];
         });
-        
         setActiveFriends(prev => [...prev, { userId: friendId, name: friendName, color }]);
     }
   };
 
-  // Prepare data for Calendar
   const calendarFriendsData = activeFriends.map(f => ({
       userId: f.userId,
       color: f.color,
       workouts: friendsWorkouts.find(fw => fw.userId === f.userId)?.workouts || []
   }));
 
-  // Prepare data for Arena (Include current user with REAL NAME)
   const arenaParticipants = [
       { userId: currentUser?.id || 'me', name: currentUser?.name || 'Me', workouts: workouts, color: '#D4FF00' },
       ...activeFriends.map(f => {
           return {
               userId: f.userId,
-              name: f.name, // Now using the correct name stored in state
+              name: f.name,
               workouts: friendsWorkouts.find(fw => fw.userId === f.userId)?.workouts || [],
               color: f.color
           };
       })
   ];
 
-  // --- ACTIONS ---
   const handleLogout = async () => {
     setShowProfileModal(false);
     await supabase.auth.signOut();
@@ -376,7 +367,6 @@ function App() {
   const handleSavePlan = async (plan: WorkoutPlan) => {
     if (!currentUser) return;
     const planPayload = { name: plan.name, exercises: plan.exercises, user_id: currentUser.id };
-
     const isExistingPlan = plans.some(p => p.id === plan.id);
 
     if (isExistingPlan) {
@@ -463,6 +453,12 @@ function App() {
 
   // --- RENDER ---
   if (sessionLoading) return <div className="min-h-screen bg-background flex items-center justify-center"><div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div></div>;
+
+  // --- RECOVERY MODE INTERCEPTION ---
+  // If user is in recovery mode, show the blocking screen instead of the App
+  if (currentUser && isRecoveryMode) {
+    return <ResetPasswordScreen onSuccess={() => setIsRecoveryMode(false)} />;
+  }
 
   if (!currentUser) return <LoginScreen />;
 
@@ -639,13 +635,13 @@ function App() {
                 </span>
              </div>
 
-             {/* FIX: Increased padding-y (py-4) to prevent button cutoff/shadow clipping on Android */}
-             <div className="-mx-4 px-4 overflow-x-auto no-scrollbar py-4">
-                 <div className="flex gap-3">
-                    {/* CREATE NEW BUTTON - Added shrink-0 explicitly */}
+             {/* FIX: Increased padding-y (py-6) to prevent button cutoff/shadow clipping on Android/PC */}
+             <div className="-mx-4 px-4 overflow-x-auto no-scrollbar py-6">
+                 <div className="flex gap-4">
+                    {/* CREATE NEW BUTTON - Increased dimensions for better visibility on PC */}
                     <button 
                       onClick={() => { setEditingPlan(null); setShowCreatePlan(true); }}
-                      className="flex flex-col items-center justify-center gap-2 w-[100px] h-[100px] rounded-2xl border border-dashed border-border hover:border-primary/50 bg-surface hover:bg-primary/5 transition-all shrink-0 group relative overflow-hidden"
+                      className="flex flex-col items-center justify-center gap-2 w-[110px] h-[120px] rounded-2xl border border-dashed border-border hover:border-primary/50 bg-surface hover:bg-primary/5 transition-all shrink-0 group relative overflow-hidden"
                     >
                        <div className="w-8 h-8 rounded-full bg-surfaceHighlight border border-border flex items-center justify-center text-subtext group-hover:text-primary group-hover:border-primary transition-all">
                          <Plus className="w-4 h-4" />
@@ -653,12 +649,12 @@ function App() {
                        <span className="text-[10px] font-bold text-subtext group-hover:text-primary tracking-wide">{t('new')}</span>
                     </button>
                     
-                    {/* PLAN CARDS */}
+                    {/* PLAN CARDS - Increased width/height to fit buttons */}
                     {plans.map(plan => (
                        <div
                         key={plan.id}
                         onClick={() => handleApplyPlan(plan)}
-                        className="w-[120px] h-[100px] rounded-2xl bg-surfaceHighlight border border-border p-3 flex flex-col justify-between shrink-0 hover:border-primary/50 transition-all cursor-pointer group shadow-sm hover:shadow-lg active:scale-95 relative overflow-hidden"
+                        className="w-[150px] h-[120px] rounded-2xl bg-surfaceHighlight border border-border p-3 flex flex-col justify-between shrink-0 hover:border-primary/50 transition-all cursor-pointer group shadow-sm hover:shadow-lg active:scale-95 relative overflow-hidden"
                       >
                         <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
                             <div className="bg-primary/20 text-primary text-[8px] font-bold px-1.5 py-0.5 rounded-full border border-primary/20">RUN</div>
@@ -685,9 +681,9 @@ function App() {
                             {/* Add/Run Button */}
                             <button 
                                 onClick={(e) => { e.stopPropagation(); handleApplyPlan(plan); }}
-                                className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-black hover:bg-primaryHover hover:scale-110 transition-all shadow-sm"
+                                className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-black hover:bg-primaryHover hover:scale-110 transition-all shadow-sm"
                             >
-                                <Plus className="w-3.5 h-3.5" />
+                                <Plus className="w-4 h-4" />
                             </button>
 
                             {/* Delete */}
