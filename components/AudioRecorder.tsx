@@ -61,9 +61,12 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onWorkoutProcessed
          selectedType = ''; // Let browser use default
       }
 
+      // OPTIMIZATION: Reduced bitrate to 32kbps. 
+      // This reduces token usage by ~75% compared to 128kbps, helping avoid API limits.
+      // Speech is still perfectly clear for AI at this rate.
       const options = selectedType ? { 
         mimeType: selectedType,
-        audioBitsPerSecond: 128000 // Higher quality for better transcription
+        audioBitsPerSecond: 32000 
       } : undefined;
 
       const mediaRecorder = new MediaRecorder(stream, options);

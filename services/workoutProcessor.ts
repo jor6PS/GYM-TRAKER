@@ -72,13 +72,27 @@ const validateData = (data: any): WorkoutData => {
     return data as WorkoutData;
 };
 
+// Helper for error handling
+const handleAIError = (error: any) => {
+    console.error("AI Error:", error);
+    const msg = error.message || '';
+    
+    if (msg.includes('429') || msg.includes('Quota') || msg.includes('Too Many Requests')) {
+        throw new Error("⚠️ Has superado el límite gratuito de la IA. Por favor, espera un minuto antes de volver a intentar.");
+    }
+    if (error instanceof SyntaxError) {
+        throw new Error("Error de IA: Formato inválido.");
+    }
+    throw error;
+};
+
 export const processWorkoutAudio = async (audioBase64: string, mimeType: string): Promise<WorkoutData> => {
   try {
     const ai = getAIClient();
     
-    // Improved Prompt with Few-Shot examples to be robust but accurate
+    // SWITCHED TO 1.5-FLASH: More quota friendly, high volume model.
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-1.5-flash',
       contents: {
         parts: [
           {
@@ -115,7 +129,7 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
       config: {
         responseMimeType: "application/json",
         responseSchema: WORKOUT_SCHEMA,
-        temperature: 0.1, // Slightly increased from 0 to allow flexible parsing of speech patterns without hallucinating content.
+        temperature: 0.1, 
       }
     });
 
@@ -129,11 +143,8 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
     return validateData(data);
 
   } catch (error: any) {
-    console.error("Error processing workout audio:", error);
-    if (error instanceof SyntaxError) {
-        throw new Error("Error de IA: Formato inválido.");
-    }
-    throw error;
+    handleAIError(error);
+    throw error; // TS satisfaction
   }
 };
 
@@ -141,8 +152,9 @@ export const processWorkoutText = async (text: string): Promise<WorkoutData> => 
   try {
     const ai = getAIClient();
 
+    // SWITCHED TO 1.5-FLASH
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-1.5-flash',
       contents: {
         parts: [
           {
@@ -176,7 +188,7 @@ export const processWorkoutText = async (text: string): Promise<WorkoutData> => 
     return validateData(data);
 
   } catch (error: any) {
-    console.error("Error processing workout text:", error);
+    handleAIError(error);
     throw error;
   }
 };
@@ -198,7 +210,7 @@ export const generateMonthlyReport = async (
     currentMonthWorkouts: Workout[], 
     prevMonthWorkouts: Workout[],
     monthName: string,
-    language: 'es' | 'en' = 'es' // Add language parameter
+    language: 'es' | 'en' = 'es' 
 ): Promise<MonthlyReportData> => {
     try {
         const ai = getAIClient();
@@ -238,7 +250,7 @@ export const generateMonthlyReport = async (
         const prevContext = prevMonthWorkouts.map(simplify);
 
         const prompt = `
-            Actúa como el "Gym Bro" definitivo. Tu personalidad es sarcástica, dura, pero motivadora (estilo David Goggins mezclado con un colega de barrio).
+            Actúa como el "Gym Bro" definitivo. Tu personalidad es sarcástica, dura, pero motivadora.
             
             **IDIOMA DE RESPUESTA:** ${language === 'es' ? 'ESPAÑOL (Castellano)' : 'ENGLISH'}
             
@@ -251,19 +263,15 @@ export const generateMonthlyReport = async (
             
             **INSTRUCCIONES:**
             Devuelve un JSON con dos campos:
-            1. "analysis": Un texto en Markdown analizando el progreso en ${language === 'es' ? 'Español' : 'Inglés'}. Compara el volumen y la constancia con el mes anterior. Sé muy expresivo. Usa negritas (**texto**) para enfatizar insultos cariñosos o logros. 
-            2. "verdict": Una frase final lapidaria en ${language === 'es' ? 'Español' : 'Inglés'}. Corta, agresiva y memorable.
-            
-            **TONO:**
-            - Si entrenó poco: Insulta su pereza. "¿Te pesaba el mando de la tele?".
-            - Si entrenó bien: "Eres una bestia parda".
-            - NO repitas las estadísticas numéricas exactas de cada ejercicio (ya las muestro en una tabla), céntrate en la tendencia general y el esfuerzo.
+            1. "analysis": Un texto en Markdown analizando el progreso en ${language === 'es' ? 'Español' : 'Inglés'}.
+            2. "verdict": Una frase final lapidaria en ${language === 'es' ? 'Español' : 'Inglés'}.
             
             Response MIME Type: application/json
         `;
 
+        // SWITCHED TO 1.5-FLASH
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-1.5-flash',
             contents: { parts: [{ text: prompt }] },
             config: {
                 responseMimeType: "application/json",
@@ -288,18 +296,15 @@ export const generateMonthlyReport = async (
         };
 
     } catch (error) {
-        console.error("Error generating report:", error);
+        handleAIError(error);
         throw new Error("Error connecting to the gym bro AI.");
     }
 };
 
 // Helper for fuzzy normalization
 const normalizeExerciseName = (name: string): string => {
-    // 1. Lowercase
     let n = name.toLowerCase();
-    // 2. Remove text in parentheses e.g. "bench press (barbell)" -> "bench press"
     n = n.replace(/\(.*\)/g, '');
-    // 3. Trim whitespace
     return n.trim();
 };
 
@@ -309,17 +314,11 @@ export const generateGroupAnalysis = async (
 ): Promise<GroupAnalysisData> => {
     try {
         // --- 1. LOCAL DETERMINISTIC CALCULATION (Math not Opinion) ---
-        
-        // A. Calculate Points (Unique Days Active)
         const pointsTable = usersData.map(u => {
-            // Fix: Normalize date here too if necessary, though uniqueness check usually fine on string
             const uniqueDays = new Set(u.workouts.map(w => w.date)).size;
             return { name: u.name, points: uniqueDays };
-        }).sort((a, b) => b.points - a.points); // Sort descending
+        }).sort((a, b) => b.points - a.points);
 
-        // B. Calculate Comparison Table (Intersection of Exercises + Max PRs)
-        
-        // Get all exercises per user with their Max PR
         const userMaxes: Record<string, Record<string, number>> = {};
         
         usersData.forEach(u => {
@@ -336,24 +335,16 @@ export const generateGroupAnalysis = async (
             });
         });
 
-        // Find common exercises (Intersection)
-        // 1. Get all unique exercise keys from the first user
         if (usersData.length === 0) throw new Error("No users");
-        
         let commonExercises = Object.keys(userMaxes[usersData[0].name]);
-        
-        // 2. Filter to keep only those present in ALL other users
         for (let i = 1; i < usersData.length; i++) {
             const currentUserExercises = Object.keys(userMaxes[usersData[i].name]);
             commonExercises = commonExercises.filter(ex => currentUserExercises.includes(ex));
         }
 
-        // 3. Construct Comparison Table
         const comparisonTable: ComparisonRow[] = commonExercises.map(exKey => {
-            // Find "Winner" for this exercise
             let maxWeight = -1;
             let winnerName = "";
-            
             const results = usersData.map(u => {
                 const weight = userMaxes[u.name][exKey];
                 if (weight > maxWeight) {
@@ -362,22 +353,13 @@ export const generateGroupAnalysis = async (
                 }
                 return { userName: u.name, weight };
             });
-
-            // Re-format exercise name (capitalize)
             const displayExName = exKey.charAt(0).toUpperCase() + exKey.slice(1);
-
-            return {
-                exercise: displayExName,
-                results,
-                winnerName
-            };
+            return { exercise: displayExName, results, winnerName };
         });
 
         // --- 2. AI JUDGMENT (Personality Only) ---
-
         const ai = getAIClient();
 
-        // Prepare context for AI
         const context = {
             points_standings: pointsTable,
             head_to_head_results: comparisonTable.map(c => `${c.exercise}: Winner ${c.winnerName} (${Math.max(...c.results.map(r=>r.weight))}kg)`),
@@ -396,17 +378,16 @@ export const generateGroupAnalysis = async (
             
             **INSTRUCTIONS:**
             1. Determine the "Winner" (Alpha) and "Loser" (Beta). 
-               - Winner: Usually the one with most Points (consistency) AND strongest lifts in head-to-head.
-               - Loser: The one with weak lifts or low consistency.
-            2. Write a "Roast": A short, funny, savage paragraph comparing them based on the data provided. Use the points and lift numbers to insult or praise.
+            2. Write a "Roast": A short, funny, savage paragraph.
             
             **OUTPUT:**
             Return strictly valid JSON.
             Keys: "winner", "loser", "roast".
         `;
 
+        // SWITCHED TO 1.5-FLASH
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-1.5-flash',
             contents: { parts: [{ text: prompt }] },
             config: {
                 responseMimeType: "application/json",
@@ -434,7 +415,7 @@ export const generateGroupAnalysis = async (
         };
 
     } catch (error) {
-        console.error("Group analysis error", error);
+        handleAIError(error);
         throw new Error("The AI Judge is currently lifting. Try again later.");
     }
 };
