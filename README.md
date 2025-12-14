@@ -2,7 +2,7 @@
 
 > **"Donde la fuerza se encuentra con la naturaleza y la tecnología."**
 
-**GymTracker AI** es una **Web App Progresiva (PWA)** de última generación diseñada para atletas que buscan minimizar el tiempo de registro y maximizar sus resultados. Utiliza **Inteligencia Artificial (Gemini 1.5 Flash)** para convertir notas de voz naturales en datos estructurados de entrenamiento.
+**GymTracker AI** es una **Web App Progresiva (PWA)** de última generación diseñada para atletas que buscan minimizar el tiempo de registro y maximizar sus resultados. Utiliza **Inteligencia Artificial (Gemini 2.5 Flash)** para convertir notas de voz naturales en datos estructurados de entrenamiento.
 
 Construida con un diseño "Obsidian/Volt" moderno, ofrece una experiencia visual premium y un modo oscuro nativo.
 
@@ -27,7 +27,7 @@ Al ser una **PWA**, puedes instalarla en tu móvil sin pasar por la App Store o 
 ## ✨ Características Principales
 
 ### 🧠 1. Registro Híbrido (Voz, Texto y Manual)
-*   **Voz (IA):** Toca el micrófono y habla. Gemini 1.5 Flash procesa tu audio en segundos.
+*   **Voz (IA):** Toca el micrófono y habla. Gemini 2.5 Flash procesa tu audio en segundos.
     > *"Hice 3 series de press banca con 80 kilos..."*
 *   **Texto (IA):** Escribe libremente como si chatearas con un amigo.
 *   **Manual (Estructurado):** Un constructor clásico para cuando prefieres precisión quirúrgica.
@@ -55,7 +55,7 @@ Sigue esta sección **SOLO** si eres desarrollador y quieres modificar el códig
 ### Prerrequisitos
 *   Node.js 18+
 *   Cuenta en [Supabase](https://supabase.com) (Base de datos y Auth).
-*   API Key de [Google AI Studio](https://aistudio.google.com) (Modelo Gemini 1.5 Flash).
+*   API Key de [Google AI Studio](https://aistudio.google.com) (Modelo Gemini 2.5 Flash).
 
 ### 1. Instalación Local
 ```bash

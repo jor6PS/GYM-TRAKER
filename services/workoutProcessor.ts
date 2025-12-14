@@ -2,6 +2,10 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { WorkoutData, Workout, User, GroupAnalysisData, ComparisonRow } from "../types";
 import { format } from "date-fns";
 
+// --- CONFIGURATION ---
+// User requested specific model to avoid rate limits
+const MODEL_NAME = 'gemini-2.5-flash-native-audio-dialog'; 
+
 // Helper to safely get the AI instance only when needed
 const getAIClient = () => {
   // Accessing process.env.API_KEY directly as per vite config define
@@ -77,6 +81,9 @@ const handleAIError = (error: any) => {
     console.error("AI Error:", error);
     const msg = error.message || '';
     
+    if (msg.includes('404') && msg.includes('not found')) {
+        throw new Error(`Error: El modelo '${MODEL_NAME}' no está disponible para tu API Key. Verifica la región o el nombre.`);
+    }
     if (msg.includes('429') || msg.includes('Quota') || msg.includes('Too Many Requests')) {
         throw new Error("⚠️ Has superado el límite gratuito de la IA. Por favor, espera un minuto antes de volver a intentar.");
     }
@@ -90,9 +97,8 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
   try {
     const ai = getAIClient();
     
-    // SWITCHED TO 1.5-FLASH: More quota friendly, high volume model.
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: MODEL_NAME,
       contents: {
         parts: [
           {
@@ -152,9 +158,8 @@ export const processWorkoutText = async (text: string): Promise<WorkoutData> => 
   try {
     const ai = getAIClient();
 
-    // SWITCHED TO 1.5-FLASH
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: MODEL_NAME,
       contents: {
         parts: [
           {
@@ -269,9 +274,8 @@ export const generateMonthlyReport = async (
             Response MIME Type: application/json
         `;
 
-        // SWITCHED TO 1.5-FLASH
         const response = await ai.models.generateContent({
-            model: 'gemini-1.5-flash',
+            model: MODEL_NAME,
             contents: { parts: [{ text: prompt }] },
             config: {
                 responseMimeType: "application/json",
@@ -385,9 +389,8 @@ export const generateGroupAnalysis = async (
             Keys: "winner", "loser", "roast".
         `;
 
-        // SWITCHED TO 1.5-FLASH
         const response = await ai.models.generateContent({
-            model: 'gemini-1.5-flash',
+            model: MODEL_NAME,
             contents: { parts: [{ text: prompt }] },
             config: {
                 responseMimeType: "application/json",
