@@ -2,8 +2,6 @@
 
 > **"Donde la fuerza se encuentra con la naturaleza y la tecnología."**
 
-![App Logo Preview](https://via.placeholder.com/150x150/000000/ffffff?text=GYM.AI+Logo)
-
 **GymTracker AI** es una **Web App Progresiva (PWA)** de última generación diseñada para atletas que buscan minimizar el tiempo de registro y maximizar sus resultados. Utiliza **Inteligencia Artificial (Gemini 2.5 Flash)** para convertir notas de voz naturales en datos estructurados de entrenamiento.
 
 Construida con un diseño "Obsidian/Volt" moderno, ofrece una experiencia visual premium y un modo oscuro nativo.
