@@ -166,7 +166,12 @@ function App() {
         setSessionLoading(false);
       });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // HANDLE PASSWORD RECOVERY EVENT
+      if (event === 'PASSWORD_RECOVERY') {
+        setShowProfileModal(true); // Open modal immediately so user can set new password
+      }
+
       if (session) {
         if (!realAdminUser) fetchUserProfile(session.user.id);
       } else {

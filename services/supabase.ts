@@ -4,25 +4,24 @@ import { Friend, Workout } from '../types';
 // --- CONFIGURATION ---
 const env = (import.meta as any).env;
 
-// Retrieve keys from Environment Variables (Vite standard)
-const SUPABASE_URL = env?.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = env?.VITE_SUPABASE_ANON_KEY;
+// ⚠️ DEVELOPMENT KEYS (HARDCODED FOR ACCESS)
+// Usamos estas claves directamente para evitar errores de variables de entorno faltantes.
+const FALLBACK_URL = "https://hjmttgdlxsqnkequnacz.supabase.co"; 
+const FALLBACK_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhqbXR0Z2RseHNxbmtlcXVuYWN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1OTc1NzQsImV4cCI6MjA4MTE3MzU3NH0.A6exntms4j0o6hNFON4gLhltLmbccEjDxpL_GcQmeE0";
 
-// Check if keys are present
-// Export this so the UI can check it before rendering
+// Prioritize Env vars, fallback to hardcoded keys
+const SUPABASE_URL = env?.VITE_SUPABASE_URL || FALLBACK_URL;
+const SUPABASE_ANON_KEY = env?.VITE_SUPABASE_ANON_KEY || FALLBACK_KEY;
+
+// Simple check to ensure we have values (should be true given hardcoded fallbacks)
 export const isConfigured = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 
 if (!isConfigured) {
-  console.error("🚨 CRITICAL: Supabase keys are missing from environment variables.");
+  console.error("🚨 CRITICAL: Supabase keys are completely missing.");
 }
 
 // Create the client
-// We pass empty strings if missing to prevent an immediate crash on import.
-// The UI (App.tsx) should check `isConfigured` and block access if this happens.
-export const supabase = createClient(
-    SUPABASE_URL || 'https://placeholder.supabase.co', 
-    SUPABASE_ANON_KEY || 'placeholder'
-);
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Helper for Profile fetching
 export const getCurrentProfile = async () => {
@@ -64,7 +63,7 @@ export const resolveUserEmail = async (identifier: string): Promise<string> => {
   }
 
   if (!isConfigured) {
-      throw new Error("Database connection missing. Environment variables not set.");
+      throw new Error("Database not connected. Please use a valid Email Address.");
   }
 
   // 1. Try RPC (Secure Method)
