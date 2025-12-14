@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Swords, Crown, Skull, Sparkles, Loader2, Trophy, Flame } from 'lucide-react';
+import { X, Swords, Crown, Skull, Sparkles, Loader2, Trophy, Flame, Medal } from 'lucide-react';
 import { generateGroupAnalysis } from '../services/workoutProcessor';
 import { Workout, User, GroupAnalysisData } from '../types';
 import { clsx } from 'clsx';
@@ -22,7 +22,6 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
   const handleBattle = async () => {
     setLoading(true);
     try {
-        // Prepare payload (using real names and workouts)
         const usersPayload = friendsData.map(f => ({
             name: f.name,
             workouts: f.workouts
@@ -61,7 +60,7 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
             
             {!analysis ? (
                 <div className="flex flex-col items-center justify-center py-10 min-h-[300px]">
-                    {/* Competitors Chips (Only show before fight) */}
+                    {/* Competitors Chips */}
                     <div className="flex flex-wrap gap-2 mb-10 justify-center">
                         {friendsData.map(f => (
                             <div key={f.userId} className="px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-2" style={{ borderColor: f.color, color: f.color, backgroundColor: `${f.color}10` }}>
@@ -90,21 +89,84 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
             ) : (
                 <div className="space-y-8 animate-in slide-in-from-bottom-10 fade-in duration-500">
                     
-                    {/* 1. Verdict Section (Alpha/Beta) */}
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="bg-yellow-500/10 border border-yellow-500/30 p-4 rounded-2xl flex flex-col items-center text-center relative overflow-hidden">
-                             <div className="absolute top-0 right-0 p-2 opacity-20"><Crown className="w-12 h-12 text-yellow-500" /></div>
-                             <span className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest mb-1">{t('alpha')}</span>
-                             <h3 className="text-xl md:text-2xl font-black text-white truncate w-full">{analysis.winner}</h3>
-                        </div>
-                        <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-2xl flex flex-col items-center text-center relative overflow-hidden">
-                             <div className="absolute top-0 right-0 p-2 opacity-20"><Skull className="w-12 h-12 text-red-500" /></div>
-                             <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-1">{t('beta')}</span>
-                             <h3 className="text-xl md:text-2xl font-black text-white truncate w-full">{analysis.loser}</h3>
-                        </div>
-                    </div>
+                    {/* 1. PODIUM SECTION (Shows Rank 1, 2, 3) */}
+                    {analysis.rankings && analysis.rankings.length >= 3 ? (
+                        <div className="flex items-end justify-center gap-2 md:gap-4 pt-8 pb-4">
+                            {/* 2nd Place */}
+                            <div className="flex flex-col items-center">
+                                <div className="text-xs font-bold text-zinc-400 mb-1 font-mono uppercase">#2 Silver</div>
+                                <div className="w-20 md:w-24 bg-gradient-to-t from-zinc-700 to-zinc-500 rounded-t-lg h-24 flex flex-col items-center justify-end pb-3 border-t border-white/20 relative shadow-lg">
+                                     <Medal className="absolute -top-4 w-8 h-8 text-zinc-300 drop-shadow-md" />
+                                     <span className="font-bold text-white text-sm truncate w-full px-2 text-center">{analysis.rankings[1].name}</span>
+                                     <span className="text-[9px] text-zinc-300 leading-tight px-1 text-center">{analysis.rankings[1].reason}</span>
+                                </div>
+                            </div>
+                            
+                            {/* 1st Place (Alpha) */}
+                            <div className="flex flex-col items-center z-10">
+                                <div className="text-xs font-black text-yellow-500 mb-1 font-mono uppercase flex items-center gap-1">
+                                    <Crown className="w-3 h-3" /> {t('alpha')}
+                                </div>
+                                <div className="w-24 md:w-32 bg-gradient-to-t from-yellow-700 to-yellow-500 rounded-t-lg h-32 flex flex-col items-center justify-end pb-4 border-t border-white/30 relative shadow-[0_0_30px_rgba(234,179,8,0.3)]">
+                                     <Crown className="absolute -top-6 w-12 h-12 text-yellow-300 drop-shadow-lg animate-float" />
+                                     <span className="font-black text-white text-lg truncate w-full px-2 text-center">{analysis.rankings[0].name}</span>
+                                     <span className="text-[10px] text-yellow-100 font-bold leading-tight px-1 text-center">{analysis.rankings[0].reason}</span>
+                                </div>
+                            </div>
 
-                    {/* 2. Points & Comparison Table Container */}
+                            {/* 3rd Place */}
+                            <div className="flex flex-col items-center">
+                                <div className="text-xs font-bold text-orange-400 mb-1 font-mono uppercase">#3 Bronze</div>
+                                <div className="w-20 md:w-24 bg-gradient-to-t from-orange-800 to-orange-600 rounded-t-lg h-20 flex flex-col items-center justify-end pb-3 border-t border-white/20 relative shadow-lg">
+                                     <Medal className="absolute -top-4 w-8 h-8 text-orange-300 drop-shadow-md" />
+                                     <span className="font-bold text-white text-sm truncate w-full px-2 text-center">{analysis.rankings[2].name}</span>
+                                     <span className="text-[9px] text-orange-200 leading-tight px-1 text-center">{analysis.rankings[2].reason}</span>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        // Fallback 1v1 View (Alpha/Beta only)
+                         <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-yellow-500/10 border border-yellow-500/30 p-4 rounded-2xl flex flex-col items-center text-center relative overflow-hidden">
+                                <div className="absolute top-0 right-0 p-2 opacity-20"><Crown className="w-12 h-12 text-yellow-500" /></div>
+                                <span className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest mb-1">{t('alpha')}</span>
+                                <h3 className="text-xl md:text-2xl font-black text-white truncate w-full">{analysis.winner}</h3>
+                            </div>
+                            <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-2xl flex flex-col items-center text-center relative overflow-hidden">
+                                <div className="absolute top-0 right-0 p-2 opacity-20"><Skull className="w-12 h-12 text-red-500" /></div>
+                                <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-1">{t('beta')}</span>
+                                <h3 className="text-xl md:text-2xl font-black text-white truncate w-full">{analysis.loser}</h3>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 2. RANKED LIST (4th to Last) */}
+                    {analysis.rankings && analysis.rankings.length > 3 && (
+                        <div className="bg-black/20 rounded-xl p-2 space-y-2 border border-white/5">
+                             {analysis.rankings.slice(3).map((r, i) => {
+                                 // Check if this is the absolute last person (The Beta)
+                                 const isLast = (i + 3) === analysis.rankings.length - 1;
+                                 
+                                 return (
+                                    <div key={i} className={clsx(
+                                        "flex items-center justify-between p-3 rounded-lg border",
+                                        isLast ? "bg-red-900/10 border-red-500/20" : "bg-white/5 border-white/5"
+                                    )}>
+                                        <div className="flex items-center gap-3">
+                                            <span className="font-mono text-zinc-500 text-sm font-bold w-6">#{r.rank}</span>
+                                            <span className={clsx("font-bold text-sm", isLast ? "text-red-400" : "text-white")}>{r.name}</span>
+                                            {isLast && (
+                                                <span className="text-[9px] bg-red-500 text-white px-1.5 py-0.5 rounded font-bold uppercase">{t('beta')}</span>
+                                            )}
+                                        </div>
+                                        <span className="text-xs text-zinc-500 italic">{r.reason}</span>
+                                    </div>
+                                 )
+                             })}
+                        </div>
+                    )}
+
+                    {/* 3. Points & Comparison Table Container */}
                     <div className="bg-zinc-900/40 border border-white/5 rounded-2xl p-4 md:p-6 space-y-6">
                         
                         {/* Points Leaderboard */}
@@ -176,7 +238,7 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                         </div>
                     </div>
 
-                    {/* 3. Roast Section */}
+                    {/* 4. Roast Section */}
                     <div className="bg-surfaceHighlight/30 p-6 rounded-2xl border border-white/5 relative">
                         <QuoteIcon className="absolute top-4 left-4 w-6 h-6 text-primary opacity-20" />
                         <p className="text-sm text-zinc-300 leading-relaxed italic text-center font-medium relative z-10 px-4">

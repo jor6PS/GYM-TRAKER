@@ -2,7 +2,8 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { X, Trophy, TrendingUp, Search, Calendar, ChevronRight, ArrowLeft, Calculator } from 'lucide-react';
 import { Workout, PersonalRecord } from '../types';
 import { format } from 'date-fns';
-import { getExerciseIcon } from '../utils';
+import { getExerciseIcon, getCanonicalId, getLocalizedName } from '../utils';
+import { useLanguage } from '../contexts/LanguageContext';
 import {
   XAxis,
   YAxis,
@@ -36,30 +37,38 @@ const calculate1RM = (weight: number, reps: number) => {
 
 export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, initialExercise }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedExercise, setSelectedExercise] = useState<string | null>(initialExercise || null);
+  const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
+  const { language } = useLanguage();
 
-  // Sync initialExercise when the modal opens
+  // Normalize initial exercise to ID if provided
   useEffect(() => {
     if (isOpen) {
-        setSelectedExercise(initialExercise || null);
-        setSearchTerm(''); // Clear search on open
+        if (initialExercise) {
+            setSelectedExerciseId(getCanonicalId(initialExercise));
+        } else {
+            setSelectedExerciseId(null);
+        }
+        setSearchTerm('');
     }
   }, [isOpen, initialExercise]);
 
   const personalRecords = useMemo(() => {
+    // Map using Canonical ID -> PersonalRecord
     const recordsMap = new Map<string, PersonalRecord>();
 
     workouts.forEach(workout => {
       workout.structured_data.exercises.forEach(exercise => {
-        const normalizedName = exercise.name.trim().toLowerCase();
+        // CRITICAL: Convert to ID before processing
+        const canonicalId = getCanonicalId(exercise.name);
+        
         exercise.sets.forEach(set => {
           const estimated1RM = calculate1RM(set.weight, set.reps);
-          const currentRecord = recordsMap.get(normalizedName);
+          const currentRecord = recordsMap.get(canonicalId);
           
-          // Logic: Keep record with highest weight moved. 
+          // Logic: Keep record with highest weight moved.
           if (!currentRecord || set.weight > currentRecord.weight) {
-            recordsMap.set(normalizedName, {
-              exerciseName: exercise.name, 
+            recordsMap.set(canonicalId, {
+              exerciseName: canonicalId, // Store ID as name internally for now
               weight: set.weight,
               unit: set.unit,
               reps: set.reps,
@@ -71,10 +80,13 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
       });
     });
 
-    return Array.from(recordsMap.values()).sort((a, b) => 
-      a.exerciseName.localeCompare(b.exerciseName)
-    );
-  }, [workouts]);
+    return Array.from(recordsMap.entries()).map(([id, pr]) => ({
+        ...pr,
+        // Override the ID name with the localized name for display
+        exerciseName: getLocalizedName(id, language as 'es' | 'en')
+    })).sort((a, b) => a.exerciseName.localeCompare(b.exerciseName));
+
+  }, [workouts, language]);
 
   const filteredRecords = useMemo(() => {
     return personalRecords.filter(pr => 
@@ -84,14 +96,14 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
 
   // History Data for Chart
   const exerciseHistory = useMemo(() => {
-    if (!selectedExercise) return [];
+    if (!selectedExerciseId) return [];
     
     const history: HistoryPoint[] = [];
-    const normalizedSelected = selectedExercise.trim().toLowerCase();
 
     workouts.forEach(workout => {
+        // Find if this workout contains the selected exercise ID (checking normalization)
         const exerciseData = workout.structured_data.exercises.find(
-            e => e.name.trim().toLowerCase() === normalizedSelected
+            e => getCanonicalId(e.name) === selectedExerciseId
         );
 
         if (exerciseData) {
@@ -121,9 +133,11 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
 
     // Sort by date ascending
     return history.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  }, [selectedExercise, workouts]);
+  }, [selectedExerciseId, workouts]);
 
   if (!isOpen) return null;
+
+  const displaySelectedName = selectedExerciseId ? getLocalizedName(selectedExerciseId, language as 'es' | 'en') : '';
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -132,9 +146,9 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
         {/* Header */}
         <div className="p-4 border-b border-border flex items-center justify-between bg-surface/80 backdrop-blur-md sticky top-0 z-20">
           <div className="flex items-center gap-3">
-            {selectedExercise ? (
+            {selectedExerciseId ? (
                 <button 
-                  onClick={() => setSelectedExercise(null)}
+                  onClick={() => setSelectedExerciseId(null)}
                   className="p-2 -ml-2 rounded-full hover:bg-surfaceHighlight text-subtext hover:text-text transition-colors"
                 >
                     <ArrowLeft className="w-5 h-5" />
@@ -146,9 +160,9 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
             )}
             <div>
                 <h2 className="text-lg font-bold text-text tracking-tight">
-                    {selectedExercise ? selectedExercise : 'Personal Records'}
+                    {selectedExerciseId ? displaySelectedName : 'Personal Records'}
                 </h2>
-                {selectedExercise && (
+                {selectedExerciseId && (
                     <p className="text-xs text-subtext font-mono">
                         {exerciseHistory.length} sessions logged
                     </p>
@@ -165,7 +179,7 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
         <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4 bg-background">
             
             {/* VIEW 1: DETAILS & CHART (When an exercise is selected) */}
-            {selectedExercise ? (
+            {selectedExerciseId ? (
                 <div className="space-y-6 animate-in slide-in-from-right-10 fade-in duration-300">
                     {/* Stats Summary */}
                     <div className="grid grid-cols-2 gap-3">
@@ -301,10 +315,13 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
 
                     <div className="grid grid-cols-1 gap-2">
                         {filteredRecords.length > 0 ? (
-                            filteredRecords.map((pr, index) => (
+                            filteredRecords.map((pr, index) => {
+                                // Retrieve Canonical ID to act as key for selection
+                                const canonicalId = getCanonicalId(pr.exerciseName);
+                                return (
                                 <button
                                     key={index}
-                                    onClick={() => setSelectedExercise(pr.exerciseName)}
+                                    onClick={() => setSelectedExerciseId(canonicalId)}
                                     className="flex items-center justify-between p-4 bg-surface border border-border rounded-2xl hover:border-primary/30 hover:bg-surfaceHighlight transition-all group text-left shadow-sm"
                                 >
                                     <div className="flex items-center gap-4">
@@ -332,7 +349,7 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
                                         )}
                                     </div>
                                 </button>
-                            ))
+                            )})
                         ) : (
                             <div className="text-center py-10 text-subtext flex flex-col items-center">
                                 <Trophy className="w-12 h-12 mb-3 opacity-20" />

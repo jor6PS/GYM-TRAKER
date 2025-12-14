@@ -70,22 +70,24 @@ const translations = {
     delete_plan_title: "¿Borrar Rutina?",
     delete_plan_desc: "La rutina se perderá para siempre.",
     
-    // Modals
+    // Modals & Builder
     input_log: "Introducir Actividad",
-    placeholder_log: "> Iniciar log: 3 series de press banca 80kg...",
-    submit_log: "Enviar_Log",
-    abort: "Abortar",
-    
-    // Manual Structured Entry (New)
-    manual_entry: "Registro Manual",
-    search_exercise: "Buscar Ejercicio...",
-    add_custom: "Añadir Personalizado",
+    builder: "Constructor",
+    overview: "Resumen",
+    library: "Biblioteca",
+    history: "Historial",
+    history_clone: "Clonar Sesión",
+    search_db: "Buscar en BD (ej. Banca)...",
+    no_matches: "No se encontraron coincidencias.",
     add_set: "Añadir Serie",
-    confirm_exercise: "Confirmar Ejercicio",
-    finish_workout: "Finalizar Entreno",
-    no_exercises_added: "No has añadido ejercicios aún.",
-    start_adding_below: "Usa el buscador para empezar.",
-    notes_placeholder: "Notas generales (energía, molestias...)",
+    add_to_session: "Añadir a Sesión",
+    session_empty: "Sesión Vacía",
+    go_to_lib: "Ve a la biblioteca para añadir.",
+    open_library: "Abrir Biblioteca",
+    add_another: "Añadir Otro Ejercicio",
+    save_session: "Guardar Sesión",
+    back: "Atrás",
+    added: "Añadido",
     
     // Profile
     profile: "Perfil",
@@ -186,22 +188,24 @@ const translations = {
     delete_plan_title: "Delete Plan?",
     delete_plan_desc: "Routine will be lost.",
     
-    // Modals
+    // Modals & Builder
     input_log: "Input Data Log",
-    placeholder_log: "> Initialize log: 3 sets of bench press 80kg...",
-    submit_log: "Submit_Log",
-    abort: "Abort",
-
-    // Manual Structured Entry (New)
-    manual_entry: "Manual Entry",
-    search_exercise: "Search Exercise...",
-    add_custom: "Add Custom",
+    builder: "Builder",
+    overview: "Overview",
+    library: "Library",
+    history: "History",
+    history_clone: "Clone History",
+    search_db: "Search DB (e.g. Bench)...",
+    no_matches: "No matches found.",
     add_set: "Add Set",
-    confirm_exercise: "Confirm Exercise",
-    finish_workout: "Finish Workout",
-    no_exercises_added: "No exercises added yet.",
-    start_adding_below: "Use search to start adding.",
-    notes_placeholder: "General notes (energy, pain, etc...)",
+    add_to_session: "Add to Session",
+    session_empty: "Session Empty",
+    go_to_lib: "Go to Library to add exercises.",
+    open_library: "Open Library",
+    add_another: "Add Another Exercise",
+    save_session: "Save Session",
+    back: "Back",
+    added: "Added",
     
     // Profile
     profile: "Profile",

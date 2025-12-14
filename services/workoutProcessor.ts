@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { WorkoutData, Workout, User, GroupAnalysisData, ComparisonRow } from "../types";
 import { format } from "date-fns";
+import { getCanonicalId, getLocalizedName } from "../utils";
 
 // --- CONFIGURATION ---
 // Reverting to the standard Flash model as requested.
@@ -11,10 +12,10 @@ const getAIClient = () => {
   // Accessing process.env.API_KEY directly as per vite config define
   const apiKey = process.env.API_KEY;
   
-  if (!apiKey) {
+  if (!apiKey || apiKey === 'undefined' || apiKey === 'null' || apiKey === '') {
      console.error("🚨 CRITICAL ERROR: Google Gemini API Key is missing.");
-     console.error("Ensure you have an Environment Variable named 'API_KEY' set in your deployment (Vercel/Netlify).");
-     throw new Error("Server Configuration Error: Gemini API Key is missing. Please contact the administrator.");
+     console.error("Ensure you have an Environment Variable named 'API_KEY' set in your deployment (Vercel/Netlify) or .env file.");
+     throw new Error("Falta la API Key de Gemini. Revisa tu archivo .env o la configuración del servidor.");
   }
   return new GoogleGenAI({ apiKey });
 };
@@ -78,19 +79,25 @@ const validateData = (data: any): WorkoutData => {
 
 // Helper for error handling
 const handleAIError = (error: any) => {
-    console.error("AI Error:", error);
-    const msg = error.message || '';
+    console.error("AI Error Details:", error);
+    const msg = (error.message || error.toString()).toLowerCase();
     
     if (msg.includes('404') && msg.includes('not found')) {
-        throw new Error(`Error: El modelo '${MODEL_NAME}' no ha sido encontrado. Revisa tu API Key o la región.`);
+        throw new Error(`Error: El modelo '${MODEL_NAME}' no está disponible para tu API Key. Revisa la región.`);
     }
-    if (msg.includes('429') || msg.includes('Quota') || msg.includes('Too Many Requests')) {
+    if (msg.includes('429') || msg.includes('quota') || msg.includes('too many requests')) {
         throw new Error("⚠️ Has superado el límite de cuota de la IA. Espera un momento.");
     }
-    if (error instanceof SyntaxError) {
-        throw new Error("Error de IA: Formato inválido.");
+    if (msg.includes('400') || msg.includes('api key') || msg.includes('invalid')) {
+        throw new Error("⚠️ API Key inválida o mal configurada.");
     }
-    throw error;
+    if (msg.includes("failed to call the gemini api") || msg.includes("fetch failed")) {
+        throw new Error("Error de conexión con Gemini. Verifica tu internet o la validez de tu API Key.");
+    }
+    if (error instanceof SyntaxError) {
+        throw new Error("Error de IA: La respuesta no tuvo el formato correcto.");
+    }
+    throw new Error("Error inesperado de la IA. Inténtalo de nuevo.");
 };
 
 export const processWorkoutAudio = async (audioBase64: string, mimeType: string): Promise<WorkoutData> => {
@@ -221,12 +228,15 @@ export const generateMonthlyReport = async (
         const ai = getAIClient();
 
         // 1. Calculate Statistics Locally (Deterministic & Accurate)
+        // Group by CANONICAL ID to ensure bilingual support
         const statsMap = new Map<string, ExerciseStat>();
 
         currentMonthWorkouts.forEach(w => {
             w.structured_data.exercises.forEach(ex => {
-                const normName = ex.name.trim();
-                const existing = statsMap.get(normName) || { name: normName, topWeight: 0, topReps: 0, totalSets: 0 };
+                const canonicalId = getCanonicalId(ex.name);
+                const displayName = getLocalizedName(canonicalId, language);
+                
+                const existing = statsMap.get(canonicalId) || { name: displayName, topWeight: 0, topReps: 0, totalSets: 0 };
                 
                 existing.totalSets += ex.sets.length;
                 
@@ -239,7 +249,7 @@ export const generateMonthlyReport = async (
                     }
                 });
                 
-                statsMap.set(normName, existing);
+                statsMap.set(canonicalId, existing);
             });
         });
 
@@ -305,13 +315,6 @@ export const generateMonthlyReport = async (
     }
 };
 
-// Helper for fuzzy normalization
-const normalizeExerciseName = (name: string): string => {
-    let n = name.toLowerCase();
-    n = n.replace(/\(.*\)/g, '');
-    return n.trim();
-};
-
 export const generateGroupAnalysis = async (
     usersData: { name: string; workouts: Workout[] }[],
     language: 'es' | 'en' = 'es'
@@ -323,41 +326,47 @@ export const generateGroupAnalysis = async (
             return { name: u.name, points: uniqueDays };
         }).sort((a, b) => b.points - a.points);
 
+        // Map: User -> { CanonicalExerciseID: MaxWeight }
         const userMaxes: Record<string, Record<string, number>> = {};
         
         usersData.forEach(u => {
             userMaxes[u.name] = {};
             u.workouts.forEach(w => {
                 w.structured_data.exercises.forEach(ex => {
-                    const normName = normalizeExerciseName(ex.name); // Normalize for key
+                    // NORMALIZE TO ID for comparison
+                    const normId = getCanonicalId(ex.name); 
                     const maxSet = Math.max(...ex.sets.map(s => s.weight));
                     
-                    if (!userMaxes[u.name][normName] || maxSet > userMaxes[u.name][normName]) {
-                        userMaxes[u.name][normName] = maxSet;
+                    if (!userMaxes[u.name][normId] || maxSet > userMaxes[u.name][normId]) {
+                        userMaxes[u.name][normId] = maxSet;
                     }
                 });
             });
         });
 
         if (usersData.length === 0) throw new Error("No users");
-        let commonExercises = Object.keys(userMaxes[usersData[0].name]);
+        
+        // Find common exercises (intersection of Canonical IDs)
+        let commonExerciseIds = Object.keys(userMaxes[usersData[0].name]);
         for (let i = 1; i < usersData.length; i++) {
             const currentUserExercises = Object.keys(userMaxes[usersData[i].name]);
-            commonExercises = commonExercises.filter(ex => currentUserExercises.includes(ex));
+            commonExerciseIds = commonExerciseIds.filter(exId => currentUserExercises.includes(exId));
         }
 
-        const comparisonTable: ComparisonRow[] = commonExercises.map(exKey => {
+        const comparisonTable: ComparisonRow[] = commonExerciseIds.map(exId => {
             let maxWeight = -1;
             let winnerName = "";
             const results = usersData.map(u => {
-                const weight = userMaxes[u.name][exKey];
+                const weight = userMaxes[u.name][exId];
                 if (weight > maxWeight) {
                     maxWeight = weight;
                     winnerName = u.name;
                 }
                 return { userName: u.name, weight };
             });
-            const displayExName = exKey.charAt(0).toUpperCase() + exKey.slice(1);
+            
+            // Convert ID back to readable name in current language
+            const displayExName = getLocalizedName(exId, language);
             return { exercise: displayExName, results, winnerName };
         });
 
@@ -370,7 +379,11 @@ export const generateGroupAnalysis = async (
             raw_data_summary: usersData.map(u => ({
                 name: u.name,
                 total_sessions: u.workouts.length,
-                top_lifts: userMaxes[u.name]
+                // Simplify userMaxes for context, using readable names
+                top_lifts: Object.entries(userMaxes[u.name]).reduce((acc: any, [id, w]) => {
+                    acc[getLocalizedName(id, 'en')] = w; // Use English for AI context consistently
+                    return acc;
+                }, {})
             }))
         };
 
@@ -381,12 +394,23 @@ export const generateGroupAnalysis = async (
             ${JSON.stringify(context)}
             
             **INSTRUCTIONS:**
-            1. Determine the "Winner" (Alpha) and "Loser" (Beta). 
-            2. Write a "Roast": A short, funny, savage paragraph.
+            1. Rank ALL participants from 1 (Best) to ${usersData.length} (Worst).
+            2. Criteria: Heavy lifts are king. Consistency is queen. Excuses are forbidden.
+            3. The 1st place is "Alpha" (Winner). The last place is "Beta" (Loser).
+            4. Provide a very short "reason" (max 5 words) for each rank.
+            5. Write a "Roast" summarizing the group dynamic.
             
             **OUTPUT:**
             Return strictly valid JSON.
-            Keys: "winner", "loser", "roast".
+            Structure:
+            {
+               "rankings": [
+                   { "name": "UserA", "rank": 1, "reason": "Beast mode activated" },
+                   { "name": "UserB", "rank": 2, "reason": "Solid but small calves" },
+                   ...
+               ],
+               "roast": "String"
+            }
         `;
 
         const response = await ai.models.generateContent({
@@ -397,11 +421,21 @@ export const generateGroupAnalysis = async (
                 responseSchema: {
                     type: Type.OBJECT,
                     properties: {
-                        winner: { type: Type.STRING },
-                        loser: { type: Type.STRING },
+                        rankings: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    name: { type: Type.STRING },
+                                    rank: { type: Type.NUMBER },
+                                    reason: { type: Type.STRING }
+                                },
+                                required: ["name", "rank", "reason"]
+                            }
+                        },
                         roast: { type: Type.STRING },
                     },
-                    required: ["winner", "loser", "roast"]
+                    required: ["rankings", "roast"]
                 }
             }
         });
@@ -409,9 +443,16 @@ export const generateGroupAnalysis = async (
         const text = cleanJson(response.text || "{}");
         const aiResult = JSON.parse(text);
         
+        // Safety sort
+        const sortedRankings = (aiResult.rankings || []).sort((a: any, b: any) => a.rank - b.rank);
+
+        const winner = sortedRankings.length > 0 ? sortedRankings[0].name : "Unknown";
+        const loser = sortedRankings.length > 0 ? sortedRankings[sortedRankings.length - 1].name : "Unknown";
+
         return {
-            winner: aiResult.winner || "Unknown",
-            loser: aiResult.loser || "Unknown",
+            winner,
+            loser,
+            rankings: sortedRankings,
             roast: aiResult.roast || "Judge is silent.",
             comparison_table: comparisonTable,
             points_table: pointsTable

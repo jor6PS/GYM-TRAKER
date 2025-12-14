@@ -62,8 +62,11 @@ function App() {
     const checkModels = async () => {
         try {
             // Raw fetch to check models because SDK wrapper might be strict
-            const key = process.env.API_KEY?.replace(/"/g, ''); // Ensure no extra quotes
-            if (!key) return;
+            // Safe replace handling
+            const apiKey = process.env.API_KEY;
+            if (!apiKey || apiKey === 'undefined') return; // Skip if no key
+
+            const key = apiKey.replace(/"/g, ''); 
             
             console.log("🔍 Checking available Gemini Models...");
             const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);

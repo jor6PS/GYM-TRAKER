@@ -22,7 +22,7 @@ export const StructuredEntryModal: React.FC<StructuredEntryModalProps> = ({ isOp
   // Sets Builder State
   const [currentSets, setCurrentSets] = useState<Set[]>([{ reps: 10, weight: 0, unit: 'kg' }]);
 
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
 
   if (!isOpen) return null;
 
@@ -30,10 +30,14 @@ export const StructuredEntryModal: React.FC<StructuredEntryModalProps> = ({ isOp
 
   const filteredExercises = useMemo(() => {
     if (!searchTerm) return [];
-    return EXERCISE_DB.filter(ex => 
-      ex.toLowerCase().includes(searchTerm.toLowerCase())
-    ).slice(0, 5);
-  }, [searchTerm]);
+    const term = searchTerm.toLowerCase();
+    const langKey = language === 'es' ? 'es' : 'en';
+
+    return EXERCISE_DB
+      .filter(ex => ex[langKey].toLowerCase().includes(term))
+      .map(ex => ex[langKey])
+      .slice(0, 5);
+  }, [searchTerm, language]);
 
   const handleStartBuilding = (exerciseName: string) => {
       setSelectedDbExercise(exerciseName);

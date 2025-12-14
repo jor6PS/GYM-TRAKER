@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { X, Plus, Trash2, Save, Search } from 'lucide-react';
 import { WorkoutPlan, Exercise } from '../types';
 import { EXERCISE_DB } from '../data/exerciseDb';
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface CreatePlanModalProps {
   isOpen: boolean;
@@ -21,6 +22,8 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
   const [newExSets, setNewExSets] = useState(3);
   const [newExReps, setNewExReps] = useState(10);
   const [newExWeight, setNewExWeight] = useState(0);
+
+  const { language } = useLanguage();
 
   // Effect to load initial plan data if editing
   useEffect(() => {
@@ -44,10 +47,14 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
   // Filter exercises based on search
   const filteredExercises = useMemo(() => {
     if (!searchTerm) return [];
-    return EXERCISE_DB.filter(ex => 
-      ex.toLowerCase().includes(searchTerm.toLowerCase())
-    ).slice(0, 5);
-  }, [searchTerm]);
+    const term = searchTerm.toLowerCase();
+    const langKey = language === 'es' ? 'es' : 'en';
+
+    return EXERCISE_DB
+      .filter(ex => ex[langKey].toLowerCase().includes(term))
+      .map(ex => ex[langKey])
+      .slice(0, 5);
+  }, [searchTerm, language]);
 
   if (!isOpen) return null;
 

@@ -1,3 +1,4 @@
+
 export interface Set {
   reps: number;
   weight: number;
@@ -71,9 +72,16 @@ export interface ComparisonRow {
   winnerName: string;
 }
 
+export interface RankingEntry {
+  name: string;
+  rank: number;
+  reason: string; // Short AI reason like "Highest Volume" or "Skipped Leg Day"
+}
+
 export interface GroupAnalysisData {
-  winner: string; // From AI judgment
-  loser: string; // From AI judgment
+  winner: string; // From AI judgment (Alpha)
+  loser: string; // From AI judgment (Beta)
+  rankings: RankingEntry[]; // Full ordered list
   roast: string; // From AI
   comparison_table: ComparisonRow[]; // Calculated Locally
   points_table: { name: string; points: number }[]; // Calculated Locally

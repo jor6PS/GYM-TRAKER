@@ -4,6 +4,7 @@ import {
   Dumbbell as LucideDumbbell
 } from 'lucide-react';
 import { Workout } from './types';
+import { EXERCISE_DB } from './data/exerciseDb';
 
 // --- Shared Helpers ---
 
@@ -25,21 +26,59 @@ export const formatWorkoutToString = (workout: Workout): string => {
   if (!workout.structured_data || !workout.structured_data.exercises) return "";
 
   return workout.structured_data.exercises.map(ex => {
-    // Group sets if they are identical to make output cleaner
-    // For now, simpler approach: list the sets summary
-    // Logic: "ExerciseName 3x10 50kg"
-    
-    // We assume most sets in a block are similar for the "Quick Clone" text
     const firstSet = ex.sets[0];
     const setsCount = ex.sets.length;
-    
     return `${ex.name} ${setsCount}x${firstSet.reps} ${firstSet.weight}${firstSet.unit}`;
   }).join('\n');
 };
 
+// --- NORMALIZATION HELPERS (Multi-language Support) ---
+
+/**
+ * Takes any exercise name (English or Spanish, or loose input) and tries to find
+ * its unique ID in the EXERCISE_DB.
+ * Returns the ID (e.g., 'bench_press_barbell') if found, or the normalized input string if not.
+ */
+export const getCanonicalId = (name: string): string => {
+    const n = name.trim().toLowerCase();
+    
+    // 1. Exact or Partial match in DB
+    const match = EXERCISE_DB.find(ex => 
+        ex.en.toLowerCase() === n || 
+        ex.es.toLowerCase() === n ||
+        ex.en.toLowerCase().includes(n) || // Fallback for loose matches
+        ex.es.toLowerCase().includes(n)
+    );
+
+    return match ? match.id : n;
+};
+
+/**
+ * Returns the display name for a given ID (or raw name) in the requested language.
+ */
+export const getLocalizedName = (idOrName: string, lang: 'es' | 'en'): string => {
+    const match = EXERCISE_DB.find(ex => ex.id === idOrName);
+    
+    if (match) {
+        return lang === 'es' ? match.es : match.en;
+    }
+    
+    // If not found by ID, try to see if the input was already a name in the DB
+    const reverseMatch = EXERCISE_DB.find(ex => 
+        ex.en.toLowerCase() === idOrName.toLowerCase() || 
+        ex.es.toLowerCase() === idOrName.toLowerCase()
+    );
+
+    if (reverseMatch) {
+         return lang === 'es' ? reverseMatch.es : reverseMatch.en;
+    }
+
+    // Fallback: Capitalize raw input
+    return idOrName.charAt(0).toUpperCase() + idOrName.slice(1);
+};
+
 // --- Custom SVG Components ---
 
-// --- NEW APP LOGO: MOUNTAINS + DUMBBELL ---
 export const AppLogo = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
     <defs>
@@ -48,17 +87,11 @@ export const AppLogo = ({ className }: { className?: string }) => (
         <stop offset="100%" stopColor="#B8E600" />
       </linearGradient>
     </defs>
-
-    {/* 1. BACKGROUND: NATURE (Crescent Moon & Mountains) */}
-    
-    {/* Crescent Moon - Uses text color in both modes for visibility */}
     <path 
       d="M21 2.5 A 2.5 2.5 0 0 1 21 7.5 A 3.5 3.5 0 0 0 21 2.5 Z" 
       fill="currentColor" 
       className="opacity-90 shadow-glow" 
     />
-    
-    {/* Mountain Range */}
     <path 
       d="M2.5 15L8.5 6L13 13" 
       stroke="currentColor" 
@@ -75,31 +108,19 @@ export const AppLogo = ({ className }: { className?: string }) => (
       strokeLinecap="round" 
       strokeLinejoin="round" 
     />
-
-    {/* 2. FOREGROUND: GYM (Tech Dumbbell) */}
-    
-    {/* Connection Bar */}
     <path d="M7 17H17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    
-    {/* Left Weight Plate */}
     <path 
       d="M3 14L2 17L3 20H5L6 17L5 14H3Z" 
       fill="currentColor" 
     />
-    
-    {/* Right Weight Plate */}
     <path 
       d="M19 14L18 17L19 20H21L22 17L21 14H19Z" 
       fill="currentColor" 
     />
-    
-    {/* Accent Details on Plates (The Spark - Always Volt) */}
     <path d="M4 16V18" stroke="#D4FF00" strokeWidth="1.5" strokeLinecap="round" />
     <path d="M20 16V18" stroke="#D4FF00" strokeWidth="1.5" strokeLinecap="round" />
   </svg>
 );
-
-// --- OTHER ICONS (Standard) ---
 
 const BenchIcon = ({ className }: { className?: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -166,30 +187,30 @@ const KettlebellIcon = ({ className }: { className?: string }) => (
 export const getExerciseIcon = (name: string, className: string = "w-5 h-5") => {
   const n = name.toLowerCase();
   
-  if (n.includes('bench') || n.includes('chest press') || n.includes('incline') || n.includes('decline')) {
-    if (n.includes('dumbbell')) return <LucideDumbbell className={className} />;
+  if (n.includes('bench') || n.includes('chest press') || n.includes('incline') || n.includes('decline') || n.includes('banca') || n.includes('pecho')) {
+    if (n.includes('dumbbell') || n.includes('mancuernas')) return <LucideDumbbell className={className} />;
     return <BenchIcon className={className} />;
   }
 
-  if (n.includes('squat') || n.includes('deadlift') || n.includes('clean') || n.includes('snatch') || (n.includes('row') && n.includes('barbell')) || n.includes('hip thrust')) {
-    if (n.includes('dumbbell') || n.includes('kettlebell')) return <LucideDumbbell className={className} />;
+  if (n.includes('squat') || n.includes('sentadilla') || n.includes('deadlift') || n.includes('peso muerto') || n.includes('row') || n.includes('remo') || n.includes('hip thrust')) {
+    if (n.includes('dumbbell') || n.includes('mancuerna') || n.includes('kettlebell')) return <LucideDumbbell className={className} />;
     return <BarbellIcon className={className} />;
   }
   
-  if (n.includes('pull up') || n.includes('chin up') || n.includes('lat') || n.includes('pull down') || n.includes('hanging')) {
+  if (n.includes('pull up') || n.includes('dominada') || n.includes('chin up') || n.includes('lat') || n.includes('jalón') || n.includes('colgado')) {
     return <PullUpBarIcon className={className} />;
   }
 
-  if (n.includes('cable') || n.includes('machine') || n.includes('extension') || n.includes('pushdown') || n.includes('fly') || n.includes('press') || n.includes('pec deck')) {
-    if (n.includes('dumbbell')) return <LucideDumbbell className={className} />;
+  if (n.includes('cable') || n.includes('polea') || n.includes('machine') || n.includes('máquina') || n.includes('extension') || n.includes('pushdown') || n.includes('fly') || n.includes('aperturas') || n.includes('pec deck')) {
+    if (n.includes('dumbbell') || n.includes('mancuernas')) return <LucideDumbbell className={className} />;
     return <MachineIcon className={className} />;
   }
   
-  if (n.includes('run') || n.includes('cardio') || n.includes('treadmill') || n.includes('elliptical') || n.includes('bike') || n.includes('walk')) {
+  if (n.includes('run') || n.includes('correr') || n.includes('cardio') || n.includes('treadmill') || n.includes('cinta') || n.includes('elliptical') || n.includes('elíptica') || n.includes('bike') || n.includes('bici')) {
     return <Footprints className={className} />;
   }
 
-  if (n.includes('push up') || n.includes('dip') || n.includes('sit up') || n.includes('crunch') || n.includes('plank') || n.includes('burpee')) {
+  if (n.includes('push up') || n.includes('flexiones') || n.includes('dip') || n.includes('fondos') || n.includes('sit up') || n.includes('crunch') || n.includes('plank') || n.includes('plancha') || n.includes('burpee')) {
     return <BodyweightIcon className={className} />;
   }
   
