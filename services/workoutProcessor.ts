@@ -3,8 +3,9 @@ import { WorkoutData, Workout, User, GroupAnalysisData, ComparisonRow } from "..
 import { format } from "date-fns";
 
 // --- CONFIGURATION ---
-// User requested specific experimental model
-const MODEL_NAME = 'gemini-2.5-flash-exp'; 
+// User requested Flash Lite. 
+// Note: "gemini-2.5" does not exist yet. Using the official 2.0 Flash Lite Preview.
+const MODEL_NAME = 'gemini-2.0-flash-lite-preview-02-05'; 
 
 // Helper to safely get the AI instance only when needed
 const getAIClient = () => {
@@ -82,7 +83,7 @@ const handleAIError = (error: any) => {
     const msg = error.message || '';
     
     if (msg.includes('404') && msg.includes('not found')) {
-        throw new Error(`Error: El modelo '${MODEL_NAME}' no ha sido encontrado. Revisa tu API Key o la región.`);
+        throw new Error(`Error: El modelo '${MODEL_NAME}' no ha sido encontrado. Verifica que tu API Key tenga acceso a los modelos 'Preview' en Google AI Studio.`);
     }
     if (msg.includes('429') || msg.includes('Quota') || msg.includes('Too Many Requests')) {
         throw new Error("⚠️ Has superado el límite de cuota de la IA. Espera un momento.");
