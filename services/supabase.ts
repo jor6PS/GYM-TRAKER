@@ -4,24 +4,24 @@ import { Friend, Workout } from '../types';
 // --- CONFIGURATION ---
 const env = (import.meta as any).env;
 
-// ⚠️ DEVELOPMENT KEYS (HARDCODED FOR ACCESS)
-// Usamos estas claves directamente para evitar errores de variables de entorno faltantes.
-const FALLBACK_URL = "https://hjmttgdlxsqnkequnacz.supabase.co"; 
-const FALLBACK_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhqbXR0Z2RseHNxbmtlcXVuYWN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1OTc1NzQsImV4cCI6MjA4MTE3MzU3NH0.A6exntms4j0o6hNFON4gLhltLmbccEjDxpL_GcQmeE0";
+// Retrieve from Environment Variables
+const SUPABASE_URL = env?.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = env?.VITE_SUPABASE_ANON_KEY;
 
-// Prioritize Env vars, fallback to hardcoded keys
-const SUPABASE_URL = env?.VITE_SUPABASE_URL || FALLBACK_URL;
-const SUPABASE_ANON_KEY = env?.VITE_SUPABASE_ANON_KEY || FALLBACK_KEY;
-
-// Simple check to ensure we have values (should be true given hardcoded fallbacks)
+// Check configuration
 export const isConfigured = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 
 if (!isConfigured) {
-  console.error("🚨 CRITICAL: Supabase keys are completely missing.");
+  console.error("🚨 CRITICAL: Supabase keys are completely missing from environment variables.");
 }
 
 // Create the client
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// If keys are missing, we initialize with placeholders to prevent a crash on import.
+// The App component uses `isConfigured` to block the UI and show the error message.
+export const supabase = createClient(
+    SUPABASE_URL || 'https://placeholder.supabase.co', 
+    SUPABASE_ANON_KEY || 'placeholder'
+);
 
 // Helper for Profile fetching
 export const getCurrentProfile = async () => {

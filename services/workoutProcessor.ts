@@ -63,8 +63,10 @@ const validateData = (data: any): WorkoutData => {
         throw new Error("Invalid data structure returned by AI.");
     }
     
+    // If empty array, it means the prompt correctly identified noise/no-data.
+    // We throw specific error to inform user.
     if (data.exercises.length === 0) {
-        throw new Error("I heard you, but didn't catch any specific exercises. Please try again.");
+        throw new Error("I heard you, but didn't catch any specific exercises. Please try again clearly.");
     }
 
     return data as WorkoutData;
@@ -86,11 +88,16 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
           },
           {
             text: `
-              You are an expert fitness tracker. Listen to this workout audio log.
-              Extract the exercises, sets, reps, weights, and RPE (if mentioned).
-              If the user says "RPE 8" or "Intensity 8", record it.
-              Normalize exercise names to standard gym terminology.
-              Return ONLY valid JSON matching the schema.
+              You are a STRICT and PRECISE fitness data transcriber. 
+              
+              INSTRUCTIONS:
+              1. Listen to the audio log provided.
+              2. Extract exercises, sets, reps, weights, and RPE.
+              3. IF THE AUDIO IS UNINTELLIGIBLE, SILENCE, NOISE, OR DOES NOT CONTAIN WORKOUT DATA: Return an empty "exercises" array: [].
+              4. DO NOT GUESS. DO NOT INVENT DATA. DO NOT HALLUCINATE.
+              5. Only include exercises that are explicitly spoken.
+              6. Normalize exercise names to standard gym terminology (e.g., "bench" -> "Bench Press").
+              7. Return ONLY valid JSON matching the schema.
             `
           }
         ]
@@ -98,7 +105,8 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
       config: {
         responseMimeType: "application/json",
         responseSchema: WORKOUT_SCHEMA,
-        systemInstruction: "You are a precise data extractor for gym workouts."
+        temperature: 0, // CRITICAL: Zero temperature to prevent hallucination
+        systemInstruction: "You are a robot. You do not imagine things. You only report what is heard perfectly clearly."
       }
     });
 
@@ -130,13 +138,14 @@ export const processWorkoutText = async (text: string): Promise<WorkoutData> => 
         parts: [
           {
             text: `
-              You are an expert fitness tracker. Parse the following workout text.
-              Extract the exercises, sets, reps, weights, and RPE (Rate of Perceived Exertion).
-              CRITICAL: Normalize exercise names to standard gym terminology.
-              Example input: "Bench press 100kg for 5 reps RPE 9" -> extract RPE 9.
+              You are a STRICT fitness tracker. Parse the following workout text.
               
-              Text to parse:
-              "${text}"
+              CRITICAL RULES:
+              1. DO NOT INVENT DATA. If the text is gibberish, irrelevant, or unclear, return an empty "exercises" array.
+              2. Extract exercises, sets, reps, weights, and RPE accurately.
+              3. Normalize exercise names to standard gym terminology.
+              
+              Input Text: "${text}"
               
               Return ONLY valid JSON adhering to the schema.
             `
@@ -146,6 +155,7 @@ export const processWorkoutText = async (text: string): Promise<WorkoutData> => 
       config: {
         responseMimeType: "application/json",
         responseSchema: WORKOUT_SCHEMA,
+        temperature: 0 // Strict mode
       }
     });
 
