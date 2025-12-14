@@ -59,6 +59,38 @@ function App() {
   const { t, language, setLanguage } = useLanguage();
   const dateLocale = language === 'es' ? es : enUS;
 
+  // --- DEBUG: LIST AVAILABLE MODELS FOR USER ---
+  useEffect(() => {
+    const checkModels = async () => {
+        try {
+            // Raw fetch to check models because SDK wrapper might be strict
+            const key = process.env.API_KEY?.replace(/"/g, ''); // Ensure no extra quotes
+            if (!key) return;
+            
+            console.log("🔍 Checking available Gemini Models...");
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+            const data = await res.json();
+            
+            if (data.models) {
+                console.group("✨ AVAILABLE GEMINI MODELS FOR YOUR KEY ✨");
+                // Filter for "generateContent" capability
+                const usable = data.models.filter((m: any) => m.supportedGenerationMethods.includes("generateContent"));
+                console.table(usable.map((m: any) => ({ 
+                    name: m.name.replace('models/', ''), 
+                    version: m.version,
+                    displayName: m.displayName
+                })));
+                console.groupEnd();
+            } else {
+                console.warn("Could not list models. Check API Key permissions.", data);
+            }
+        } catch (e) {
+            console.error("Failed to check models", e);
+        }
+    };
+    checkModels();
+  }, []);
+
   // --- SAFETY CHECK: MISSING KEYS ---
   if (!isConfigured) {
       return (

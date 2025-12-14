@@ -3,8 +3,8 @@ import { WorkoutData, Workout, User, GroupAnalysisData, ComparisonRow } from "..
 import { format } from "date-fns";
 
 // --- CONFIGURATION ---
-// User requested specific model to avoid rate limits
-const MODEL_NAME = 'gemini-2.5-flash-native-audio-dialog'; 
+// User explicitly requested gemini-1.5-flash for better free tier limits.
+const MODEL_NAME = 'gemini-1.5-flash'; 
 
 // Helper to safely get the AI instance only when needed
 const getAIClient = () => {
@@ -82,10 +82,10 @@ const handleAIError = (error: any) => {
     const msg = error.message || '';
     
     if (msg.includes('404') && msg.includes('not found')) {
-        throw new Error(`Error: El modelo '${MODEL_NAME}' no está disponible para tu API Key. Verifica la región o el nombre.`);
+        throw new Error(`Error: El modelo '${MODEL_NAME}' no ha sido encontrado. Revisa tu API Key o la región.`);
     }
     if (msg.includes('429') || msg.includes('Quota') || msg.includes('Too Many Requests')) {
-        throw new Error("⚠️ Has superado el límite gratuito de la IA. Por favor, espera un minuto antes de volver a intentar.");
+        throw new Error("⚠️ Has superado el límite gratuito de la IA (15 peticiones/min). Espera un momento.");
     }
     if (error instanceof SyntaxError) {
         throw new Error("Error de IA: Formato inválido.");
