@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { 
   X, 
   Camera, 
@@ -12,17 +12,20 @@ import {
   LogOut, 
   Check,
   Lock,
-  Activity
+  Activity,
+  Trophy,
+  Flame
 } from 'lucide-react';
-import { User as UserType } from '../types';
+import { User as UserType, Workout } from '../types';
 import { uploadAvatar, updateUserProfile, updateUserPassword } from '../services/supabase';
 import { format } from 'date-fns';
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface ProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
   user: UserType;
-  totalWorkouts: number;
+  workouts: Workout[]; // Changed from totalWorkouts to full array for calculation
   onUpdateUser: (updatedUser: Partial<UserType>) => void;
   onLogout: () => void;
 }
@@ -31,7 +34,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   isOpen, 
   onClose, 
   user, 
-  totalWorkouts,
+  workouts,
   onUpdateUser,
   onLogout
 }) => {
@@ -42,6 +45,36 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { t } = useLanguage();
+
+  // Calculate Stats based on Unique Days
+  const stats = useMemo(() => {
+    // Get unique dates (Set removes duplicates)
+    const uniqueDates = Array.from(new Set(workouts.map(w => w.date)));
+    
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth(); // 0-indexed
+
+    let total = uniqueDates.length;
+    let year = 0;
+    let month = 0;
+
+    uniqueDates.forEach((dateStr) => {
+        // Assume dateStr is YYYY-MM-DD
+        const [y, m, d] = (dateStr as string).split('-').map(Number);
+        
+        if (y === currentYear) {
+            year++;
+            // Note: m from split is 1-12, currentMonth is 0-11
+            if (m - 1 === currentMonth) {
+                month++;
+            }
+        }
+    });
+
+    return { total, year, month };
+  }, [workouts]);
 
   if (!isOpen) return null;
 
@@ -171,25 +204,37 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 />
                 
                 <h2 className="mt-3 text-xl font-bold text-white tracking-wide">{user.name}</h2>
-                <span className="text-xs font-mono text-zinc-400 bg-white/5 px-2 py-0.5 rounded border border-white/5 mt-1">
-                    {user.role === 'admin' ? 'ADMINISTRATOR' : 'MEMBER'}
-                </span>
+                <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs font-mono text-zinc-400 bg-white/5 px-2 py-0.5 rounded border border-white/5">
+                        {user.role === 'admin' ? t('admin') : t('member')}
+                    </span>
+                    <span className="text-xs font-mono text-zinc-500">
+                        {t('joined')} {format(new Date(user.created_at), 'MMM yyyy')}
+                    </span>
+                </div>
             </div>
 
-            {/* Stats Cards */}
-            <div className="grid grid-cols-2 gap-3 mb-6">
-                <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-3 flex flex-col items-center justify-center">
-                    <div className="text-zinc-400 text-[10px] uppercase font-mono tracking-widest mb-1">Joined</div>
-                    <div className="flex items-center gap-1.5 text-zinc-200 font-bold text-sm">
-                        <Calendar className="w-3.5 h-3.5 text-primary" />
-                        {format(new Date(user.created_at), 'MMM yyyy')}
+            {/* Stats Cards - Updated to show Month/Year/Total Days */}
+            <div className="grid grid-cols-3 gap-2 mb-6">
+                <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-3 flex flex-col items-center justify-center text-center">
+                    <div className="text-zinc-500 text-[9px] uppercase font-mono tracking-widest mb-1">{t('stats_month')}</div>
+                    <div className="flex items-center gap-1.5 text-primary font-bold text-xl">
+                        <Flame className="w-4 h-4" />
+                        {stats.month}
                     </div>
                 </div>
-                <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-3 flex flex-col items-center justify-center">
-                    <div className="text-zinc-400 text-[10px] uppercase font-mono tracking-widest mb-1">Workouts</div>
-                    <div className="flex items-center gap-1.5 text-zinc-200 font-bold text-sm">
-                        <Activity className="w-3.5 h-3.5 text-green-500" />
-                        {totalWorkouts} Logs
+                <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-3 flex flex-col items-center justify-center text-center">
+                    <div className="text-zinc-500 text-[9px] uppercase font-mono tracking-widest mb-1">{t('stats_year')}</div>
+                    <div className="flex items-center gap-1.5 text-blue-400 font-bold text-xl">
+                        <Calendar className="w-4 h-4" />
+                        {stats.year}
+                    </div>
+                </div>
+                <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-3 flex flex-col items-center justify-center text-center">
+                    <div className="text-zinc-500 text-[9px] uppercase font-mono tracking-widest mb-1">{t('stats_total')}</div>
+                    <div className="flex items-center gap-1.5 text-white font-bold text-xl">
+                        <Trophy className="w-4 h-4 text-yellow-500" />
+                        {stats.total}
                     </div>
                 </div>
             </div>
@@ -199,7 +244,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 
                 {/* Email (Read Only) */}
                 <div className="space-y-1">
-                    <label className="text-xs font-mono text-zinc-400 uppercase ml-1">Email Account</label>
+                    <label className="text-xs font-mono text-zinc-400 uppercase ml-1">{t('email')}</label>
                     <div className="flex items-center gap-3 bg-black/40 border border-white/10 rounded-xl p-3 text-zinc-400 cursor-not-allowed">
                         <Mail className="w-5 h-5 text-zinc-500" />
                         <span className="text-sm truncate flex-1">{user.email}</span>
@@ -209,7 +254,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
 
                 {/* Name */}
                 <div className="space-y-1">
-                    <label className="text-xs font-mono text-zinc-400 uppercase ml-1">Display Name</label>
+                    <label className="text-xs font-mono text-zinc-400 uppercase ml-1">{t('display_name')}</label>
                     <div className="relative group">
                         <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500 group-focus-within:text-primary transition-colors" />
                         <input 
@@ -225,7 +270,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 <div className="pt-2 border-t border-white/5 mt-2">
                     <div className="space-y-4">
                         <div className="space-y-1">
-                            <label className="text-xs font-mono text-zinc-400 uppercase ml-1">New Password (Optional)</label>
+                            <label className="text-xs font-mono text-zinc-400 uppercase ml-1">{t('new_password')}</label>
                             <div className="relative group">
                                 <Shield className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500 group-focus-within:text-primary transition-colors" />
                                 <input 
@@ -240,7 +285,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
 
                         {/* Confirm Password - Only shown if user starts typing a password */}
                         <div className={`space-y-1 transition-all duration-300 ${password ? 'opacity-100 max-h-20' : 'opacity-50 max-h-20 grayscale'}`}>
-                            <label className="text-xs font-mono text-zinc-400 uppercase ml-1">Confirm Password</label>
+                            <label className="text-xs font-mono text-zinc-400 uppercase ml-1">{t('confirm_password')}</label>
                             <div className="relative group">
                                 <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500 group-focus-within:text-primary transition-colors" />
                                 <input 
@@ -249,7 +294,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                                     onChange={(e) => setConfirmPassword(e.target.value)}
                                     disabled={!password}
                                     className="w-full bg-black border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-primary/50 focus:bg-zinc-900/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                    placeholder="Re-enter password"
+                                    placeholder={t('confirm_password')}
                                 />
                             </div>
                         </div>
@@ -274,14 +319,14 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                         className="w-full bg-primary hover:bg-primaryHover text-black font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-glow active:scale-95"
                     >
                         {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                        Save Changes
+                        {t('save_changes')}
                     </button>
 
                     <button 
                         onClick={onLogout}
                         className="w-full bg-zinc-900 hover:bg-red-900/20 border border-white/5 hover:border-red-500/30 text-zinc-400 hover:text-red-500 py-3 rounded-xl flex items-center justify-center gap-2 transition-all text-sm font-bold"
                     >
-                        <LogOut className="w-4 h-4" /> Sign Out
+                        <LogOut className="w-4 h-4" /> {t('sign_out')}
                     </button>
                 </div>
 

@@ -670,7 +670,7 @@ function App() {
       <PRModal isOpen={showPRModal} onClose={() => setShowPRModal(false)} workouts={workouts} initialExercise={selectedHistoryExercise} />
       <MonthlySummaryModal isOpen={showMonthlySummary} onClose={() => setShowMonthlySummary(false)} viewDate={viewDate} workouts={workouts} />
       <CreatePlanModal isOpen={showCreatePlan} onClose={() => setShowCreatePlan(false)} onSave={handleSavePlan} initialPlan={editingPlan} />
-      {currentUser && <ProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} user={currentUser} totalWorkouts={workouts.length} onUpdateUser={handleUpdateUser} onLogout={handleLogout} />}
+      {currentUser && <ProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} user={currentUser} workouts={workouts} onUpdateUser={handleUpdateUser} onLogout={handleLogout} />}
       {editingExercise && <EditExerciseModal isOpen={!!editingExercise} onClose={() => setEditingExercise(null)} exercise={editingExercise.data} onSave={executeEdit} />}
 
       {/* CONFIRMATION DIALOGS (Styled Modern) */}
