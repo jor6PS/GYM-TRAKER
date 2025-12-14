@@ -4,9 +4,18 @@ import { Friend, Workout } from '../types';
 // --- CONFIGURATION ---
 const env = (import.meta as any).env;
 
-// Retrieve from Environment Variables ONLY
-const SUPABASE_URL = env?.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = env?.VITE_SUPABASE_ANON_KEY;
+// ------------------------------------------------------------------
+// ⚠️ INSTRUCCIONES PARA EL USUARIO:
+// Si no estás usando un archivo .env, pega tus credenciales de Supabase aquí abajo entre las comillas.
+// Puedes obtenerlas en: https://supabase.com/dashboard/project/_/settings/api
+// ------------------------------------------------------------------
+const MANUAL_SUPABASE_URL = "https://hjmttgdlxsqnkequnacz.supabase.co"; 
+const MANUAL_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhqbXR0Z2RseHNxbmtlcXVuYWN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1OTc1NzQsImV4cCI6MjA4MTE3MzU3NH0.A6exntms4j0o6hNFON4gLhltLmbccEjDxpL_GcQmeE0";
+// ------------------------------------------------------------------
+
+// Retrieve from Environment Variables OR Manual constants
+const SUPABASE_URL = env?.VITE_SUPABASE_URL || MANUAL_SUPABASE_URL;
+const SUPABASE_ANON_KEY = env?.VITE_SUPABASE_ANON_KEY || MANUAL_SUPABASE_ANON_KEY;
 
 // Check configuration
 export const isConfigured = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
