@@ -1,0 +1,212 @@
+import React, { createContext, useContext, useState, useEffect } from 'react';
+
+type Language = 'es' | 'en';
+
+const translations = {
+  es: {
+    // General
+    loading: "Cargando...",
+    error: "Error",
+    cancel: "Cancelar",
+    save: "Guardar",
+    delete: "Eliminar",
+    edit: "Editar",
+    
+    // Header
+    viewing_as: "Viendo como",
+    exit: "Salir",
+    
+    // Auth
+    sign_in: "Iniciar Sesión",
+    sign_up: "Registrarse",
+    start_journey: "Empezar",
+    full_name: "Nombre Completo",
+    email_user: "Usuario o Email",
+    email: "Correo Electrónico",
+    password: "Contraseña",
+    have_account: "¿Ya tienes cuenta? Inicia Sesión",
+    no_account: "¿No tienes cuenta? Regístrate",
+    check_inbox: "Revisa tu bandeja de entrada",
+    verification_sent: "Hemos enviado un enlace de verificación a",
+    back_signin: "Volver al Inicio",
+    
+    // Dashboard
+    routines: "RUTINAS",
+    saved: "Guardadas",
+    new: "NUEVA",
+    todays_log: "REGISTRO DE HOY",
+    logs: "Registros",
+    no_activity: "Sin actividad registrada.",
+    tap_mic: "Toca el micro para empezar.",
+    sets: "SERIES",
+    vol: "VOL",
+    manual: "MANUAL",
+    listening: "ESCUCHANDO...",
+    processing: "PROCESANDO...",
+    
+    // Calendar
+    today: "Hoy",
+    
+    // Monthly Report
+    monthly_report: "Reporte Mensual",
+    exercise_highlights: "Destacados",
+    gym_bro_analysis: "Análisis del Gym Bro",
+    final_verdict: "El Veredicto Final",
+    top_lift: "Récord",
+    consulting_ai: "Consultando a los dioses del gym...",
+    no_data_month: "No hay datos este mes. ¡A entrenar!",
+    
+    // Actions
+    delete_exercise_title: "¿Borrar Ejercicio?",
+    delete_exercise_desc: "Este set será eliminado.",
+    delete_workout_title: "¿Borrar Entrenamiento?",
+    delete_workout_desc: "Se borrará todo el registro.",
+    delete_plan_title: "¿Borrar Rutina?",
+    delete_plan_desc: "La rutina se perderá para siempre.",
+    
+    // Modals
+    input_log: "Introducir Registro",
+    placeholder_log: "> Iniciar log: 3 series de press banca 80kg...",
+    submit_log: "Enviar_Log",
+    abort: "Abortar",
+    
+    // Profile
+    profile: "Perfil",
+    joined: "Miembro desde",
+    workouts_total: "Entrenos",
+    admin: "ADMINISTRADOR",
+    member: "MIEMBRO",
+    save_changes: "Guardar Cambios",
+    sign_out: "Cerrar Sesión",
+    display_name: "Nombre Visible",
+    new_password: "Nueva Contraseña (Opcional)",
+    confirm_password: "Confirmar Contraseña",
+    
+    // Rest Timer
+    rest_timer: "Descanso",
+  },
+  en: {
+    // General
+    loading: "Loading...",
+    error: "Error",
+    cancel: "Cancel",
+    save: "Save",
+    delete: "Delete",
+    edit: "Edit",
+    
+    // Header
+    viewing_as: "Viewing as",
+    exit: "Exit",
+    
+    // Auth
+    sign_in: "Sign In",
+    sign_up: "Sign Up",
+    start_journey: "Start Journey",
+    full_name: "Full Name",
+    email_user: "Username or Email",
+    email: "Email Address",
+    password: "Password",
+    have_account: "Already have an account? Sign In",
+    no_account: "Don't have an account? Sign Up",
+    check_inbox: "Check your inbox",
+    verification_sent: "We've sent a verification link to",
+    back_signin: "Back to Sign In",
+    
+    // Dashboard
+    routines: "WORKOUT ROUTINES",
+    saved: "Saved",
+    new: "NEW",
+    todays_log: "TODAY'S LOG",
+    logs: "Logs",
+    no_activity: "No activity recorded.",
+    tap_mic: "Tap the mic below to start.",
+    sets: "SETS",
+    vol: "VOL",
+    manual: "MANUAL",
+    listening: "LISTENING...",
+    processing: "PROCESSING...",
+    
+    // Calendar
+    today: "Today",
+    
+    // Monthly Report
+    monthly_report: "Monthly Report",
+    exercise_highlights: "Exercise Highlights",
+    gym_bro_analysis: "Gym Bro Analysis",
+    final_verdict: "The Final Verdict",
+    top_lift: "Top Lift",
+    consulting_ai: "Consulting the Gym Gods...",
+    no_data_month: "No data for this month.",
+    
+    // Actions
+    delete_exercise_title: "Delete Exercise?",
+    delete_exercise_desc: "This set will be removed.",
+    delete_workout_title: "Delete Workout?",
+    delete_workout_desc: "Entire log will be deleted.",
+    delete_plan_title: "Delete Plan?",
+    delete_plan_desc: "Routine will be lost.",
+    
+    // Modals
+    input_log: "Input Data Log",
+    placeholder_log: "> Initialize log: 3 sets of bench press 80kg...",
+    submit_log: "Submit_Log",
+    abort: "Abort",
+    
+    // Profile
+    profile: "Profile",
+    joined: "Joined",
+    workouts_total: "Logs",
+    admin: "ADMINISTRATOR",
+    member: "MEMBER",
+    save_changes: "Save Changes",
+    sign_out: "Sign Out",
+    display_name: "Display Name",
+    new_password: "New Password (Optional)",
+    confirm_password: "Confirm Password",
+    
+    // Rest Timer
+    rest_timer: "Rest Timer",
+  }
+};
+
+interface LanguageContextType {
+  language: Language;
+  setLanguage: (lang: Language) => void;
+  t: (key: keyof typeof translations['es']) => string;
+}
+
+const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
+
+export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [language, setLanguage] = useState<Language>('es'); // Default to Spanish
+
+  useEffect(() => {
+    const storedLang = localStorage.getItem('language') as Language;
+    if (storedLang && (storedLang === 'es' || storedLang === 'en')) {
+      setLanguage(storedLang);
+    }
+  }, []);
+
+  const handleSetLanguage = (lang: Language) => {
+    setLanguage(lang);
+    localStorage.setItem('language', lang);
+  };
+
+  const t = (key: keyof typeof translations['es']) => {
+    return translations[language][key] || key;
+  };
+
+  return (
+    <LanguageContext.Provider value={{ language, setLanguage: handleSetLanguage, t }}>
+      {children}
+    </LanguageContext.Provider>
+  );
+};
+
+export const useLanguage = () => {
+  const context = useContext(LanguageContext);
+  if (!context) {
+    throw new Error('useLanguage must be used within a LanguageProvider');
+  }
+  return context;
+};

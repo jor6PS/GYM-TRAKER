@@ -171,7 +171,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 />
                 
                 <h2 className="mt-3 text-xl font-bold text-white tracking-wide">{user.name}</h2>
-                <span className="text-xs font-mono text-zinc-500 bg-white/5 px-2 py-0.5 rounded border border-white/5 mt-1">
+                <span className="text-xs font-mono text-zinc-400 bg-white/5 px-2 py-0.5 rounded border border-white/5 mt-1">
                     {user.role === 'admin' ? 'ADMINISTRATOR' : 'MEMBER'}
                 </span>
             </div>
@@ -179,14 +179,14 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             {/* Stats Cards */}
             <div className="grid grid-cols-2 gap-3 mb-6">
                 <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-3 flex flex-col items-center justify-center">
-                    <div className="text-zinc-500 text-[10px] uppercase font-mono tracking-widest mb-1">Joined</div>
+                    <div className="text-zinc-400 text-[10px] uppercase font-mono tracking-widest mb-1">Joined</div>
                     <div className="flex items-center gap-1.5 text-zinc-200 font-bold text-sm">
                         <Calendar className="w-3.5 h-3.5 text-primary" />
                         {format(new Date(user.created_at), 'MMM yyyy')}
                     </div>
                 </div>
                 <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-3 flex flex-col items-center justify-center">
-                    <div className="text-zinc-500 text-[10px] uppercase font-mono tracking-widest mb-1">Workouts</div>
+                    <div className="text-zinc-400 text-[10px] uppercase font-mono tracking-widest mb-1">Workouts</div>
                     <div className="flex items-center gap-1.5 text-zinc-200 font-bold text-sm">
                         <Activity className="w-3.5 h-3.5 text-green-500" />
                         {totalWorkouts} Logs
@@ -199,17 +199,17 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 
                 {/* Email (Read Only) */}
                 <div className="space-y-1">
-                    <label className="text-xs font-mono text-zinc-500 uppercase ml-1">Email Account</label>
+                    <label className="text-xs font-mono text-zinc-400 uppercase ml-1">Email Account</label>
                     <div className="flex items-center gap-3 bg-black/40 border border-white/10 rounded-xl p-3 text-zinc-400 cursor-not-allowed">
-                        <Mail className="w-5 h-5 text-zinc-600" />
+                        <Mail className="w-5 h-5 text-zinc-500" />
                         <span className="text-sm truncate flex-1">{user.email}</span>
-                        <Lock className="w-3.5 h-3.5 text-zinc-700" />
+                        <Lock className="w-3.5 h-3.5 text-zinc-600" />
                     </div>
                 </div>
 
                 {/* Name */}
                 <div className="space-y-1">
-                    <label className="text-xs font-mono text-zinc-500 uppercase ml-1">Display Name</label>
+                    <label className="text-xs font-mono text-zinc-400 uppercase ml-1">Display Name</label>
                     <div className="relative group">
                         <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500 group-focus-within:text-primary transition-colors" />
                         <input 
@@ -225,14 +225,14 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 <div className="pt-2 border-t border-white/5 mt-2">
                     <div className="space-y-4">
                         <div className="space-y-1">
-                            <label className="text-xs font-mono text-zinc-500 uppercase ml-1">New Password (Optional)</label>
+                            <label className="text-xs font-mono text-zinc-400 uppercase ml-1">New Password (Optional)</label>
                             <div className="relative group">
                                 <Shield className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500 group-focus-within:text-primary transition-colors" />
                                 <input 
                                     type="password"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full bg-black border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white placeholder:text-zinc-700 focus:outline-none focus:border-primary/50 focus:bg-zinc-900/50 transition-all"
+                                    className="w-full bg-black border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-primary/50 focus:bg-zinc-900/50 transition-all"
                                     placeholder="••••••••"
                                 />
                             </div>
@@ -240,7 +240,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
 
                         {/* Confirm Password - Only shown if user starts typing a password */}
                         <div className={`space-y-1 transition-all duration-300 ${password ? 'opacity-100 max-h-20' : 'opacity-50 max-h-20 grayscale'}`}>
-                            <label className="text-xs font-mono text-zinc-500 uppercase ml-1">Confirm Password</label>
+                            <label className="text-xs font-mono text-zinc-400 uppercase ml-1">Confirm Password</label>
                             <div className="relative group">
                                 <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500 group-focus-within:text-primary transition-colors" />
                                 <input 
@@ -248,7 +248,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                                     value={confirmPassword}
                                     onChange={(e) => setConfirmPassword(e.target.value)}
                                     disabled={!password}
-                                    className="w-full bg-black border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white placeholder:text-zinc-700 focus:outline-none focus:border-primary/50 focus:bg-zinc-900/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="w-full bg-black border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-primary/50 focus:bg-zinc-900/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                                     placeholder="Re-enter password"
                                 />
                             </div>

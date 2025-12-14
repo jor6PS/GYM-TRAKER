@@ -8,9 +8,11 @@ import {
   endOfWeek,
   addMonths
 } from 'date-fns';
+import { es, enUS } from 'date-fns/locale';
 import { clsx } from 'clsx';
-import { ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RotateCcw, Sparkles } from 'lucide-react';
 import { Workout } from '../types';
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface CalendarViewProps {
   viewDate: Date;
@@ -18,9 +20,11 @@ interface CalendarViewProps {
   workouts: Workout[];
   onSelectDate: (date: Date) => void;
   selectedDate: Date;
+  onSummaryClick: () => void; // New prop for triggering summary
 }
 
-const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+// Weekdays based on language would be better generated dynamically
+const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']; // Kept simple for UI compactness
 
 const startOfMonth = (date: Date) => {
   const d = new Date(date);
@@ -39,8 +43,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   onViewDateChange,
   workouts, 
   onSelectDate,
-  selectedDate
+  selectedDate,
+  onSummaryClick
 }) => {
+  const { language } = useLanguage();
+  const dateLocale = language === 'es' ? es : enUS;
+
   const monthStart = startOfMonth(viewDate);
   const monthEnd = endOfMonth(monthStart);
   const startDate = startOfWeek(monthStart);
@@ -53,20 +61,40 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const handleNextMonth = () => onViewDateChange(addMonths(viewDate, 1));
   
   const isCurrentMonth = isSameMonth(viewDate, new Date());
+  
+  // Calculate distinct workout days in current view for the badge
+  const workoutsInMonth = workouts.filter(w => isSameMonth(new Date(w.date), viewDate));
+  const hasEnoughData = workoutsInMonth.length > 0;
 
   return (
-    <div className="w-full bg-surface border border-white/5 rounded-3xl overflow-hidden shadow-2xl relative">
+    <div className="w-full bg-surface border border-border rounded-3xl overflow-hidden shadow-2xl relative transition-colors duration-300">
       {/* Glossy Header */}
-      <div className="p-4 flex items-center justify-between border-b border-white/5 bg-white/[0.02]">
-        <button onClick={handlePrevMonth} className="p-2 hover:bg-white/10 rounded-full transition-colors text-zinc-400 hover:text-white">
+      <div className="p-4 flex items-center justify-between border-b border-border bg-surfaceHighlight/30">
+        <button onClick={handlePrevMonth} className="p-2 hover:bg-surfaceHighlight rounded-full transition-colors text-subtext hover:text-text">
           <ChevronLeft className="w-5 h-5" />
         </button>
 
-        <h2 className="text-sm font-bold text-white tracking-wide uppercase">
-             {format(viewDate, 'MMMM yyyy')}
-        </h2>
+        <div className="flex items-center gap-2">
+            <h2 className="text-sm font-bold text-text tracking-wide uppercase">
+                {format(viewDate, 'MMMM yyyy', { locale: dateLocale })}
+            </h2>
+            {/* AI Summary Trigger */}
+            <button 
+                onClick={onSummaryClick}
+                disabled={!hasEnoughData}
+                className={clsx(
+                    "p-1.5 rounded-full transition-all border",
+                    hasEnoughData 
+                        ? "bg-primary/10 text-primary border-primary/20 hover:bg-primary/20 hover:scale-105 cursor-pointer shadow-[0_0_10px_rgba(212,255,0,0.1)]" 
+                        : "bg-surfaceHighlight text-subtext border-border cursor-not-allowed opacity-50"
+                )}
+                title="Generate AI Monthly Report"
+            >
+                <Sparkles className="w-3.5 h-3.5" />
+            </button>
+        </div>
 
-        <button onClick={handleNextMonth} className="p-2 hover:bg-white/10 rounded-full transition-colors text-zinc-400 hover:text-white">
+        <button onClick={handleNextMonth} className="p-2 hover:bg-surfaceHighlight rounded-full transition-colors text-subtext hover:text-text">
           <ChevronRight className="w-5 h-5" />
         </button>
       </div>
@@ -74,7 +102,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       {!isCurrentMonth && (
          <button 
            onClick={() => { const now = new Date(); onViewDateChange(now); onSelectDate(now); }}
-           className="absolute top-4 right-14 p-2 text-primary hover:bg-primary/10 rounded-full transition-colors"
+           className="absolute top-4 right-16 p-2 text-primary hover:bg-primary/10 rounded-full transition-colors"
            title="Today"
          >
            <RotateCcw className="w-4 h-4" />
@@ -85,7 +113,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         {/* Weekday Headers */}
         <div className="grid grid-cols-7 mb-2">
           {WEEKDAYS.map((day) => (
-            <div key={day} className="text-center text-[10px] font-bold text-zinc-600">
+            <div key={day} className="text-center text-[10px] font-bold text-subtext">
               {day}
             </div>
           ))}
@@ -110,8 +138,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 className={clsx(
                   'relative h-10 w-full flex flex-col items-center justify-center rounded-xl transition-all duration-300',
                   !isMonthDay && 'opacity-20',
-                  isSelected ? 'bg-primary text-black scale-105 font-bold shadow-glow' : 'hover:bg-white/5 text-zinc-300',
-                  isToday && !isSelected && 'bg-white/10 text-white font-bold ring-1 ring-white/20'
+                  isSelected 
+                    ? 'bg-primary text-black scale-105 font-bold shadow-glow border border-primary' 
+                    : hasWorkout 
+                        ? 'bg-primary/10 text-text border border-primary/30' // Highlighted state for workout days
+                        : 'hover:bg-surfaceHighlight text-subtext',
+                  isToday && !isSelected && 'ring-1 ring-border bg-surfaceHighlight/50'
                 )}
               >
                 <span className="text-xs">{format(day, 'd')}</span>

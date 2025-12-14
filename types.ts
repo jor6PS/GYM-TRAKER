@@ -2,6 +2,7 @@ export interface Set {
   reps: number;
   weight: number;
   unit: string;
+  rpe?: number; // Rate of Perceived Exertion (1-10)
 }
 
 export interface Exercise {
@@ -16,7 +17,7 @@ export interface WorkoutData {
 
 export interface Workout {
   id: string;
-  user_id: string; // Changed to match Supabase column
+  user_id: string;
   date: string;
   structured_data: WorkoutData;
   source: 'web' | 'audio' | 'manual';
@@ -25,7 +26,7 @@ export interface Workout {
 
 export interface WorkoutPlan {
   id: string;
-  user_id?: string; // Changed to match Supabase column
+  user_id?: string;
   name: string;
   exercises: Exercise[];
 }
@@ -47,4 +48,5 @@ export interface PersonalRecord {
   unit: string;
   reps: number;
   date: string;
+  estimated1RM?: number;
 }

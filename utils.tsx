@@ -17,7 +17,8 @@ const IconWrapper = ({ children, className }: { children?: React.ReactNode, clas
   </svg>
 );
 
-// --- NEW APP LOGO: MOUNTAINS + DUMBBELL (Night Mode / Crescent Moon) ---
+// --- NEW APP LOGO: MOUNTAINS + DUMBBELL ---
+// Updated to use currentColor for fills to adapt to Light/Dark modes
 export const AppLogo = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
     <defs>
@@ -29,25 +30,26 @@ export const AppLogo = ({ className }: { className?: string }) => (
 
     {/* 1. BACKGROUND: NATURE (Crescent Moon & Mountains) */}
     
-    {/* Crescent Moon (Media Luna) - Moved Top-Right for separation */}
-    {/* Path creates a crescent shape using two arcs */}
+    {/* Crescent Moon - Uses text color in both modes for visibility */}
     <path 
       d="M21 2.5 A 2.5 2.5 0 0 1 21 7.5 A 3.5 3.5 0 0 0 21 2.5 Z" 
-      fill="#FFFFFF" 
+      fill="currentColor" 
       className="opacity-90 shadow-glow" 
     />
     
-    {/* Mountain Range (Background) - Dark Grey Strokes */}
+    {/* Mountain Range */}
     <path 
       d="M2.5 15L8.5 6L13 13" 
-      stroke="#52525b" 
+      stroke="currentColor" 
+      strokeOpacity="0.7"
       strokeWidth="1.5" 
       strokeLinecap="round" 
       strokeLinejoin="round" 
     />
     <path 
       d="M12 15L16 9L21.5 15" 
-      stroke="#71717a" 
+      stroke="currentColor" 
+      strokeOpacity="0.5"
       strokeWidth="1.5" 
       strokeLinecap="round" 
       strokeLinejoin="round" 
@@ -56,21 +58,21 @@ export const AppLogo = ({ className }: { className?: string }) => (
     {/* 2. FOREGROUND: GYM (Tech Dumbbell) */}
     
     {/* Connection Bar */}
-    <path d="M7 17H17" stroke="white" strokeWidth="2" strokeLinecap="round" />
+    <path d="M7 17H17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     
-    {/* Left Weight Plate (Hexagonal Modern Style) */}
+    {/* Left Weight Plate */}
     <path 
       d="M3 14L2 17L3 20H5L6 17L5 14H3Z" 
-      fill="white" 
+      fill="currentColor" 
     />
     
     {/* Right Weight Plate */}
     <path 
       d="M19 14L18 17L19 20H21L22 17L21 14H19Z" 
-      fill="white" 
+      fill="currentColor" 
     />
     
-    {/* Accent Details on Plates (The Spark) */}
+    {/* Accent Details on Plates (The Spark - Always Volt) */}
     <path d="M4 16V18" stroke="#D4FF00" strokeWidth="1.5" strokeLinecap="round" />
     <path d="M20 16V18" stroke="#D4FF00" strokeWidth="1.5" strokeLinecap="round" />
   </svg>

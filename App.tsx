@@ -8,10 +8,14 @@ import { EditExerciseModal } from './components/EditExerciseModal';
 import { LoginScreen } from './components/LoginScreen';
 import { AdminDashboard } from './components/AdminDashboard';
 import { ProfileModal } from './components/ProfileModal';
+import { RestTimer } from './components/RestTimer';
+import { MonthlySummaryModal } from './components/MonthlySummaryModal';
 import { Workout, WorkoutData, WorkoutPlan, Exercise, User, UserRole } from './types';
 import { supabase, getCurrentProfile } from './services/supabase';
 import { format, isSameDay, isFuture } from 'date-fns';
+import { es, enUS } from 'date-fns/locale';
 import { getExerciseIcon, AppLogo } from './utils';
+import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { 
   Trophy,
   Trash2,
@@ -21,18 +25,29 @@ import {
   Pencil,
   Clock,
   EyeOff,
-  MoreVertical,
   Activity,
-  Calendar,
-  ChevronRight,
-  TrendingUp,
   Keyboard,
   Dumbbell,
-  Mic
+  Sun,
+  Moon,
+  Gauge,
+  Languages
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
-export default function App() {
+// Wrapper to provide Context to the App Component
+export default function AppWrapper() {
+  return (
+    <LanguageProvider>
+      <App />
+    </LanguageProvider>
+  );
+}
+
+function App() {
+  const { t, language, setLanguage } = useLanguage();
+  const dateLocale = language === 'es' ? es : enUS;
+
   // --- AUTH STATE ---
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [realAdminUser, setRealAdminUser] = useState<User | null>(null);
@@ -44,6 +59,14 @@ export default function App() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [plans, setPlans] = useState<WorkoutPlan[]>([]);
   
+  // --- THEME STATE ---
+  const [isDark, setIsDark] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return document.documentElement.classList.contains('dark');
+    }
+    return true;
+  });
+  
   // --- ADMIN STATE ---
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [allWorkouts, setAllWorkouts] = useState<Workout[]>([]);
@@ -53,6 +76,7 @@ export default function App() {
   const [showPRModal, setShowPRModal] = useState(false);
   const [showCreatePlan, setShowCreatePlan] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showMonthlySummary, setShowMonthlySummary] = useState(false);
   const [selectedHistoryExercise, setSelectedHistoryExercise] = useState<string | null>(null);
   
   // Editing State
@@ -63,6 +87,23 @@ export default function App() {
   const [deleteConfirmation, setDeleteConfirmation] = useState<{ workoutId: string; exerciseIndex: number; exerciseName: string; } | null>(null);
   const [deletePlanConfirmation, setDeletePlanConfirmation] = useState<{ planId: string; planName: string; } | null>(null);
   const [deleteWorkoutConfirmation, setDeleteWorkoutConfirmation] = useState<string | null>(null);
+
+  // --- THEME TOGGLE ---
+  const toggleTheme = () => {
+    const newIsDark = !isDark;
+    setIsDark(newIsDark);
+    if (newIsDark) {
+      document.documentElement.classList.add('dark');
+      localStorage.theme = 'dark';
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.theme = 'light';
+    }
+  };
+
+  const toggleLanguage = () => {
+    setLanguage(language === 'es' ? 'en' : 'es');
+  };
 
   // --- AUTH INITIALIZATION ---
   useEffect(() => {
@@ -219,8 +260,6 @@ export default function App() {
     if (!currentUser) return;
     const planPayload = { name: plan.name, exercises: plan.exercises, user_id: currentUser.id };
 
-    // Check if the plan actually exists in our local state to determine UPDATE vs INSERT.
-    // The Modal generates a random ID for new plans, so simply checking if ID exists is not enough.
     const isExistingPlan = plans.some(p => p.id === plan.id);
 
     if (isExistingPlan) {
@@ -318,17 +357,17 @@ export default function App() {
   const canEdit = !isFuture(selectedDate);
 
   return (
-    <div className="min-h-screen pb-40 relative font-sans text-text selection:bg-primary selection:text-black">
+    <div className="min-h-screen pb-40 relative font-sans text-text selection:bg-primary selection:text-black transition-colors duration-300">
       
       {/* IMPERSONATION BANNER */}
       {realAdminUser && (
         <div className="bg-primary text-black px-4 py-3 flex items-center justify-between sticky top-0 z-50 shadow-xl">
            <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-tight">
              <EyeOff className="w-4 h-4" />
-             Viewing as {currentUser.name}
+             {t('viewing_as')} {currentUser.name}
            </div>
            <button onClick={stopImpersonating} className="bg-black text-white px-4 py-1.5 rounded-full text-xs font-bold hover:scale-105 transition-transform">
-             Exit
+             {t('exit')}
            </button>
         </div>
       )}
@@ -338,28 +377,44 @@ export default function App() {
         <div className="max-w-md mx-auto pointer-events-auto">
           <header className="glass-panel rounded-full px-5 py-3 flex items-center justify-between shadow-2xl">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg overflow-hidden bg-white/5 border border-white/10">
+              <div className="w-8 h-8 rounded-lg overflow-hidden bg-surface border border-border">
                  <AppLogo className="w-full h-full object-contain" />
               </div>
-              <h1 className="text-lg font-bold tracking-tight text-white">
+              <h1 className="text-lg font-bold tracking-tight text-text">
                 GYM<span className="text-primary">.AI</span>
               </h1>
             </div>
             
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              {/* Language Toggle */}
+              <button
+                onClick={toggleLanguage}
+                className="px-2 h-9 flex items-center justify-center rounded-full hover:bg-surfaceHighlight transition-colors text-xs font-bold text-subtext hover:text-text font-mono"
+                title="Toggle Language"
+              >
+                {language.toUpperCase()}
+              </button>
+
+              <button 
+                onClick={toggleTheme}
+                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surfaceHighlight transition-colors text-subtext hover:text-text"
+              >
+                {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+              </button>
+
               <button 
                 onClick={() => { setSelectedHistoryExercise(null); setShowPRModal(true); }}
-                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors text-zinc-400 hover:text-primary"
+                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surfaceHighlight transition-colors text-subtext hover:text-primary"
               >
                 <Trophy className="w-5 h-5" />
               </button>
               
               <button onClick={() => setShowProfileModal(true)} className="ml-1">
-                <div className="w-9 h-9 rounded-full bg-surface border border-white/10 p-0.5 overflow-hidden shadow-lg transition-transform hover:scale-105 active:scale-95">
+                <div className="w-9 h-9 rounded-full bg-surface border border-border p-0.5 overflow-hidden shadow-lg transition-transform hover:scale-105 active:scale-95">
                   {currentUser.avatar_url ? (
                     <img src={currentUser.avatar_url} alt="Profile" className="w-full h-full rounded-full object-cover" />
                   ) : (
-                    <div className="w-full h-full bg-zinc-800 flex items-center justify-center text-xs font-bold text-white">
+                    <div className="w-full h-full bg-surfaceHighlight flex items-center justify-center text-xs font-bold text-text">
                       {currentUser.name.charAt(0).toUpperCase()}
                     </div>
                   )}
@@ -380,6 +435,7 @@ export default function App() {
             workouts={workouts} 
             selectedDate={selectedDate}
             onSelectDate={setSelectedDate}
+            onSummaryClick={() => setShowMonthlySummary(true)}
           />
         </section>
 
@@ -388,12 +444,12 @@ export default function App() {
           <section>
              {/* Header Section for Plans - Matches 'Today' style */}
              <div className="flex items-center justify-between mb-3 px-2">
-                <h2 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
+                <h2 className="text-sm font-bold text-text tracking-tight flex items-center gap-2">
                   <Zap className="w-4 h-4 text-primary" />
-                  WORKOUT ROUTINES
+                  {t('routines')}
                 </h2>
-                <span className="text-xs font-medium text-zinc-600 bg-white/5 px-2 py-1 rounded-md">
-                  {plans.length} Saved
+                <span className="text-xs font-medium text-subtext bg-surface px-2 py-1 rounded-md border border-border">
+                  {plans.length} {t('saved')}
                 </span>
              </div>
 
@@ -402,12 +458,12 @@ export default function App() {
                     {/* CREATE NEW BUTTON */}
                     <button 
                       onClick={() => { setEditingPlan(null); setShowCreatePlan(true); }}
-                      className="flex flex-col items-center justify-center gap-2 w-[100px] h-[100px] rounded-2xl border border-dashed border-white/10 hover:border-primary/50 bg-white/5 hover:bg-primary/5 transition-all shrink-0 group"
+                      className="flex flex-col items-center justify-center gap-2 w-[100px] h-[100px] rounded-2xl border border-dashed border-border hover:border-primary/50 bg-surface hover:bg-primary/5 transition-all shrink-0 group"
                     >
-                       <div className="w-8 h-8 rounded-full bg-surface border border-white/10 flex items-center justify-center text-zinc-500 group-hover:text-primary group-hover:border-primary transition-all">
+                       <div className="w-8 h-8 rounded-full bg-surfaceHighlight border border-border flex items-center justify-center text-subtext group-hover:text-primary group-hover:border-primary transition-all">
                          <Plus className="w-4 h-4" />
                        </div>
-                       <span className="text-[10px] font-bold text-zinc-500 group-hover:text-primary tracking-wide">NEW</span>
+                       <span className="text-[10px] font-bold text-subtext group-hover:text-primary tracking-wide">{t('new')}</span>
                     </button>
                     
                     {/* PLAN CARDS */}
@@ -415,30 +471,30 @@ export default function App() {
                        <div
                         key={plan.id}
                         onClick={() => handleApplyPlan(plan)}
-                        className="w-[120px] h-[100px] rounded-2xl bg-surfaceHighlight border border-white/5 p-3 flex flex-col justify-between shrink-0 hover:border-primary/50 transition-all cursor-pointer group shadow-lg active:scale-95 relative overflow-hidden"
+                        className="w-[120px] h-[100px] rounded-2xl bg-surfaceHighlight border border-border p-3 flex flex-col justify-between shrink-0 hover:border-primary/50 transition-all cursor-pointer group shadow-sm hover:shadow-lg active:scale-95 relative overflow-hidden"
                       >
                         <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
                             <div className="bg-primary/20 text-primary text-[8px] font-bold px-1.5 py-0.5 rounded-full border border-primary/20">RUN</div>
                         </div>
 
                         <div>
-                          <div className="w-6 h-6 rounded-full bg-white/5 flex items-center justify-center mb-2">
+                          <div className="w-6 h-6 rounded-full bg-surface flex items-center justify-center mb-2">
                              <Dumbbell className="w-3 h-3 text-primary" />
                           </div>
-                          <h3 className="text-xs font-bold text-white leading-tight truncate">{plan.name}</h3>
-                          <p className="text-[9px] text-zinc-500 font-medium">{plan.exercises.length} Items</p>
+                          <h3 className="text-xs font-bold text-text leading-tight truncate">{plan.name}</h3>
+                          <p className="text-[9px] text-subtext font-medium">{plan.exercises.length} Items</p>
                         </div>
                         
-                        <div className="flex items-center gap-2 pt-2 border-t border-white/5 mt-auto">
+                        <div className="flex items-center gap-2 pt-2 border-t border-border mt-auto">
                             <button 
                                onClick={(e) => { e.stopPropagation(); setEditingPlan(plan); setShowCreatePlan(true); }}
-                               className="p-1 rounded hover:bg-white/10 text-zinc-500 hover:text-white transition-colors"
+                               className="p-1 rounded hover:bg-surface text-subtext hover:text-text transition-colors"
                             >
                                <Pencil className="w-3 h-3" />
                             </button>
                             <button 
                                onClick={(e) => { e.stopPropagation(); setDeletePlanConfirmation({ planId: plan.id, planName: plan.name }); }}
-                               className="p-1 rounded hover:bg-white/10 text-zinc-500 hover:text-danger transition-colors ml-auto"
+                               className="p-1 rounded hover:bg-surface text-subtext hover:text-danger transition-colors ml-auto"
                             >
                                <Trash2 className="w-3 h-3" />
                             </button>
@@ -453,42 +509,42 @@ export default function App() {
         {/* WORKOUT FEED */}
         <section>
           <div className="flex items-center justify-between mb-4 px-2">
-            <h2 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
+            <h2 className="text-sm font-bold text-text tracking-tight flex items-center gap-2">
               <Activity className="w-4 h-4 text-primary" />
-              {isSameDay(selectedDate, new Date()) ? 'TODAY\'S LOG' : format(selectedDate, 'MMMM do').toUpperCase()}
+              {isSameDay(selectedDate, new Date()) ? t('todays_log') : format(selectedDate, 'MMMM do', { locale: dateLocale }).toUpperCase()}
             </h2>
-            <span className="text-xs font-medium text-zinc-600 bg-white/5 px-2 py-1 rounded-md">
-              {selectedWorkouts.length} Logs
+            <span className="text-xs font-medium text-subtext bg-surface px-2 py-1 rounded-md border border-border">
+              {selectedWorkouts.length} {t('logs')}
             </span>
           </div>
 
           {selectedWorkouts.length === 0 ? (
-            <div className="py-12 flex flex-col items-center justify-center text-center border-2 border-dashed border-white/5 rounded-3xl bg-surface/30">
-               <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4 text-zinc-700">
+            <div className="py-12 flex flex-col items-center justify-center text-center border-2 border-dashed border-border rounded-3xl bg-surface/30">
+               <div className="w-16 h-16 bg-surface rounded-full flex items-center justify-center mb-4 text-subtext">
                   <Activity className="w-8 h-8" />
                </div>
-               <p className="text-zinc-500 text-sm font-medium">No activity recorded.</p>
-               {canEdit && <p className="text-zinc-600 text-xs mt-1">Tap the mic below to start.</p>}
+               <p className="text-subtext text-sm font-medium">{t('no_activity')}</p>
+               {canEdit && <p className="text-subtext/70 text-xs mt-1">{t('tap_mic')}</p>}
             </div>
           ) : (
             <div className="space-y-4">
               {selectedWorkouts.map((workout) => (
-                <div key={workout.id} className="bg-surface rounded-3xl p-5 border border-white/5 shadow-xl relative overflow-hidden group">
+                <div key={workout.id} className="bg-surface rounded-3xl p-5 border border-border shadow-sm relative overflow-hidden group">
                    {/* Decorative gradient blob */}
                    <div className="absolute -right-10 -top-10 w-32 h-32 bg-primary/5 rounded-full blur-3xl pointer-events-none"></div>
 
                    <div className="flex items-center justify-between mb-4 relative z-10">
-                      <div className="flex items-center gap-2 text-xs font-bold text-zinc-400 bg-black/30 px-3 py-1 rounded-full border border-white/5">
+                      <div className="flex items-center gap-2 text-xs font-bold text-subtext bg-surfaceHighlight px-3 py-1 rounded-full border border-border">
                         <Clock className="w-3 h-3" />
                         {workout.created_at ? format(new Date(workout.created_at), 'HH:mm') : '--:--'}
-                        <span className="w-1 h-1 bg-zinc-600 rounded-full mx-1"></span>
+                        <span className="w-1 h-1 bg-subtext rounded-full mx-1"></span>
                         <span className="uppercase text-[10px] tracking-wider text-primary">{workout.source}</span>
                       </div>
                       
                       {canEdit && (
                          <button 
                            onClick={() => setDeleteWorkoutConfirmation(workout.id)}
-                           className="p-2 text-zinc-600 hover:text-danger hover:bg-danger/10 rounded-full transition-all opacity-0 group-hover:opacity-100"
+                           className="p-2 text-subtext hover:text-danger hover:bg-danger/10 rounded-full transition-all opacity-0 group-hover:opacity-100"
                          >
                             <Trash2 className="w-4 h-4" />
                          </button>
@@ -496,7 +552,7 @@ export default function App() {
                    </div>
 
                    {workout.structured_data.notes && (
-                      <div className="mb-5 text-sm text-zinc-300 italic bg-white/5 p-3 rounded-xl border border-white/5">
+                      <div className="mb-5 text-sm text-subtext italic bg-surfaceHighlight p-3 rounded-xl border border-border">
                         "{workout.structured_data.notes}"
                       </div>
                    )}
@@ -506,29 +562,54 @@ export default function App() {
                         <div key={idx}>
                            <div className="flex items-center justify-between mb-2">
                               <div 
-                                className="flex items-center gap-3 font-bold text-white text-base cursor-pointer hover:text-primary transition-colors"
+                                className="flex items-center gap-3 font-bold text-text text-base cursor-pointer hover:text-primary transition-colors"
                                 onClick={() => { setSelectedHistoryExercise(ex.name); setShowPRModal(true); }}
                               >
-                                 <div className="p-1.5 bg-white/5 rounded-lg text-zinc-400">
+                                 <div className="p-1.5 bg-surfaceHighlight rounded-lg text-subtext border border-border">
                                    {getExerciseIcon(ex.name, "w-4 h-4")}
                                  </div>
                                  {ex.name}
+                                 <div className="flex gap-2">
+                                    <span className="text-[10px] font-mono text-subtext bg-surfaceHighlight px-1.5 py-0.5 rounded border border-border">
+                                      {ex.sets.length} {t('sets')}
+                                    </span>
+                                    <span className="text-[10px] font-mono text-subtext bg-surfaceHighlight px-1.5 py-0.5 rounded border border-border">
+                                      {ex.sets.reduce((acc, s) => acc + (s.weight * s.reps), 0).toLocaleString()} KG {t('vol')}
+                                    </span>
+                                 </div>
                               </div>
                               {canEdit && (
                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                   <button onClick={(e) => { e.stopPropagation(); setEditingExercise({ workoutId: workout.id, exerciseIndex: idx, data: ex }); }} className="p-1.5 text-zinc-500 hover:text-white"><Pencil className="w-3.5 h-3.5" /></button>
-                                   <button onClick={(e) => { e.stopPropagation(); setDeleteConfirmation({ workoutId: workout.id, exerciseIndex: idx, exerciseName: ex.name }); }} className="p-1.5 text-zinc-500 hover:text-danger"><Trash2 className="w-3.5 h-3.5" /></button>
+                                   <button onClick={(e) => { e.stopPropagation(); setEditingExercise({ workoutId: workout.id, exerciseIndex: idx, data: ex }); }} className="p-1.5 text-subtext hover:text-text"><Pencil className="w-3.5 h-3.5" /></button>
+                                   <button onClick={(e) => { e.stopPropagation(); setDeleteConfirmation({ workoutId: workout.id, exerciseIndex: idx, exerciseName: ex.name }); }} className="p-1.5 text-subtext hover:text-danger"><Trash2 className="w-3.5 h-3.5" /></button>
                                 </div>
                               )}
                            </div>
                            
                            <div className="flex flex-wrap gap-2 pl-9">
                               {ex.sets.map((set, sIdx) => (
-                                <div key={sIdx} className="bg-black border border-white/10 rounded-lg px-3 py-1.5 flex items-baseline gap-1.5 shadow-sm">
+                                <div key={sIdx} className="bg-surfaceHighlight border border-border rounded-lg px-3 py-1.5 flex items-center gap-1.5 shadow-sm group/set relative overflow-hidden">
+                                   {/* RPE Indicator Background */}
+                                   {set.rpe && (
+                                     <div 
+                                       className={clsx(
+                                          "absolute bottom-0 left-0 h-0.5 w-full",
+                                          set.rpe >= 9 ? "bg-red-500" : set.rpe >= 7 ? "bg-yellow-500" : "bg-green-500"
+                                       )} 
+                                       title={`RPE ${set.rpe}`}
+                                     />
+                                   )}
+                                   
                                    <span className="text-primary font-bold font-mono text-sm">{set.weight}</span>
-                                   <span className="text-[10px] text-zinc-600 font-bold">{set.unit}</span>
-                                   <span className="text-zinc-700 text-xs">✕</span>
-                                   <span className="text-white font-bold font-mono text-sm">{set.reps}</span>
+                                   <span className="text-[10px] text-subtext font-bold">{set.unit}</span>
+                                   <span className="text-subtext text-xs">✕</span>
+                                   <span className="text-text font-bold font-mono text-sm">{set.reps}</span>
+                                   
+                                   {set.rpe && (
+                                     <div className="ml-2 pl-2 border-l border-border text-[9px] font-mono text-subtext flex items-center gap-1">
+                                       <Gauge className="w-2.5 h-2.5" /> {set.rpe}
+                                     </div>
+                                   )}
                                 </div>
                               ))}
                            </div>
@@ -548,26 +629,34 @@ export default function App() {
         <div className="fixed bottom-8 left-0 right-0 z-50 flex flex-col items-center justify-end pointer-events-none">
           
           {/* Label Hint */}
-          <div className="mb-2 bg-black/50 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-[10px] font-bold text-zinc-400 tracking-widest uppercase shadow-lg animate-in fade-in slide-in-from-bottom-2">
-            Log Activity
+          <div className="mb-2 bg-surface/80 backdrop-blur-md px-3 py-1 rounded-full border border-border text-[10px] font-bold text-subtext tracking-widest uppercase shadow-lg animate-in fade-in slide-in-from-bottom-2">
+            {t('input_log')}
           </div>
 
           {/* Glass Dock */}
-          <div className="pointer-events-auto bg-surfaceHighlight/80 backdrop-blur-xl border border-white/10 rounded-full p-2 pl-4 pr-2 shadow-[0_0_50px_rgba(0,0,0,0.5)] flex items-center gap-4 transition-transform hover:scale-105 duration-300">
+          <div className="pointer-events-auto bg-surfaceHighlight/80 backdrop-blur-xl border border-border rounded-full p-2 pl-4 pr-2 shadow-[0_0_50px_rgba(0,0,0,0.5)] flex items-center gap-4 transition-transform hover:scale-105 duration-300">
             
             {/* Manual Button (Left) */}
             <button
               onClick={() => setShowManualEntry(true)}
-              className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors group"
+              className="flex items-center gap-2 text-subtext hover:text-text transition-colors group"
             >
-              <div className="p-2 rounded-full bg-white/5 group-hover:bg-white/10 border border-white/5 transition-colors">
+              <div className="p-2 rounded-full bg-surface group-hover:bg-surfaceHighlight border border-border transition-colors">
                 <Keyboard className="w-5 h-5" />
               </div>
-              <span className="text-xs font-bold hidden sm:block">MANUAL</span>
+              <span className="text-xs font-bold hidden sm:block">{t('manual')}</span>
             </button>
+            
+            {/* Divider */}
+            <div className="w-px h-8 bg-border"></div>
 
-            {/* Vertical Divider */}
-            <div className="w-px h-8 bg-white/10"></div>
+            {/* Timer (Middle) */}
+            <div className="relative group">
+                <RestTimer />
+            </div>
+
+            {/* Divider */}
+            <div className="w-px h-8 bg-border"></div>
 
             {/* AI Mic Button (Right/Center - handled by component) */}
             <AudioRecorder onWorkoutProcessed={handleWorkoutProcessed} />
@@ -579,6 +668,7 @@ export default function App() {
       {/* MODALS */}
       <ManualEntryModal isOpen={showManualEntry} onClose={() => setShowManualEntry(false)} onWorkoutProcessed={handleWorkoutProcessed} />
       <PRModal isOpen={showPRModal} onClose={() => setShowPRModal(false)} workouts={workouts} initialExercise={selectedHistoryExercise} />
+      <MonthlySummaryModal isOpen={showMonthlySummary} onClose={() => setShowMonthlySummary(false)} viewDate={viewDate} workouts={workouts} />
       <CreatePlanModal isOpen={showCreatePlan} onClose={() => setShowCreatePlan(false)} onSave={handleSavePlan} initialPlan={editingPlan} />
       {currentUser && <ProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} user={currentUser} totalWorkouts={workouts.length} onUpdateUser={handleUpdateUser} onLogout={handleLogout} />}
       {editingExercise && <EditExerciseModal isOpen={!!editingExercise} onClose={() => setEditingExercise(null)} exercise={editingExercise.data} onSave={executeEdit} />}
@@ -586,20 +676,20 @@ export default function App() {
       {/* CONFIRMATION DIALOGS (Styled Modern) */}
       {[deleteConfirmation, deleteWorkoutConfirmation, deletePlanConfirmation].map((conf, i) => {
          if (!conf) return null;
-         const title = deleteConfirmation ? "Delete Exercise?" : deletePlanConfirmation ? "Delete Plan?" : "Delete Workout?";
-         const desc = deleteConfirmation ? "This set will be removed." : deletePlanConfirmation ? "Routine will be lost." : "Entire log will be deleted.";
+         const title = deleteConfirmation ? t('delete_exercise_title') : deletePlanConfirmation ? t('delete_plan_title') : t('delete_workout_title');
+         const desc = deleteConfirmation ? t('delete_exercise_desc') : deletePlanConfirmation ? t('delete_plan_desc') : t('delete_workout_desc');
          const action = i === 0 ? executeDeleteExercise : i === 1 ? executeDeleteWorkout : executeDeletePlan;
          const close = i === 0 ? () => setDeleteConfirmation(null) : i === 1 ? () => setDeleteWorkoutConfirmation(null) : () => setDeletePlanConfirmation(null);
 
          return (
             <div key={i} className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm">
-               <div className="bg-surface border border-white/10 rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95">
+               <div className="bg-surface border border-border rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95">
                   <div className="w-12 h-12 bg-danger/10 text-danger rounded-full flex items-center justify-center mb-4"><AlertTriangle className="w-6 h-6" /></div>
-                  <h3 className="text-lg font-bold text-white mb-2">{title}</h3>
-                  <p className="text-zinc-500 text-sm mb-6">{desc}</p>
+                  <h3 className="text-lg font-bold text-text mb-2">{title}</h3>
+                  <p className="text-subtext text-sm mb-6">{desc}</p>
                   <div className="flex gap-3">
-                     <button onClick={close} className="flex-1 py-3 rounded-xl font-bold text-sm bg-white/5 hover:bg-white/10 text-white">Cancel</button>
-                     <button onClick={action} className="flex-1 py-3 rounded-xl font-bold text-sm bg-danger text-white hover:opacity-90">Delete</button>
+                     <button onClick={close} className="flex-1 py-3 rounded-xl font-bold text-sm bg-surfaceHighlight hover:bg-surface border border-border text-text">{t('cancel')}</button>
+                     <button onClick={action} className="flex-1 py-3 rounded-xl font-bold text-sm bg-danger text-white hover:opacity-90">{t('delete')}</button>
                   </div>
                </div>
             </div>

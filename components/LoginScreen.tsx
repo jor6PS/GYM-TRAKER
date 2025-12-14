@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ArrowRight, Lock, Loader2, AlertCircle, User as UserIcon, CheckCircle2, AtSign } from 'lucide-react';
 import { supabase, resolveUserEmail } from '../services/supabase';
 import { AppLogo } from '../utils';
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface LoginScreenProps {}
 
@@ -13,6 +14,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmationSent, setConfirmationSent] = useState(false);
+  const { t } = useLanguage();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,19 +46,19 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
         <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center mb-6 animate-in zoom-in">
            <CheckCircle2 className="w-10 h-10 text-green-500" />
         </div>
-        <h2 className="text-3xl font-bold text-white mb-3">Check your inbox</h2>
-        <p className="text-zinc-400 max-w-sm mx-auto mb-8 text-sm leading-relaxed">
-          We've sent a verification link to <span className="text-white font-bold">{identifier}</span>.
+        <h2 className="text-3xl font-bold text-text mb-3">{t('check_inbox')}</h2>
+        <p className="text-subtext max-w-sm mx-auto mb-8 text-sm leading-relaxed">
+          {t('verification_sent')} <span className="text-text font-bold">{identifier}</span>.
         </p>
-        <button onClick={() => setConfirmationSent(false)} className="text-primary font-bold hover:underline">Back to Sign In</button>
+        <button onClick={() => setConfirmationSent(false)} className="text-primary font-bold hover:underline">{t('back_signin')}</button>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 relative overflow-hidden">
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 relative overflow-hidden transition-colors duration-500">
       
-      {/* Background Animated Blobs */}
+      {/* Background Animated Blobs - Adjusted for Light Mode visibility */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
          <div className="absolute top-[10%] left-[20%] w-[300px] h-[300px] bg-primary/20 rounded-full blur-[120px] animate-float"></div>
          <div className="absolute bottom-[10%] right-[10%] w-[250px] h-[250px] bg-purple-500/10 rounded-full blur-[100px]"></div>
@@ -65,11 +67,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
       <div className="w-full max-w-sm z-10 animate-in fade-in zoom-in-95 duration-500">
         
         <div className="flex flex-col items-center mb-10">
-          <div className="w-24 h-24 bg-surface border border-white/5 rounded-3xl flex items-center justify-center shadow-2xl mb-6 transform hover:scale-105 transition-transform duration-500">
-            <AppLogo className="w-14 h-14 object-contain" />
+          <div className="w-24 h-24 bg-surface border border-border rounded-3xl flex items-center justify-center shadow-2xl mb-6 transform hover:scale-105 transition-transform duration-500 text-text">
+            <AppLogo className="w-14 h-14 object-contain text-text" />
           </div>
-          <h1 className="text-4xl font-extrabold text-white tracking-tight mb-2">GYM<span className="text-primary">.AI</span></h1>
-          <p className="text-zinc-500 font-medium">The Intelligent Tracker</p>
+          <h1 className="text-4xl font-extrabold text-text tracking-tight mb-2">GYM<span className="text-primary">.AI</span></h1>
+          <p className="text-subtext font-medium">The Intelligent Tracker</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -77,32 +79,32 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
             {isRegistering && (
               <div className="relative group">
                 <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-                   <UserIcon className="w-5 h-5 text-zinc-600 group-focus-within:text-primary transition-colors" />
+                   <UserIcon className="w-5 h-5 text-subtext group-focus-within:text-primary transition-colors" />
                 </div>
                 <input 
-                  type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Full Name" required
-                  className="w-full bg-surface border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-white placeholder:text-zinc-600 focus:outline-none focus:border-primary/50 focus:bg-surfaceHighlight transition-all shadow-lg"
+                  type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('full_name')} required
+                  className="w-full bg-surface border border-border rounded-2xl py-4 pl-12 pr-4 text-text placeholder:text-subtext focus:outline-none focus:border-primary/50 focus:bg-surfaceHighlight transition-all shadow-lg"
                 />
               </div>
             )}
 
             <div className="relative group">
               <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-                 <AtSign className="w-5 h-5 text-zinc-600 group-focus-within:text-primary transition-colors" />
+                 <AtSign className="w-5 h-5 text-subtext group-focus-within:text-primary transition-colors" />
               </div>
               <input 
-                type={isRegistering ? "email" : "text"} value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder={isRegistering ? "Email Address" : "Username or Email"} required
-                className="w-full bg-surface border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-white placeholder:text-zinc-600 focus:outline-none focus:border-primary/50 focus:bg-surfaceHighlight transition-all shadow-lg"
+                type={isRegistering ? "email" : "text"} value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder={isRegistering ? t('email') : t('email_user')} required
+                className="w-full bg-surface border border-border rounded-2xl py-4 pl-12 pr-4 text-text placeholder:text-subtext focus:outline-none focus:border-primary/50 focus:bg-surfaceHighlight transition-all shadow-lg"
               />
             </div>
 
             <div className="relative group">
               <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-                 <Lock className="w-5 h-5 text-zinc-600 group-focus-within:text-primary transition-colors" />
+                 <Lock className="w-5 h-5 text-subtext group-focus-within:text-primary transition-colors" />
               </div>
               <input 
-                type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" minLength={6} required
-                className="w-full bg-surface border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-white placeholder:text-zinc-600 focus:outline-none focus:border-primary/50 focus:bg-surfaceHighlight transition-all shadow-lg"
+                type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('password')} minLength={6} required
+                className="w-full bg-surface border border-border rounded-2xl py-4 pl-12 pr-4 text-text placeholder:text-subtext focus:outline-none focus:border-primary/50 focus:bg-surfaceHighlight transition-all shadow-lg"
               />
             </div>
           </div>
@@ -116,18 +118,18 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
 
           <button 
             type="submit" disabled={isLoading}
-            className="w-full bg-white hover:bg-zinc-200 text-black font-extrabold py-4 rounded-2xl transition-all shadow-xl hover:shadow-2xl active:scale-95 flex items-center justify-center gap-2 mt-4"
+            className="w-full bg-text hover:bg-subtext text-background font-extrabold py-4 rounded-2xl transition-all shadow-xl hover:shadow-2xl active:scale-95 flex items-center justify-center gap-2 mt-4"
           >
-            {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>{isRegistering ? 'Start Journey' : 'Sign In'} <ArrowRight className="w-5 h-5" /></>}
+            {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>{isRegistering ? t('start_journey') : t('sign_in')} <ArrowRight className="w-5 h-5" /></>}
           </button>
         </form>
 
         <div className="mt-8 text-center">
             <button 
                 onClick={() => { setIsRegistering(!isRegistering); setError(null); }}
-                className="text-sm font-medium text-zinc-500 hover:text-white transition-colors"
+                className="text-sm font-medium text-subtext hover:text-text transition-colors"
             >
-                {isRegistering ? "Already have an account? Sign In" : "Don't have an account? Sign Up"}
+                {isRegistering ? t('have_account') : t('no_account')}
             </button>
         </div>
       </div>
