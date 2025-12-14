@@ -71,7 +71,8 @@ export default defineConfig(({ mode }) => {
       // Prevents "ReferenceError: process is not defined"
       'process.env': {}, 
       // Replaces specific env var usage
-      'process.env.API_KEY': JSON.stringify(env.API_KEY),
+      // ROBUSTNESS: Check both API_KEY and VITE_API_KEY to prevent user error
+      'process.env.API_KEY': JSON.stringify(env.API_KEY || env.VITE_API_KEY),
     },
   };
 });
