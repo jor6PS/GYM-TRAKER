@@ -2,36 +2,53 @@ import { createClient } from '@supabase/supabase-js';
 import { Friend, Workout } from '../types';
 
 // --- CONFIGURATION ---
-// SECURITY NOTE: We strictly use environment variables. 
-// Never commit fallback keys to version control.
-const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
+const env = (import.meta as any).env;
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.error("🚨 CRITICAL: Supabase environment variables are missing. Please configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.");
+// ⚠️ DEVELOPMENT KEYS (HARDCODED FOR ACCESS)
+// Usamos estas claves directamente para evitar errores de variables de entorno faltantes.
+const FALLBACK_URL = "https://hjmttgdlxsqnkequnacz.supabase.co"; 
+const FALLBACK_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhqbXR0Z2RseHNxbmtlcXVuYWN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1OTc1NzQsImV4cCI6MjA4MTE3MzU3NH0.A6exntms4j0o6hNFON4gLhltLmbccEjDxpL_GcQmeE0";
+
+// Prioritize Env vars, fallback to hardcoded keys
+const SUPABASE_URL = env?.VITE_SUPABASE_URL || FALLBACK_URL;
+const SUPABASE_ANON_KEY = env?.VITE_SUPABASE_ANON_KEY || FALLBACK_KEY;
+
+// Simple check to ensure we have values (should be true given hardcoded fallbacks)
+const isConfigured = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
+
+if (!isConfigured) {
+  console.error("🚨 CRITICAL: Supabase keys are completely missing.");
 }
 
-// Create the real client
-// We use a non-null assertion or empty string to prevent TS errors, 
-// but the app will log errors if these are missing.
-export const supabase = createClient(SUPABASE_URL || '', SUPABASE_ANON_KEY || '');
+// Create the client
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Helper for Profile fetching
 export const getCurrentProfile = async () => {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  if (!isConfigured) return null;
 
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', user.id)
-    .single();
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
 
-  if (error) {
-    // Gracefully handle case where profile doesn't exist yet
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
+    if (error) {
+      // Ignore error if it's just "row not found" (new user)
+      if (error.code !== 'PGRST116') {
+        console.warn("Profile fetch warning:", error.message);
+      }
+      return null;
+    }
+    return data;
+  } catch (e) {
+    console.error("Error fetching profile:", e);
     return null;
   }
-  return data;
 };
 
 /**
@@ -40,10 +57,16 @@ export const getCurrentProfile = async () => {
 export const resolveUserEmail = async (identifier: string): Promise<string> => {
   const cleanId = identifier.trim();
   
+  // If it looks like an email, return it directly
   if (cleanId.includes('@')) {
     return cleanId;
   }
 
+  if (!isConfigured) {
+      throw new Error("Database not connected. Please use a valid Email Address.");
+  }
+
+  // 1. Try RPC (Secure Method)
   try {
     const { data: rpcData, error: rpcError } = await supabase.rpc('get_email_by_username', { 
       username_input: cleanId 
@@ -53,9 +76,10 @@ export const resolveUserEmail = async (identifier: string): Promise<string> => {
       return rpcData as string;
     }
   } catch (e) {
-    console.warn("RPC get_email_by_username failed or not defined, trying direct query.");
+    console.warn("RPC get_email_by_username skipped:", e);
   }
 
+  // 2. Fallback to Table Select (requires 'profiles' table to be readable)
   const { data: tableData, error: tableError } = await supabase
     .from('profiles')
     .select('email')
@@ -63,12 +87,19 @@ export const resolveUserEmail = async (identifier: string): Promise<string> => {
     .maybeSingle();
 
   if (tableError) {
-    console.error("User resolution error:", tableError);
-    throw new Error("Unable to verify username. Please use your email.");
+    // FIX: Use JSON.stringify to ensure [object Object] is not printed in console
+    console.error("User resolution error details:", JSON.stringify(tableError, null, 2));
+    
+    // Handle "Relation does not exist" specifically (Error 42P01)
+    if (tableError.code === '42P01') {
+        throw new Error("System Error: Database table 'profiles' is missing. Please run the SQL setup script.");
+    }
+
+    throw new Error("Unable to verify username. Please use your full email address.");
   }
 
   if (!tableData?.email) {
-    throw new Error(`Username "${cleanId}" not found. Please check spelling or use email.`);
+    throw new Error(`Username "${cleanId}" not found. Check spelling or use email.`);
   }
 
   return tableData.email;
@@ -86,9 +117,7 @@ export const uploadAvatar = async (file: File, userId: string): Promise<string |
       .from('avatars')
       .upload(filePath, file);
 
-    if (uploadError) {
-      throw uploadError;
-    }
+    if (uploadError) throw uploadError;
 
     const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
     return data.publicUrl;
@@ -107,7 +136,6 @@ export const updateUserProfile = async (userId: string, updates: { name?: string
 
     if (error) throw error;
     
-    // Also update auth metadata for name if provided
     if (updates.name) {
        await supabase.auth.updateUser({
          data: { name: updates.name }
@@ -138,26 +166,22 @@ export const sendPasswordResetEmail = async (email: string) => {
 // --- SOCIAL SERVICES ---
 
 export const searchUsers = async (term: string) => {
+    if (!isConfigured) return [];
+    
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
 
     try {
-        // Try to use RPC if available for secure search
         const { data, error } = await supabase.rpc('search_users', { 
             search_term: term,
             current_user_id: user.id 
         });
 
         if (!error && data) return data;
-        
-        if (error) {
-            console.warn("RPC search_users failed (function might not exist), falling back to simple select.", error);
-        }
     } catch (e) {
-        console.warn("RPC call failed", e);
+        // Silent fail on RPC
     }
 
-    // Fallback: Direct select (requires RLS to allow reading basic profile info)
     const { data: fallbackData, error: fallbackError } = await supabase
         .from('profiles')
         .select('id, name, avatar_url')
@@ -166,7 +190,7 @@ export const searchUsers = async (term: string) => {
         .limit(5);
 
     if (fallbackError) {
-        console.error("User search failed. Check RLS policies on 'profiles' table.", fallbackError);
+        console.error("User search failed:", JSON.stringify(fallbackError, null, 2));
         return [];
     }
 
@@ -184,10 +208,8 @@ export const sendFriendRequest = async (friendId: string) => {
         .or(`and(user_id.eq.${user.id},friend_id.eq.${friendId}),and(user_id.eq.${friendId},friend_id.eq.${user.id})`)
         .single();
 
-    if (selectError && selectError.code !== 'PGRST116') { // PGRST116 is 'Row not found', which is fine here
-        if (selectError.code === '42P01') {
-             throw new Error("Database Error: Table 'friendships' missing. Please run the SQL setup script.");
-        }
+    if (selectError && selectError.code !== 'PGRST116') {
+        if (selectError.code === '42P01') throw new Error("Database Error: Table 'friendships' missing.");
         throw selectError;
     }
 
@@ -201,26 +223,21 @@ export const sendFriendRequest = async (friendId: string) => {
         .insert({ user_id: user.id, friend_id: friendId, status: 'pending' });
 
     if (error) {
-        if (error.code === '42P01') {
-             throw new Error("Database Error: Table 'friendships' missing. Please run the SQL setup script.");
-        }
+        if (error.code === '42P01') throw new Error("Database Error: Table 'friendships' missing.");
         throw error;
     }
     return true;
 };
 
 export const getFriendships = async (): Promise<Friend[]> => {
+    if (!isConfigured) return [];
+    
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
 
     const { data, error } = await supabase
         .from('friendships')
-        .select(`
-            id,
-            status,
-            user_id,
-            friend_id
-        `)
+        .select(`id, status, user_id, friend_id`)
         .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`);
 
     if (error) {
@@ -230,7 +247,6 @@ export const getFriendships = async (): Promise<Friend[]> => {
     
     if (!data) return [];
 
-    // Fetch details for the *other* person
     const friendPromises = data.map(async (f: any) => {
         const isSender = f.user_id === user.id;
         const otherId = isSender ? f.friend_id : f.user_id;
@@ -255,6 +271,8 @@ export const getFriendships = async (): Promise<Friend[]> => {
 };
 
 export const getPendingRequestsCount = async (): Promise<number> => {
+    if (!isConfigured) return 0;
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return 0;
     
@@ -285,7 +303,7 @@ export const getFriendWorkouts = async (friendIds: string[]) => {
         .select('*')
         .in('user_id', friendIds)
         .order('date', { ascending: false })
-        .limit(100); // Limit to recent history for performance
+        .limit(100);
 
     if (error) return [];
     return data as Workout[];

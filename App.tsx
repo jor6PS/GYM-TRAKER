@@ -123,10 +123,21 @@ function App() {
 
   // --- AUTH INITIALIZATION ---
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) fetchUserProfile(session.user.id);
-      else setSessionLoading(false);
-    });
+    // Robust check for session
+    supabase.auth.getSession()
+      .then(({ data: { session }, error }) => {
+        if (error) {
+            console.error("Auth Session Error:", error);
+            setSessionLoading(false);
+            return;
+        }
+        if (session) fetchUserProfile(session.user.id);
+        else setSessionLoading(false);
+      })
+      .catch((err) => {
+        console.error("Critical Auth Check Failure:", err);
+        setSessionLoading(false);
+      });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
@@ -185,8 +196,12 @@ function App() {
 
   const checkPendingRequests = async () => {
       if (!currentUser) return;
-      const count = await getPendingRequestsCount();
-      setPendingRequestsCount(count);
+      try {
+        const count = await getPendingRequestsCount();
+        setPendingRequestsCount(count);
+      } catch (e) {
+        console.warn("Could not check pending requests", e);
+      }
   };
 
   const fetchAdminData = async () => {

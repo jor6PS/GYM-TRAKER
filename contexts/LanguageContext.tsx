@@ -97,7 +97,7 @@ const translations = {
     // ARENA / SOCIAL
     enter_arena: "Entrar a la Arena",
     opponents: "Oponentes",
-    judge_me: "JÚZGAME",
+    judge_me: "GO!",
     arena_title: "LA ARENA",
     gladiators_ready: "Gladiadores Listos",
     fight: "¡PELEA!",
@@ -202,7 +202,7 @@ const translations = {
     // ARENA / SOCIAL
     enter_arena: "Enter The Arena",
     opponents: "Opponents",
-    judge_me: "JUDGE ME",
+    judge_me: "GO!",
     arena_title: "THE ARENA",
     gladiators_ready: "Gladiators Ready",
     fight: "FIGHT!",
