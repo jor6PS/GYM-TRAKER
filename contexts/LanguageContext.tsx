@@ -11,6 +11,7 @@ const translations = {
     save: "Guardar",
     delete: "Eliminar",
     edit: "Editar",
+    abort: "Abortar", // ADDED
     
     // Header
     viewing_as: "Viendo como",
@@ -88,6 +89,14 @@ const translations = {
     save_session: "Guardar Sesión",
     back: "Atrás",
     added: "Añadido",
+    manual_entry: "Entrada Manual", // ADDED
+    no_exercises_added: "No has añadido ejercicios.", // ADDED
+    start_adding_below: "Usa el buscador para añadir.", // ADDED
+    search_exercise: "Buscar ejercicio...", // ADDED
+    add_custom: "Añadir Personalizado", // ADDED
+    confirm_exercise: "Confirmar Ejercicio", // ADDED
+    notes_placeholder: "Notas sobre el entrenamiento...", // ADDED
+    finish_workout: "Finalizar Entrenamiento", // ADDED
     
     // Profile
     profile: "Perfil",
@@ -129,6 +138,7 @@ const translations = {
     save: "Save",
     delete: "Delete",
     edit: "Edit",
+    abort: "Abort", // ADDED
     
     // Header
     viewing_as: "Viewing as",
@@ -206,6 +216,14 @@ const translations = {
     save_session: "Save Session",
     back: "Back",
     added: "Added",
+    manual_entry: "Manual Entry", // ADDED
+    no_exercises_added: "No exercises added.", // ADDED
+    start_adding_below: "Use search to add exercises.", // ADDED
+    search_exercise: "Search exercise...", // ADDED
+    add_custom: "Add Custom", // ADDED
+    confirm_exercise: "Confirm Exercise", // ADDED
+    notes_placeholder: "Workout notes...", // ADDED
+    finish_workout: "Finish Workout", // ADDED
     
     // Profile
     profile: "Profile",

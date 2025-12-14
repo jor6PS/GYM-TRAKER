@@ -4,18 +4,22 @@ import { format } from "date-fns";
 import { getCanonicalId, getLocalizedName } from "../utils";
 
 // --- CONFIGURATION ---
-// Reverting to the standard Flash model as requested.
 const MODEL_NAME = 'gemini-2.5-flash'; 
 
 // Helper to safely get the AI instance only when needed
 const getAIClient = () => {
-  // Accessing process.env.API_KEY directly as per vite config define
-  const apiKey = process.env.API_KEY;
+  // 1. Get the raw key from the environment
+  const rawKey = process.env.API_KEY;
   
-  if (!apiKey || apiKey === 'undefined' || apiKey === 'null' || apiKey === '') {
-     console.error("🚨 CRITICAL ERROR: Google Gemini API Key is missing.");
-     console.error("Ensure you have an Environment Variable named 'API_KEY' set in your deployment (Vercel/Netlify) or .env file.");
-     throw new Error("Falta la API Key de Gemini. Revisa tu archivo .env o la configuración del servidor.");
+  // 2. SANITIZATION: Remove any accidental quotes (" or ') and whitespace.
+  // This fixes common .env parsing issues in Vite where the key gets double-quoted.
+  const apiKey = rawKey ? rawKey.replace(/["']/g, '').trim() : '';
+  
+  if (!apiKey || apiKey === 'undefined' || apiKey === 'null') {
+     console.error("🚨 CRITICAL ERROR: Google Gemini API Key is missing or invalid.");
+     // Log masked key for debugging
+     console.log(`Current Key Length: ${rawKey ? rawKey.length : 0}`);
+     throw new Error("Falta la API Key de Gemini. Revisa tu archivo .env.");
   }
   return new GoogleGenAI({ apiKey });
 };
@@ -79,25 +83,30 @@ const validateData = (data: any): WorkoutData => {
 
 // Helper for error handling
 const handleAIError = (error: any) => {
-    console.error("AI Error Details:", error);
+    console.error("AI Error Details (Full):", error);
+    
     const msg = (error.message || error.toString()).toLowerCase();
     
+    // SDK Specific Generic Error
+    if (msg.includes("failed to call the gemini api") || msg.includes("fetch failed")) {
+        throw new Error("⚠️ Error de Conexión con Gemini. \n1. Verifica tu internet. \n2. Si usas VPN o AdBlock, desactívalos. \n3. Verifica que la API Key sea correcta.");
+    }
+
     if (msg.includes('404') && msg.includes('not found')) {
-        throw new Error(`Error: El modelo '${MODEL_NAME}' no está disponible para tu API Key. Revisa la región.`);
+        throw new Error(`Error: El modelo '${MODEL_NAME}' no está disponible o la API Key es incorrecta.`);
     }
     if (msg.includes('429') || msg.includes('quota') || msg.includes('too many requests')) {
-        throw new Error("⚠️ Has superado el límite de cuota de la IA. Espera un momento.");
+        throw new Error("⚠️ Has superado el límite de uso de la IA. Espera un minuto.");
     }
     if (msg.includes('400') || msg.includes('api key') || msg.includes('invalid')) {
-        throw new Error("⚠️ API Key inválida o mal configurada.");
-    }
-    if (msg.includes("failed to call the gemini api") || msg.includes("fetch failed")) {
-        throw new Error("Error de conexión con Gemini. Verifica tu internet o la validez de tu API Key.");
+        throw new Error("⚠️ API Key inválida o malformada.");
     }
     if (error instanceof SyntaxError) {
         throw new Error("Error de IA: La respuesta no tuvo el formato correcto.");
     }
-    throw new Error("Error inesperado de la IA. Inténtalo de nuevo.");
+    
+    // Default fallback
+    throw new Error(`Error de IA: ${error.message || "Inténtalo de nuevo."}`);
 };
 
 export const processWorkoutAudio = async (audioBase64: string, mimeType: string): Promise<WorkoutData> => {
@@ -157,7 +166,7 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
 
   } catch (error: any) {
     handleAIError(error);
-    throw error; // TS satisfaction
+    throw error; // TS satisfaction (handleAIError throws)
   }
 };
 
@@ -228,7 +237,6 @@ export const generateMonthlyReport = async (
         const ai = getAIClient();
 
         // 1. Calculate Statistics Locally (Deterministic & Accurate)
-        // Group by CANONICAL ID to ensure bilingual support
         const statsMap = new Map<string, ExerciseStat>();
 
         currentMonthWorkouts.forEach(w => {
@@ -320,20 +328,17 @@ export const generateGroupAnalysis = async (
     language: 'es' | 'en' = 'es'
 ): Promise<GroupAnalysisData> => {
     try {
-        // --- 1. LOCAL DETERMINISTIC CALCULATION (Math not Opinion) ---
         const pointsTable = usersData.map(u => {
             const uniqueDays = new Set(u.workouts.map(w => w.date)).size;
             return { name: u.name, points: uniqueDays };
         }).sort((a, b) => b.points - a.points);
 
-        // Map: User -> { CanonicalExerciseID: MaxWeight }
         const userMaxes: Record<string, Record<string, number>> = {};
         
         usersData.forEach(u => {
             userMaxes[u.name] = {};
             u.workouts.forEach(w => {
                 w.structured_data.exercises.forEach(ex => {
-                    // NORMALIZE TO ID for comparison
                     const normId = getCanonicalId(ex.name); 
                     const maxSet = Math.max(...ex.sets.map(s => s.weight));
                     
@@ -346,7 +351,6 @@ export const generateGroupAnalysis = async (
 
         if (usersData.length === 0) throw new Error("No users");
         
-        // Find common exercises (intersection of Canonical IDs)
         let commonExerciseIds = Object.keys(userMaxes[usersData[0].name]);
         for (let i = 1; i < usersData.length; i++) {
             const currentUserExercises = Object.keys(userMaxes[usersData[i].name]);
@@ -364,13 +368,10 @@ export const generateGroupAnalysis = async (
                 }
                 return { userName: u.name, weight };
             });
-            
-            // Convert ID back to readable name in current language
             const displayExName = getLocalizedName(exId, language);
             return { exercise: displayExName, results, winnerName };
         });
 
-        // --- 2. AI JUDGMENT (Personality Only) ---
         const ai = getAIClient();
 
         const context = {
@@ -379,9 +380,8 @@ export const generateGroupAnalysis = async (
             raw_data_summary: usersData.map(u => ({
                 name: u.name,
                 total_sessions: u.workouts.length,
-                // Simplify userMaxes for context, using readable names
                 top_lifts: Object.entries(userMaxes[u.name]).reduce((acc: any, [id, w]) => {
-                    acc[getLocalizedName(id, 'en')] = w; // Use English for AI context consistently
+                    acc[getLocalizedName(id, 'en')] = w; 
                     return acc;
                 }, {})
             }))
@@ -389,26 +389,16 @@ export const generateGroupAnalysis = async (
 
         const prompt = `
             Role: Ruthless bodybuilding judge. Language: ${language === 'es' ? 'Spanish' : 'English'}.
-            
-            **DATA:**
-            ${JSON.stringify(context)}
+            **DATA:** ${JSON.stringify(context)}
             
             **INSTRUCTIONS:**
-            1. Rank ALL participants from 1 (Best) to ${usersData.length} (Worst).
-            2. Criteria: Heavy lifts are king. Consistency is queen. Excuses are forbidden.
-            3. The 1st place is "Alpha" (Winner). The last place is "Beta" (Loser).
-            4. Provide a very short "reason" (max 5 words) for each rank.
-            5. Write a "Roast" summarizing the group dynamic.
+            1. Rank ALL participants. 1st is "Alpha" (Winner), Last is "Beta" (Loser).
+            2. Short ranking reason (max 5 words).
+            3. Roast summarizing the group.
             
-            **OUTPUT:**
-            Return strictly valid JSON.
-            Structure:
+            **OUTPUT JSON:**
             {
-               "rankings": [
-                   { "name": "UserA", "rank": 1, "reason": "Beast mode activated" },
-                   { "name": "UserB", "rank": 2, "reason": "Solid but small calves" },
-                   ...
-               ],
+               "rankings": [{ "name": "UserA", "rank": 1, "reason": "Reason" }, ...],
                "roast": "String"
             }
         `;
@@ -442,16 +432,11 @@ export const generateGroupAnalysis = async (
 
         const text = cleanJson(response.text || "{}");
         const aiResult = JSON.parse(text);
-        
-        // Safety sort
         const sortedRankings = (aiResult.rankings || []).sort((a: any, b: any) => a.rank - b.rank);
 
-        const winner = sortedRankings.length > 0 ? sortedRankings[0].name : "Unknown";
-        const loser = sortedRankings.length > 0 ? sortedRankings[sortedRankings.length - 1].name : "Unknown";
-
         return {
-            winner,
-            loser,
+            winner: sortedRankings.length > 0 ? sortedRankings[0].name : "Unknown",
+            loser: sortedRankings.length > 0 ? sortedRankings[sortedRankings.length - 1].name : "Unknown",
             rankings: sortedRankings,
             roast: aiResult.roast || "Judge is silent.",
             comparison_table: comparisonTable,
@@ -460,6 +445,6 @@ export const generateGroupAnalysis = async (
 
     } catch (error) {
         handleAIError(error);
-        throw new Error("The AI Judge is currently lifting. Try again later.");
+        throw new Error("The AI Judge is currently lifting.");
     }
 };

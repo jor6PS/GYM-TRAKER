@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { X, Save, Clock, History, Edit3, ArrowRight, Search, Plus, Dumbbell, ChevronRight, Trash2, Layers } from 'lucide-react';
-import { WorkoutData, Exercise, Workout, Set } from '../types';
+import type { WorkoutData, Exercise, Workout, Set } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { EXERCISE_DB } from '../data/exerciseDb';
 import { format } from 'date-fns';

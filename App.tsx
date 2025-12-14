@@ -64,7 +64,9 @@ function App() {
             // Raw fetch to check models because SDK wrapper might be strict
             // Safe replace handling
             const apiKey = process.env.API_KEY;
-            if (!apiKey || apiKey === 'undefined') return; // Skip if no key
+            
+            // GUARD CLAUSE: Don't attempt fetch if key is obviously bad
+            if (!apiKey || apiKey === 'undefined' || apiKey === 'null') return; 
 
             const key = apiKey.replace(/"/g, ''); 
             
