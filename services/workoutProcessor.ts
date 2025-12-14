@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { WorkoutData, Workout } from "../types";
+import { WorkoutData, Workout, User, GroupAnalysisData } from "../types";
 import { format } from "date-fns";
 
 // Helper to safely get the AI instance only when needed
@@ -275,5 +275,87 @@ export const generateMonthlyReport = async (
     } catch (error) {
         console.error("Error generating report:", error);
         throw new Error("Error connecting to the gym bro AI.");
+    }
+};
+
+export const generateGroupAnalysis = async (
+    usersData: { name: string; workouts: Workout[] }[],
+    language: 'es' | 'en' = 'es'
+): Promise<GroupAnalysisData> => {
+    try {
+        const ai = getAIClient();
+
+        // Simplify data for AI to save tokens and focus on highlights
+        const context = usersData.map(u => {
+            const exercises = u.workouts.flatMap(w => w.structured_data.exercises);
+            const summary = exercises.reduce((acc: any, ex) => {
+                const maxWeight = Math.max(...ex.sets.map(s => s.weight));
+                if (!acc[ex.name] || maxWeight > acc[ex.name]) {
+                    acc[ex.name] = maxWeight;
+                }
+                return acc;
+            }, {});
+            
+            return {
+                user: u.name,
+                total_sessions: u.workouts.length,
+                best_lifts: summary
+            };
+        });
+
+        const prompt = `
+            Actúa como un juez despiadado de una competición de culturismo underground.
+            
+            **IDIOMA:** ${language === 'es' ? 'ESPAÑOL' : 'ENGLISH'}
+            
+            **TAREA:**
+            Analiza los datos de estos usuarios y compáralos brutalmente.
+            
+            **DATOS:**
+            ${JSON.stringify(context)}
+            
+            **INSTRUCCIONES:**
+            Genera un JSON con:
+            1. "winner": Nombre del ganador (el Alpha).
+            2. "loser": Nombre del perdedor (el que necesita leche).
+            3. "roast": Un texto corto (Markdown) humillando al perdedor y alabando al ganador. Sé sarcástico. Compara sus estadísticas.
+            4. "comparison_table": Un array de objetos { "exercise": "Nombre", "details": ["UserA: 100kg", "UserB: 80kg"] } para los 3 ejercicios más relevantes donde compiten.
+            
+            **TONO:**
+            Muy agresivo, divertido, jerga de gimnasio.
+        `;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts: [{ text: prompt }] },
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        winner: { type: Type.STRING },
+                        loser: { type: Type.STRING },
+                        roast: { type: Type.STRING },
+                        comparison_table: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    exercise: { type: Type.STRING },
+                                    details: { type: Type.ARRAY, items: { type: Type.STRING } }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        const text = response.text || "{}";
+        return JSON.parse(text) as GroupAnalysisData;
+
+    } catch (error) {
+        console.error("Group analysis error", error);
+        throw new Error("The AI Judge is currently lifting. Try again later.");
     }
 };

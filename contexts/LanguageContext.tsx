@@ -29,6 +29,12 @@ const translations = {
     check_inbox: "Revisa tu bandeja de entrada",
     verification_sent: "Hemos enviado un enlace de verificación a",
     back_signin: "Volver al Inicio",
+    forgot_password: "¿Olvidaste tu contraseña?",
+    recover_password: "Recuperar Contraseña",
+    recover_intro: "Introduce tu correo para recibir un enlace de recuperación.",
+    send_recovery: "Enviar Enlace",
+    recovery_sent_title: "Correo enviado",
+    recovery_sent_desc: "Si existe una cuenta con ese correo, recibirás un enlace para restablecer tu contraseña.",
     
     // Dashboard
     routines: "RUTINAS",
@@ -114,6 +120,12 @@ const translations = {
     check_inbox: "Check your inbox",
     verification_sent: "We've sent a verification link to",
     back_signin: "Back to Sign In",
+    forgot_password: "Forgot Password?",
+    recover_password: "Recover Password",
+    recover_intro: "Enter your email to receive a recovery link.",
+    send_recovery: "Send Link",
+    recovery_sent_title: "Email sent",
+    recovery_sent_desc: "If an account exists with this email, you will receive a password reset link.",
     
     // Dashboard
     routines: "WORKOUT ROUTINES",

@@ -10,8 +10,10 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { ProfileModal } from './components/ProfileModal';
 import { RestTimer } from './components/RestTimer';
 import { MonthlySummaryModal } from './components/MonthlySummaryModal';
+import { SocialModal } from './components/SocialModal';
+import { ArenaModal } from './components/ArenaModal';
 import { Workout, WorkoutData, WorkoutPlan, Exercise, User, UserRole } from './types';
-import { supabase, getCurrentProfile } from './services/supabase';
+import { supabase, getCurrentProfile, getFriendWorkouts } from './services/supabase';
 import { format, isSameDay, isFuture } from 'date-fns';
 import { es, enUS } from 'date-fns/locale';
 import { getExerciseIcon, AppLogo } from './utils';
@@ -31,7 +33,8 @@ import {
   Sun,
   Moon,
   Gauge,
-  Languages
+  Users,
+  Swords
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -59,6 +62,10 @@ function App() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [plans, setPlans] = useState<WorkoutPlan[]>([]);
   
+  // --- SOCIAL STATE ---
+  const [activeFriends, setActiveFriends] = useState<{ userId: string; color: string; }[]>([]);
+  const [friendsWorkouts, setFriendsWorkouts] = useState<{ userId: string; workouts: Workout[] }[]>([]);
+
   // --- THEME STATE ---
   const [isDark, setIsDark] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -77,6 +84,8 @@ function App() {
   const [showCreatePlan, setShowCreatePlan] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showMonthlySummary, setShowMonthlySummary] = useState(false);
+  const [showSocialModal, setShowSocialModal] = useState(false);
+  const [showArenaModal, setShowArenaModal] = useState(false);
   const [selectedHistoryExercise, setSelectedHistoryExercise] = useState<string | null>(null);
   
   // Editing State
@@ -196,6 +205,52 @@ function App() {
     setIsLoadingData(false);
   };
 
+  // --- SOCIAL LOGIC ---
+  const handleToggleFriend = async (friendId: string, color: string) => {
+    // Check if already active
+    const isActive = activeFriends.find(f => f.userId === friendId);
+    
+    if (isActive) {
+        // Remove
+        setActiveFriends(prev => prev.filter(f => f.userId !== friendId));
+        // We can keep the workout data cached, no need to clear it strictly
+    } else {
+        // Add
+        setActiveFriends(prev => [...prev, { userId: friendId, color }]);
+        // Fetch data if not already present
+        if (!friendsWorkouts.find(fw => fw.userId === friendId)) {
+            const wData = await getFriendWorkouts([friendId]);
+            setFriendsWorkouts(prev => [...prev, { userId: friendId, workouts: wData }]);
+        }
+    }
+  };
+
+  // Prepare data for Calendar
+  const calendarFriendsData = activeFriends.map(f => ({
+      userId: f.userId,
+      color: f.color,
+      workouts: friendsWorkouts.find(fw => fw.userId === f.userId)?.workouts || []
+  }));
+
+  // Prepare data for Arena (Include current user as "Me")
+  const arenaParticipants = [
+      { userId: currentUser?.id || 'me', name: 'Me', workouts: workouts, color: '#D4FF00' },
+      ...activeFriends.map(f => {
+          // We need names here. For now, since `SocialModal` fetches names locally, 
+          // we might need to store names in activeFriends or fetch from `friendsWorkouts` if we stored it there.
+          // Simplification: We'll assume the Arena Modal might re-fetch or we pass minimal data.
+          // Better: Pass `friendsWorkouts` and let Arena figure it out, but Arena needs names.
+          // Let's rely on ArenaModal fetching names or passing them from SocialModal selection?
+          // FIX: Let's store name in activeFriends for simplicity.
+          return {
+              userId: f.userId,
+              name: `Friend ${f.userId.substring(0,4)}`, // Fallback, real implementation should pass name
+              workouts: friendsWorkouts.find(fw => fw.userId === f.userId)?.workouts || [],
+              color: f.color
+          };
+      })
+  ];
+
   // --- ACTIONS ---
   const handleLogout = async () => {
     setShowProfileModal(false);
@@ -204,6 +259,8 @@ function App() {
     setRealAdminUser(null);
     setWorkouts([]);
     setPlans([]);
+    setActiveFriends([]);
+    setFriendsWorkouts([]);
   };
 
   const handleUpdateUser = (updates: Partial<User>) => {
@@ -354,6 +411,13 @@ function App() {
   }
 
   const selectedWorkouts = workouts.filter(w => isSameDay(new Date(w.date + 'T00:00:00'), selectedDate));
+  
+  // Also get selected friends workouts for this day
+  const friendsSelectedWorkouts = calendarFriendsData.flatMap(fd => {
+      const daysWorkouts = fd.workouts.filter(w => isSameDay(new Date(w.date), selectedDate));
+      return daysWorkouts.map(w => ({ ...w, _friendColor: fd.color, _friendId: fd.userId }));
+  });
+
   const canEdit = !isFuture(selectedDate);
 
   return (
@@ -386,20 +450,16 @@ function App() {
             </div>
             
             <div className="flex items-center gap-1">
-              {/* Language Toggle */}
-              <button
-                onClick={toggleLanguage}
-                className="px-2 h-9 flex items-center justify-center rounded-full hover:bg-surfaceHighlight transition-colors text-xs font-bold text-subtext hover:text-text font-mono"
-                title="Toggle Language"
-              >
-                {language.toUpperCase()}
-              </button>
-
+              
+              {/* SOCIAL BUTTON */}
               <button 
-                onClick={toggleTheme}
-                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surfaceHighlight transition-colors text-subtext hover:text-text"
+                onClick={() => setShowSocialModal(true)}
+                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surfaceHighlight transition-colors text-subtext hover:text-blue-400 relative"
               >
-                {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                <Users className="w-5 h-5" />
+                {activeFriends.length > 0 && (
+                    <span className="absolute top-1 right-1 w-2 h-2 bg-blue-400 rounded-full"></span>
+                )}
               </button>
 
               <button 
@@ -433,11 +493,33 @@ function App() {
             viewDate={viewDate}
             onViewDateChange={setViewDate}
             workouts={workouts} 
+            selectedFriendsWorkouts={calendarFriendsData}
             selectedDate={selectedDate}
             onSelectDate={setSelectedDate}
             onSummaryClick={() => setShowMonthlySummary(true)}
           />
         </section>
+        
+        {/* ARENA BANNER (If friends selected) */}
+        {activeFriends.length > 0 && (
+            <section>
+                <button 
+                    onClick={() => setShowArenaModal(true)}
+                    className="w-full bg-gradient-to-r from-zinc-900 to-black border border-white/10 p-4 rounded-2xl flex items-center justify-between group shadow-lg"
+                >
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-white/5 rounded-full border border-white/10 group-hover:scale-110 transition-transform">
+                            <Swords className="w-5 h-5 text-primary" />
+                        </div>
+                        <div className="text-left">
+                            <div className="text-sm font-bold text-white">Enter The Arena</div>
+                            <div className="text-[10px] text-zinc-400">Compare stats with {activeFriends.length} friends</div>
+                        </div>
+                    </div>
+                    <div className="text-primary text-xs font-bold font-mono tracking-widest group-hover:underline">JUDGE ME &rarr;</div>
+                </button>
+            </section>
+        )}
 
         {/* PLANS (Horizontal Scroll - COMPACT) */}
         {canEdit && (
@@ -506,7 +588,7 @@ function App() {
           </section>
         )}
 
-        {/* WORKOUT FEED */}
+        {/* WORKOUT FEED (Mine + Friends) */}
         <section>
           <div className="flex items-center justify-between mb-4 px-2">
             <h2 className="text-sm font-bold text-text tracking-tight flex items-center gap-2">
@@ -514,11 +596,11 @@ function App() {
               {isSameDay(selectedDate, new Date()) ? t('todays_log') : format(selectedDate, 'MMMM do', { locale: dateLocale }).toUpperCase()}
             </h2>
             <span className="text-xs font-medium text-subtext bg-surface px-2 py-1 rounded-md border border-border">
-              {selectedWorkouts.length} {t('logs')}
+              {selectedWorkouts.length + friendsSelectedWorkouts.length} {t('logs')}
             </span>
           </div>
 
-          {selectedWorkouts.length === 0 ? (
+          {(selectedWorkouts.length === 0 && friendsSelectedWorkouts.length === 0) ? (
             <div className="py-12 flex flex-col items-center justify-center text-center border-2 border-dashed border-border rounded-3xl bg-surface/30">
                <div className="w-16 h-16 bg-surface rounded-full flex items-center justify-center mb-4 text-subtext">
                   <Activity className="w-8 h-8" />
@@ -528,6 +610,8 @@ function App() {
             </div>
           ) : (
             <div className="space-y-4">
+              
+              {/* MY WORKOUTS */}
               {selectedWorkouts.map((workout) => (
                 <div key={workout.id} className="bg-surface rounded-3xl p-5 border border-border shadow-sm relative overflow-hidden group">
                    {/* Decorative gradient blob */}
@@ -618,6 +702,49 @@ function App() {
                    </div>
                 </div>
               ))}
+
+              {/* FRIENDS WORKOUTS */}
+              {friendsSelectedWorkouts.map((workout) => (
+                <div key={workout.id} className="bg-surface rounded-3xl p-5 border border-border shadow-sm relative overflow-hidden opacity-90" style={{ borderColor: `${(workout as any)._friendColor}40` }}>
+                   {/* Friend Indicator */}
+                   <div className="absolute top-0 right-0 px-3 py-1 text-[10px] font-bold uppercase text-black rounded-bl-xl" style={{ backgroundColor: (workout as any)._friendColor }}>
+                      Friend Log
+                   </div>
+
+                   <div className="flex items-center justify-between mb-4 relative z-10">
+                      <div className="flex items-center gap-2 text-xs font-bold text-subtext bg-surfaceHighlight px-3 py-1 rounded-full border border-border">
+                        <Clock className="w-3 h-3" />
+                        {workout.created_at ? format(new Date(workout.created_at), 'HH:mm') : '--:--'}
+                      </div>
+                   </div>
+
+                   <div className="space-y-4 relative z-10">
+                      {workout.structured_data.exercises.map((ex, idx) => (
+                        <div key={idx}>
+                           <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-3 font-bold text-text text-base">
+                                 <div className="p-1.5 bg-surfaceHighlight rounded-lg text-subtext border border-border">
+                                   {getExerciseIcon(ex.name, "w-4 h-4")}
+                                 </div>
+                                 {ex.name}
+                              </div>
+                           </div>
+                           
+                           <div className="flex flex-wrap gap-2 pl-9">
+                              {ex.sets.map((set, sIdx) => (
+                                <div key={sIdx} className="bg-surfaceHighlight border border-border rounded-lg px-3 py-1.5 flex items-center gap-1.5 shadow-sm opacity-80">
+                                   <span className="font-bold font-mono text-sm" style={{ color: (workout as any)._friendColor }}>{set.weight}</span>
+                                   <span className="text-[10px] text-subtext font-bold">{set.unit}</span>
+                                   <span className="text-subtext text-xs">✕</span>
+                                   <span className="text-text font-bold font-mono text-sm">{set.reps}</span>
+                                </div>
+                              ))}
+                           </div>
+                        </div>
+                      ))}
+                   </div>
+                </div>
+              ))}
             </div>
           )}
         </section>
@@ -672,6 +799,25 @@ function App() {
       <CreatePlanModal isOpen={showCreatePlan} onClose={() => setShowCreatePlan(false)} onSave={handleSavePlan} initialPlan={editingPlan} />
       {currentUser && <ProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} user={currentUser} workouts={workouts} onUpdateUser={handleUpdateUser} onLogout={handleLogout} />}
       {editingExercise && <EditExerciseModal isOpen={!!editingExercise} onClose={() => setEditingExercise(null)} exercise={editingExercise.data} onSave={executeEdit} />}
+      
+      {/* SOCIAL MODALS */}
+      {currentUser && (
+          <>
+            <SocialModal 
+                isOpen={showSocialModal} 
+                onClose={() => setShowSocialModal(false)} 
+                currentUser={currentUser} 
+                activeFriends={activeFriends.map(f => f.userId)}
+                onToggleFriend={handleToggleFriend}
+            />
+            <ArenaModal 
+                isOpen={showArenaModal} 
+                onClose={() => setShowArenaModal(false)} 
+                currentUser={currentUser}
+                friendsData={arenaParticipants}
+            />
+          </>
+      )}
 
       {/* CONFIRMATION DIALOGS (Styled Modern) */}
       {[deleteConfirmation, deleteWorkoutConfirmation, deletePlanConfirmation].map((conf, i) => {

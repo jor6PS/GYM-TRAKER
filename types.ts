@@ -50,3 +50,27 @@ export interface PersonalRecord {
   date: string;
   estimated1RM?: number;
 }
+
+// --- SOCIAL TYPES ---
+
+export type FriendshipStatus = 'pending' | 'accepted' | 'rejected';
+
+export interface Friend {
+  id: string; // The friend's user ID
+  friendship_id: string;
+  name: string;
+  avatar_url?: string;
+  status: FriendshipStatus;
+  is_sender: boolean; // Did I send the request?
+  color?: string; // UI Color assignment
+}
+
+export interface GroupAnalysisData {
+  winner: string;
+  loser: string;
+  roast: string;
+  comparison_table: {
+      exercise: string;
+      details: string[];
+  }[];
+}

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { Friend, Workout } from '../types';
 
 // --- CONFIGURATION ---
 // We use environment variables for production, but fallback to hardcoded values
@@ -126,4 +127,124 @@ export const updateUserPassword = async (password: string) => {
     const { error } = await supabase.auth.updateUser({ password });
     if (error) throw error;
     return { success: true };
+};
+
+export const sendPasswordResetEmail = async (email: string) => {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin,
+  });
+  if (error) throw error;
+  return { success: true };
+};
+
+// --- SOCIAL SERVICES ---
+
+export const searchUsers = async (term: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
+
+    // Try to use RPC if available for secure search
+    const { data, error } = await supabase.rpc('search_users', { 
+        search_term: term,
+        current_user_id: user.id 
+    });
+
+    if (!error && data) return data;
+
+    // Fallback: Direct select (requires RLS to allow reading basic profile info)
+    const { data: fallbackData } = await supabase
+        .from('profiles')
+        .select('id, name, avatar_url')
+        .or(`email.ilike.%${term}%,name.ilike.%${term}%`)
+        .neq('id', user.id)
+        .limit(5);
+
+    return fallbackData || [];
+};
+
+export const sendFriendRequest = async (friendId: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Not logged in");
+
+    // Check if exists
+    const { data: existing } = await supabase
+        .from('friendships')
+        .select('*')
+        .or(`and(user_id.eq.${user.id},friend_id.eq.${friendId}),and(user_id.eq.${friendId},friend_id.eq.${user.id})`)
+        .single();
+
+    if (existing) {
+        if (existing.status === 'pending') throw new Error("Request already pending.");
+        if (existing.status === 'accepted') throw new Error("Already friends.");
+    }
+
+    const { error } = await supabase
+        .from('friendships')
+        .insert({ user_id: user.id, friend_id: friendId, status: 'pending' });
+
+    if (error) throw error;
+    return true;
+};
+
+export const getFriendships = async (): Promise<Friend[]> => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
+
+    const { data, error } = await supabase
+        .from('friendships')
+        .select(`
+            id,
+            status,
+            user_id,
+            friend_id
+        `)
+        .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`);
+
+    if (error || !data) return [];
+
+    // Fetch details for the *other* person
+    const friendPromises = data.map(async (f: any) => {
+        const isSender = f.user_id === user.id;
+        const otherId = isSender ? f.friend_id : f.user_id;
+        
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('name, avatar_url')
+            .eq('id', otherId)
+            .single();
+
+        return {
+            id: otherId,
+            friendship_id: f.id,
+            name: profile?.name || 'Unknown User',
+            avatar_url: profile?.avatar_url,
+            status: f.status,
+            is_sender: isSender
+        } as Friend;
+    });
+
+    return Promise.all(friendPromises);
+};
+
+export const respondToRequest = async (friendshipId: string, status: 'accepted' | 'rejected') => {
+    const { error } = await supabase
+        .from('friendships')
+        .update({ status })
+        .eq('id', friendshipId);
+    
+    if (error) throw error;
+};
+
+export const getFriendWorkouts = async (friendIds: string[]) => {
+    if (friendIds.length === 0) return [];
+    
+    const { data, error } = await supabase
+        .from('workouts')
+        .select('*')
+        .in('user_id', friendIds)
+        .order('date', { ascending: false })
+        .limit(100); // Limit to recent history for performance
+
+    if (error) return [];
+    return data as Workout[];
 };

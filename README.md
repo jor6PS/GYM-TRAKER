@@ -30,33 +30,33 @@ La IA procesa el audio, extrae los ejercicios, normaliza los nombres y estructur
 *   **Toggle Rápido:** Cambia entre Español (ES) e Inglés (EN) instantáneamente desde la cabecera.
 *   **IA Políglota:** El "Gym Bro" AI adapta sus análisis y veredictos al idioma seleccionado.
 
-### 📅 3. Calendario Interactivo & Historial
+### ⚔️ 3. La Arena (Social & Competitivo)
+*   **Sistema de Amigos:** Busca usuarios por email, envía solicitudes y colabora.
+*   **Calendario Multijugador:** Visualiza los entrenamientos de tus amigos en tu calendario con códigos de colores.
+*   **Comparador de PRs:** Tabla matricial para ver quién levanta más en cada ejercicio.
+*   **Juez AI:** Gemini analiza los datos del grupo y emite un veredicto sarcástico sobre quién es el "Alpha" del grupo.
+
+### 📅 4. Calendario Interactivo & Historial
 *   Visualización mensual limpia tipo "Github contributions".
 *   Indicadores visuales de días de entrenamiento.
 *   Navegación fluida entre días pasados y futuros.
 *   **Reportes Mensuales AI:** Genera un resumen de tu mes con análisis de tendencias y un "veredicto final" sarcástico pero motivador.
 
-### ⚡ 4. Planes de Entrenamiento "Quick Tiles"
+### ⚡ 5. Planes de Entrenamiento "Quick Tiles"
 *   Diseño compacto y cuadrado para ahorrar espacio.
 *   Crea rutinas predefinidas (Push, Pull, Legs, etc.).
 *   Aplica una rutina completa con un solo clic.
 *   **Smart Fill:** La app recuerda automáticamente los pesos de tu última sesión al aplicar una rutina.
 
-### 📈 5. Análisis de Progreso (PRs)
+### 📈 6. Análisis de Progreso (PRs)
 *   Seguimiento automático de Récords Personales (PRs).
 *   Gráficos interactivos de progresión de cargas y 1RM estimado.
 *   Historial detallado filtrable por ejercicio.
 
-### 🛡️ 6. Panel de Administración
+### 🛡️ 7. Panel de Administración
 *   Gestión de usuarios y base de datos global.
 *   Capacidad de "Impersonation" (ver la app como otro usuario) para soporte.
 *   Métricas globales del sistema en tiempo real.
-
-### 🎨 7. UI/UX Premium
-*   **Tema Obsidian:** Fondo oscuro profundo (`#050505`) activo por defecto para ahorrar batería en pantallas OLED y reducir fatiga visual.
-*   **Acento Volt:** Color lima vibrante (`#D4FF00`) para acciones principales.
-*   **Glassmorphism:** Paneles translúcidos y efectos de desenfoque.
-*   **Animaciones:** Transiciones suaves, micro-interacciones y feedback háptico.
 
 ---
 
@@ -134,6 +134,16 @@ create table workout_plans (
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
+-- Friendships (Social Features)
+create table friendships (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references auth.users not null,
+  friend_id uuid references auth.users not null,
+  status text check (status in ('pending', 'accepted', 'rejected')) default 'pending',
+  created_at timestamp with time zone default timezone('utc'::text, now()),
+  unique(user_id, friend_id)
+);
+
 -- Trigger para crear perfil automático al registrarse
 create or replace function public.handle_new_user() 
 returns trigger as $$
@@ -147,6 +157,21 @@ $$ language plpgsql security definer;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
+  
+-- RPC for User Search (Secure)
+create or replace function search_users(search_term text, current_user_id uuid)
+returns table (id uuid, name text, avatar_url text)
+language plpgsql security definer
+as $$
+begin
+  return query
+  select p.id, p.name, p.avatar_url
+  from profiles p
+  where (p.email ilike search_term or p.name ilike '%' || search_term || '%')
+  and p.id != current_user_id
+  limit 5;
+end;
+$$;
 ```
 
 ### 5. Ejecutar en desarrollo

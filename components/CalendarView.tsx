@@ -18,13 +18,13 @@ interface CalendarViewProps {
   viewDate: Date;
   onViewDateChange: (date: Date) => void;
   workouts: Workout[];
+  selectedFriendsWorkouts?: { userId: string; color: string; workouts: Workout[] }[]; // New Prop
   onSelectDate: (date: Date) => void;
   selectedDate: Date;
-  onSummaryClick: () => void; // New prop for triggering summary
+  onSummaryClick: () => void;
 }
 
-// Weekdays based on language would be better generated dynamically
-const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']; // Kept simple for UI compactness
+const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']; 
 
 const startOfMonth = (date: Date) => {
   const d = new Date(date);
@@ -42,6 +42,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   viewDate,
   onViewDateChange,
   workouts, 
+  selectedFriendsWorkouts = [],
   onSelectDate,
   selectedDate,
   onSummaryClick
@@ -56,13 +57,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   const calendarDays = eachDayOfInterval({ start: startDate, end: endDate });
 
-  const getWorkoutsForDay = (day: Date) => workouts.filter(w => isSameDay(new Date(w.date), day));
   const handlePrevMonth = () => onViewDateChange(addMonths(viewDate, -1));
   const handleNextMonth = () => onViewDateChange(addMonths(viewDate, 1));
   
   const isCurrentMonth = isSameMonth(viewDate, new Date());
   
-  // Calculate distinct workout days in current view for the badge
   const workoutsInMonth = workouts.filter(w => isSameMonth(new Date(w.date), viewDate));
   const hasEnoughData = workoutsInMonth.length > 0;
 
@@ -122,11 +121,15 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         {/* Days Grid */}
         <div className="grid grid-cols-7 gap-y-2 gap-x-1">
           {calendarDays.map((day) => {
-            const dayWorkouts = getWorkoutsForDay(day);
-            const hasWorkout = dayWorkouts.length > 0;
+            const hasMyWorkout = workouts.some(w => isSameDay(new Date(w.date), day));
             const isSelected = isSameDay(day, selectedDate);
             const isMonthDay = isSameMonth(day, monthStart);
             const isToday = isSameDay(day, new Date());
+
+            // Check friends workouts
+            const friendDots = selectedFriendsWorkouts
+                .filter(fw => fw.workouts.some(w => isSameDay(new Date(w.date), day)))
+                .map(fw => fw.color);
 
             return (
               <button
@@ -136,24 +139,30 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   if (!isMonthDay) onViewDateChange(day);
                 }}
                 className={clsx(
-                  'relative h-10 w-full flex flex-col items-center justify-center rounded-xl transition-all duration-300',
+                  'relative h-11 w-full flex flex-col items-center justify-start pt-1 rounded-xl transition-all duration-300',
                   !isMonthDay && 'opacity-20',
                   isSelected 
-                    ? 'bg-primary text-black scale-105 font-bold shadow-glow border border-primary' 
-                    : hasWorkout 
-                        ? 'bg-primary/10 text-text border border-primary/30' // Highlighted state for workout days
-                        : 'hover:bg-surfaceHighlight text-subtext',
-                  isToday && !isSelected && 'ring-1 ring-border bg-surfaceHighlight/50'
+                    ? 'bg-surfaceHighlight border border-primary/50 scale-105 shadow-glow' 
+                    : 'hover:bg-surfaceHighlight',
+                  isToday && !isSelected && 'ring-1 ring-border bg-surfaceHighlight/30'
                 )}
               >
-                <span className="text-xs">{format(day, 'd')}</span>
+                <span className={clsx("text-xs font-bold mb-1", isSelected ? "text-primary" : "text-subtext")}>
+                    {format(day, 'd')}
+                </span>
                 
-                {hasWorkout && (
-                  <div className={clsx(
-                    "w-1 h-1 rounded-full mt-1",
-                    isSelected ? "bg-black" : "bg-primary shadow-[0_0_5px_#D4FF00]"
-                  )} />
-                )}
+                {/* Dots Container - Multiplayer */}
+                <div className="flex gap-1 justify-center flex-wrap px-1 w-full">
+                    {/* My Dot */}
+                    {hasMyWorkout && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_5px_#D4FF00]"></div>
+                    )}
+                    
+                    {/* Friends Dots */}
+                    {friendDots.map((color, i) => (
+                        <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color, boxShadow: `0 0 5px ${color}` }}></div>
+                    ))}
+                </div>
               </button>
             );
           })}
