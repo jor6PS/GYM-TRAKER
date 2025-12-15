@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { createContext } from 'react';
 import { Workout, WorkoutData, Exercise } from './types';
 import { EXERCISE_DB } from './data/exerciseDb';
 
@@ -63,18 +63,21 @@ export const getCanonicalId = (name: string): string => {
     return partial ? partial.id : name.trim(); 
 };
 
-export const getLocalizedName = (idOrName: string, lang: 'es' | 'en'): string => {
+// MODIFIED: Ignores lang param and always tries to return Spanish if found
+export const getLocalizedName = (idOrName: string, lang: 'es' | 'en' = 'es'): string => {
     const match = EXERCISE_DB.find(ex => ex.id === idOrName);
     if (match) {
-        return lang === 'es' ? match.es : match.en;
+        return match.es; // Always return Spanish
     }
+    // Fallback: Check if it's already a name in DB (English or Spanish)
     const reverseMatch = EXERCISE_DB.find(ex => 
         ex.en.toLowerCase() === idOrName.toLowerCase() || 
         ex.es.toLowerCase() === idOrName.toLowerCase()
     );
     if (reverseMatch) {
-         return lang === 'es' ? reverseMatch.es : reverseMatch.en;
+         return reverseMatch.es; // Always return Spanish
     }
+    // Capitalize fallback
     return idOrName.charAt(0).toUpperCase() + idOrName.slice(1);
 };
 
@@ -93,8 +96,7 @@ export const sanitizeWorkoutData = (data: WorkoutData): WorkoutData => {
             const def = EXERCISE_DB.find(d => d.id === id);
 
             if (def) {
-                // Match Found: Use the official Spanish Name for storage consistency
-                // (Display layer handles translation)
+                // Match Found: Use the official Spanish Name
                 validExercises.push({
                     ...ex,
                     name: def.es 
@@ -111,6 +113,7 @@ export const sanitizeWorkoutData = (data: WorkoutData): WorkoutData => {
     };
 };
 
+// ... (Rest of SVG components remain unchanged) ...
 // --- Custom SVG Components (ILLUSTRATIVE & INTUITIVE) ---
 
 export const AppLogo = ({ className }: { className?: string }) => (

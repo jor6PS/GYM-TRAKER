@@ -25,8 +25,6 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
   const [newExReps, setNewExReps] = useState(10);
   const [newExWeight, setNewExWeight] = useState(0);
 
-  const { language } = useLanguage();
-
   // Effect to load initial plan data if editing
   useEffect(() => {
     if (isOpen) {
@@ -63,13 +61,12 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
     const term = normalizeText(searchTerm);
     if (!term) return [];
     
-    const langKey = language === 'es' ? 'es' : 'en';
-
+    // Always search Spanish names
     return EXERCISE_DB
-      .filter(ex => normalizeText(ex[langKey]).includes(term))
-      .map(ex => ex[langKey])
+      .filter(ex => normalizeText(ex.es).includes(term))
+      .map(ex => ex.es)
       .slice(0, 5);
-  }, [searchTerm, language]);
+  }, [searchTerm]);
 
   if (!isOpen) return null;
 
@@ -125,7 +122,7 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10 bg-black">
           <h3 className="text-lg font-bold text-primary font-mono uppercase tracking-widest">
-            {initialPlan ? 'Edit Routine' : 'Create Routine'}
+            {initialPlan ? 'Editar Rutina' : 'Crear Rutina'}
           </h3>
           <button onClick={onClose} className="p-1 hover:text-white text-subtext transition-colors">
             <X className="w-5 h-5" />
@@ -137,11 +134,11 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
           
           {/* Plan Name */}
           <div>
-            <label className="block text-xs font-mono text-subtext mb-1 uppercase">Routine Name</label>
+            <label className="block text-xs font-mono text-subtext mb-1 uppercase">Nombre de Rutina</label>
             <input 
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Pull Day A"
+              placeholder="ej. Día de Empuje"
               className="w-full bg-black border border-white/20 rounded p-2 text-text font-mono focus:border-primary focus:outline-none"
             />
           </div>
@@ -149,12 +146,12 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
           {/* List of Added Exercises */}
           <div className="space-y-2">
             <div className="text-xs font-mono text-subtext uppercase flex justify-between">
-               <span>Exercises in Routine ({exercises.length})</span>
+               <span>Ejercicios ({exercises.length})</span>
             </div>
             
             {exercises.length === 0 ? (
               <div className="text-center py-4 border border-dashed border-white/10 rounded bg-white/5">
-                <span className="text-xs text-subtext">No exercises added yet.</span>
+                <span className="text-xs text-subtext">Sin ejercicios.</span>
               </div>
             ) : (
               exercises.map((ex, idx) => {
@@ -164,7 +161,7 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
                      <div>
                        <div className="font-bold text-sm text-text">{ex.name}</div>
                        <div className="text-xs text-subtext font-mono">
-                         {ex.sets.length} sets x {firstSet ? firstSet.reps : 0} reps {(firstSet && firstSet.weight && firstSet.weight > 0) ? `@ ${firstSet.weight}kg` : ''}
+                         {ex.sets.length} series x {firstSet ? firstSet.reps : 0} reps {(firstSet && firstSet.weight && firstSet.weight > 0) ? `@ ${firstSet.weight}kg` : ''}
                        </div>
                      </div>
                      <button 
@@ -181,7 +178,7 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
 
           {/* Add New Exercise Form */}
           <div className="bg-black/40 p-3 rounded border border-white/10 space-y-3 relative">
-             <div className="text-xs font-bold text-primary font-mono uppercase">Add Exercise to Routine</div>
+             <div className="text-xs font-bold text-primary font-mono uppercase">Añadir Ejercicio</div>
              
              {/* Search Input */}
              <div className="relative">
@@ -193,7 +190,7 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
                       setSearchTerm(e.target.value);
                       setSelectedDbExercise(null); // Clear selection if typing
                     }}
-                    placeholder="Search Exercise Database..."
+                    placeholder="Buscar Ejercicio..."
                     className={`w-full bg-surface border ${selectedDbExercise ? 'border-primary text-primary font-bold' : 'border-white/10'} rounded p-2 pl-8 text-sm focus:border-primary/50 focus:outline-none`}
                   />
                   {selectedDbExercise && (
@@ -227,15 +224,15 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
 
              <div className="grid grid-cols-3 gap-2">
                  <div>
-                    <label className="text-[10px] text-subtext uppercase">Sets</label>
+                    <label className="text-[10px] text-subtext uppercase">Series</label>
                     <input type="number" value={newExSets} onChange={e => setNewExSets(Number(e.target.value))} className="w-full bg-surface border border-white/10 rounded p-1 text-center text-sm" />
                  </div>
                  <div>
-                    <label className="text-[10px] text-subtext uppercase">Target Reps</label>
+                    <label className="text-[10px] text-subtext uppercase">Reps</label>
                     <input type="number" value={newExReps} onChange={e => setNewExReps(Number(e.target.value))} className="w-full bg-surface border border-white/10 rounded p-1 text-center text-sm" />
                  </div>
                  <div>
-                    <label className="text-[10px] text-subtext uppercase">Default Kg</label>
+                    <label className="text-[10px] text-subtext uppercase">Kg</label>
                     <input 
                         type="number" 
                         value={newExWeight === 0 ? '' : newExWeight} 
@@ -251,7 +248,7 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
                disabled={!selectedDbExercise && !searchTerm.trim()}
                className="w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold uppercase rounded transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
              >
-               <Plus className="w-3 h-3" /> Add to List
+               <Plus className="w-3 h-3" /> Añadir a lista
              </button>
           </div>
 
@@ -263,14 +260,14 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
              onClick={onClose}
              className="px-4 py-2 rounded text-xs font-mono font-bold text-subtext hover:text-white transition-colors uppercase"
           >
-            Cancel
+            Cancelar
           </button>
           <button 
              onClick={handleSave}
              disabled={exercises.length === 0 || !name}
              className="px-4 py-2 bg-primary hover:bg-primaryHover text-black font-bold font-mono text-xs uppercase rounded shadow-glow disabled:opacity-50 disabled:shadow-none transition-all flex items-center gap-2"
           >
-            <Save className="w-4 h-4" /> {initialPlan ? 'Update Routine' : 'Save Routine'}
+            <Save className="w-4 h-4" /> {initialPlan ? 'Actualizar' : 'Guardar'}
           </button>
         </div>
 

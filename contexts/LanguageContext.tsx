@@ -1,8 +1,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
-type Language = 'es' | 'en';
-
+// Spanish only translations
 const translations = {
   es: {
     // General
@@ -145,180 +144,24 @@ const translations = {
     gladiator_highlights: "Ficha de Gladiador",
     top_feats: "Mejores Marcas",
     no_valid_records: "Sin registros válidos aún.",
-  },
-  en: {
-    // General
-    loading: "Loading...",
-    error: "Error",
-    cancel: "Cancel",
-    save: "Save",
-    delete: "Delete",
-    edit: "Edit",
-    abort: "Abort",
-    
-    // Header
-    viewing_as: "Viewing as",
-    exit: "Exit",
-    
-    // Auth
-    sign_in: "Sign In",
-    sign_up: "Sign Up",
-    start_journey: "Start Journey",
-    full_name: "Full Name",
-    email_user: "Username or Email",
-    email: "Email Address",
-    password: "Password",
-    have_account: "Already have an account? Sign In",
-    no_account: "Don't have an account? Sign Up",
-    check_inbox: "Check your inbox",
-    verification_sent: "We've sent a verification link to",
-    back_signin: "Back to Sign In",
-    forgot_password: "Forgot Password?",
-    recover_password: "Recover Password",
-    recover_intro: "Enter your email to receive a recovery link.",
-    send_recovery: "Send Link",
-    recovery_sent_title: "Email sent",
-    recovery_sent_desc: "If an account exists with this email, you will receive a password reset link.",
-    username_taken: "This username is already taken.", 
-    
-    // Dashboard
-    routines: "WORKOUT ROUTINES",
-    saved: "Saved",
-    new: "NEW",
-    todays_log: "TODAY'S LOG",
-    logs: "Logs",
-    no_activity: "No activity recorded.",
-    tap_mic: "Tap the mic below to start.",
-    sets: "SETS",
-    vol: "VOL",
-    manual: "AI TEXT",
-    listening: "LISTENING...",
-    processing: "PROCESSING...",
-    
-    // Calendar
-    today: "Today",
-    
-    // Monthly Report
-    ai_report_title: "AI Report",
-    global_monthly_subtitle: "Global & Monthly",
-    monthly_report: "Monthly Report",
-    exercise_highlights: "Exercise Highlights",
-    gym_bro_analysis: "Gym Bro Analysis",
-    final_verdict: "The Final Verdict",
-    top_lift: "Top Lift",
-    consulting_ai: "Consulting the Gym Gods...",
-    no_data_month: "No data for this month.",
-    monthly_maxes: "Monthly Max Lifts",
-    lifetime_load: "Lifetime Total Load",
-    report_of: "Report of",
-    
-    // Actions
-    delete_exercise_title: "Delete Exercise?",
-    delete_exercise_desc: "This set will be removed.",
-    delete_workout_title: "Delete Workout?",
-    delete_workout_desc: "Entire log will be deleted.",
-    delete_plan_title: "Delete Plan?",
-    delete_plan_desc: "Routine will be lost.",
-    
-    // Modals & Builder
-    input_log: "Input Data Log",
-    builder: "Builder",
-    overview: "Overview",
-    library: "Library",
-    history: "History",
-    history_clone: "Clone History",
-    search_db: "Search DB (e.g. Bench)...",
-    no_matches: "No matches found.",
-    add_set: "Add Set",
-    add_to_session: "Add to Session",
-    session_empty: "Session Empty",
-    go_to_lib: "Go to Library to add exercises.",
-    open_library: "Open Library",
-    add_another: "Add Another Exercise",
-    save_session: "Save Session",
-    back: "Back",
-    added: "Added",
-    manual_entry: "Manual Entry",
-    no_exercises_added: "No exercises added.",
-    start_adding_below: "Use search to add exercises.",
-    search_exercise: "Search exercise...",
-    add_custom: "Add Custom",
-    confirm_exercise: "Confirm Exercise",
-    notes_placeholder: "Workout notes...",
-    finish_workout: "Finish Workout",
-    
-    // Profile
-    profile: "Profile",
-    joined: "Joined",
-    workouts_total: "Logs",
-    stats_month: "THIS MONTH",
-    stats_year: "THIS YEAR",
-    stats_total: "TOTAL",
-    admin: "ADMINISTRATOR",
-    member: "MEMBER",
-    save_changes: "Save Changes",
-    sign_out: "Sign Out",
-    display_name: "Display Name",
-    new_password: "New Password (Optional)",
-    confirm_password: "Confirm Password",
-    lifetime_aggregates: "Lifetime Aggregates",
-    total_load: "Total Load (Volume)",
-    api_key_label: "Your Gemini API Key (Optional)",
-    api_key_placeholder: "Paste your AIza key...",
-    api_key_help: "Use your own free Google quota.",
-    get_api_key: "Get Free Key",
-    
-    // Rest Timer
-    rest_timer: "Rest Timer",
-
-    // ARENA / SOCIAL
-    enter_arena: "Enter The Arena",
-    opponents: "Opponents",
-    judge_me: "GO!",
-    arena_title: "THE ARENA",
-    gladiators_ready: "Gladiators Ready",
-    fight: "FIGHT!",
-    judging: "JUDGING...",
-    alpha: "ALPHA",
-    beta: "BETA",
-    consistency_points: "Consistency Points",
-    key_matchups: "Key Matchups",
-    no_common_exercises: "No common exercises found between all participants.",
-    gladiator_highlights: "Gladiator Highlights",
-    top_feats: "Top Feats",
-    no_valid_records: "No valid records yet.",
   }
 };
 
 interface LanguageContextType {
-  language: Language;
-  setLanguage: (lang: Language) => void;
   t: (key: keyof typeof translations['es']) => string;
+  language: 'es'; // Fixed to es
 }
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [language, setLanguage] = useState<Language>('es'); // Default to Spanish
-
-  useEffect(() => {
-    const storedLang = localStorage.getItem('language') as Language;
-    if (storedLang && (storedLang === 'es' || storedLang === 'en')) {
-      setLanguage(storedLang);
-    }
-  }, []);
-
-  const handleSetLanguage = (lang: Language) => {
-    setLanguage(lang);
-    localStorage.setItem('language', lang);
-  };
-
+  // Always 'es'
   const t = (key: keyof typeof translations['es']) => {
-    return translations[language][key] || key;
+    return translations.es[key] || key;
   };
 
   return (
-    <LanguageContext.Provider value={{ language, setLanguage: handleSetLanguage, t }}>
+    <LanguageContext.Provider value={{ t, language: 'es' }}>
       {children}
     </LanguageContext.Provider>
   );

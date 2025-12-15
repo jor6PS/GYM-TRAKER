@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, Suspense, lazy, useMemo } from 'react';
 import { CalendarView } from './components/CalendarView';
 import { RestTimer } from './components/RestTimer';
@@ -8,7 +9,7 @@ import { ActionDock } from './components/ActionDock';
 import { Workout, WorkoutData, WorkoutPlan, Exercise, User } from './types';
 import { supabase, getCurrentProfile, getFriendWorkouts, getPendingRequestsCount, isConfigured } from './services/supabase';
 import { format, isSameDay, isFuture } from 'date-fns';
-import { es, enUS } from 'date-fns/locale';
+import { es } from 'date-fns/locale';
 import { getExerciseIcon, parseLocalDate, sanitizeWorkoutData } from './utils';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { 
@@ -49,8 +50,8 @@ export default function AppWrapper() {
 }
 
 function App() {
-  const { t, language, setLanguage } = useLanguage();
-  const dateLocale = language === 'es' ? es : enUS;
+  const { t } = useLanguage();
+  const dateLocale = es;
 
   // --- STATE DEFINITIONS ---
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -84,7 +85,6 @@ function App() {
   const [editingPlan, setEditingPlan] = useState<WorkoutPlan | null>(null);
   
   const [deleteConfirmation, setDeleteConfirmation] = useState<{ workoutId: string; exerciseIndex: number; exerciseName: string; } | null>(null);
-  // Removed deletePlanConfirmation as plans are managed in modal now (or future update)
   const [deleteWorkoutConfirmation, setDeleteWorkoutConfirmation] = useState<string | null>(null);
 
   // --- EFFECTS ---
@@ -399,8 +399,6 @@ function App() {
 
       <AppHeader 
         currentUser={currentUser}
-        language={language}
-        toggleLanguage={() => setLanguage(language === 'es' ? 'en' : 'es')}
         pendingRequestsCount={pendingRequestsCount}
         activeFriendsCount={activeFriends.length}
         onOpenSocial={() => setShowSocialModal(true)}

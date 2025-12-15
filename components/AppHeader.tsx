@@ -6,8 +6,6 @@ import { User } from '../types';
 
 interface AppHeaderProps {
   currentUser: User;
-  language: string;
-  toggleLanguage: () => void;
   pendingRequestsCount: number;
   activeFriendsCount: number;
   onOpenSocial: () => void;
@@ -18,8 +16,6 @@ interface AppHeaderProps {
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
   currentUser,
-  language,
-  toggleLanguage,
   pendingRequestsCount,
   activeFriendsCount,
   onOpenSocial,
@@ -41,13 +37,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           </div>
           
           <div className="flex items-center gap-1">
-             <button 
-              onClick={toggleLanguage}
-              className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surfaceHighlight transition-colors text-subtext hover:text-text font-mono text-xs font-bold"
-            >
-              {language.toUpperCase()}
-            </button>
-
             <button 
               onClick={onOpenSocial}
               className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surfaceHighlight transition-colors text-subtext hover:text-blue-400 relative"
