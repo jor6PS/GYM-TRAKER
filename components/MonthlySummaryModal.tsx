@@ -1,8 +1,8 @@
 
 import React, { useEffect, useState } from 'react';
-import { X, Sparkles, Loader2, Globe2, Dumbbell, MapPin, Quote, TrendingUp, Trophy, Flame, Zap } from 'lucide-react';
-import { Workout } from '../types';
-import { generateGlobalReport, GlobalReportData } from '../services/workoutProcessor';
+import { X, Sparkles, Loader2, Globe2, Dumbbell, TrendingUp, Trophy, Flame } from 'lucide-react';
+import { Workout, GlobalReportData } from '../types';
+import { generateGlobalReport } from '../services/workoutProcessor';
 import { useLanguage } from '../contexts/LanguageContext';
 
 interface MonthlySummaryModalProps {
@@ -11,6 +11,17 @@ interface MonthlySummaryModalProps {
   workouts: Workout[]; // All workouts
   viewDate?: Date; // Deprecated but kept for interface compat if needed, unused now
 }
+
+const COMPARISON_IMAGES: Record<string, string> = {
+  car: "https://images.unsplash.com/photo-1542282088-fe8426682b8f?q=80&w=1000&auto=format&fit=crop", // Sports Car
+  animal: "https://images.unsplash.com/photo-1557050543-4d5f4e07ef46?q=80&w=1000&auto=format&fit=crop", // Elephant
+  building: "https://images.unsplash.com/photo-1486744360430-659c7f191e3e?q=80&w=1000&auto=format&fit=crop", // Skyscraper
+  plane: "https://images.unsplash.com/photo-1436891624125-5948000a7b97?q=80&w=1000&auto=format&fit=crop", // Plane
+  rocket: "https://images.unsplash.com/photo-1517976487492-5750f3195933?q=80&w=1000&auto=format&fit=crop", // Rocket
+  mountain: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?q=80&w=1000&auto=format&fit=crop", // Mountain
+  ship: "https://images.unsplash.com/photo-1548206259-2c673eb64e97?q=80&w=1000&auto=format&fit=crop", // Ship
+  default: "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?q=80&w=1000&auto=format&fit=crop" // Gym
+};
 
 export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen, onClose, workouts }) => {
   const [data, setData] = useState<GlobalReportData | null>(null);
@@ -49,6 +60,11 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
     }
   };
 
+  const getComparisonImage = (type: string | undefined) => {
+      const key = type && COMPARISON_IMAGES[type] ? type : 'default';
+      return COMPARISON_IMAGES[key];
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -64,9 +80,9 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
                 <Globe2 className="w-5 h-5" />
              </div>
              <div>
-                <h3 className="text-xl font-bold text-text leading-none tracking-tight">AI Report</h3>
+                <h3 className="text-xl font-bold text-text leading-none tracking-tight">{t('ai_report_title')}</h3>
                 <p className="text-xs text-subtext font-mono mt-1 uppercase tracking-wider flex items-center gap-1">
-                   Global & Monthly
+                   {t('global_monthly_subtitle')}
                 </p>
              </div>
           </div>
@@ -92,48 +108,40 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
             ) : data ? (
                 <div className="space-y-0">
                     
-                    {/* SECTION A: GLOBAL LIFETIME */}
+                    {/* SECTION A: GLOBAL LIFETIME (Volume Only - Full Width) */}
                     <div className="p-5 space-y-6">
-                        <div className="bg-surfaceHighlight/50 border border-border rounded-2xl p-5 relative overflow-hidden group">
-                            <div className="absolute -right-5 -top-5 w-24 h-24 bg-primary/10 rounded-full blur-2xl group-hover:bg-primary/20 transition-colors"></div>
+                        <div className="bg-surfaceHighlight/50 border border-border rounded-2xl p-6 relative overflow-hidden group">
+                            <div className="absolute -right-5 -top-5 w-32 h-32 bg-primary/10 rounded-full blur-3xl group-hover:bg-primary/20 transition-colors"></div>
                             
                             <div className="flex items-center justify-between mb-4 relative z-10">
                                 <div className="flex items-center gap-2">
-                                    <Dumbbell className="w-5 h-5 text-primary" />
-                                    <span className="text-sm font-bold text-text uppercase tracking-widest">Total Volume</span>
+                                    <Dumbbell className="w-6 h-6 text-primary" />
+                                    <span className="text-sm font-bold text-text uppercase tracking-widest">{t('lifetime_load')}</span>
                                 </div>
                             </div>
 
-                            <div className="text-3xl font-black text-white font-mono mb-6">
-                                {Math.round(data.totalVolumeKg).toLocaleString('en-US')} <span className="text-base text-subtext font-normal">kg</span>
+                            <div className="text-4xl font-black text-white font-mono mb-6 text-center">
+                                {Math.round(data.totalVolumeKg).toLocaleString('en-US')} <span className="text-lg text-subtext font-normal">kg</span>
                             </div>
 
-                            <div className="bg-black/30 rounded-xl p-4 border border-white/5 flex items-center gap-4">
-                                <div className="text-4xl">{data.volumeEmoji}</div>
-                                <div className="text-sm text-zinc-300 font-medium italic leading-relaxed">
-                                    "{data.volumeComparison}"
-                                </div>
-                            </div>
-                        </div>
+                            {/* VISUAL COMPARISON CARD (INSTAGRAM STYLE) */}
+                            <div className="relative rounded-xl overflow-hidden h-40 flex items-center justify-center border border-white/10 group shadow-lg">
+                                {/* Background Image */}
+                                <img 
+                                    src={getComparisonImage(data.volumeType)} 
+                                    alt="Comparison" 
+                                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
+                                />
+                                
+                                {/* Gradient Overlay */}
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
 
-                        <div className="bg-surfaceHighlight/50 border border-border rounded-2xl p-5 relative overflow-hidden group">
-                             <div className="absolute -right-5 -top-5 w-24 h-24 bg-blue-500/10 rounded-full blur-2xl group-hover:bg-blue-500/20 transition-colors"></div>
-
-                            <div className="flex items-center justify-between mb-4 relative z-10">
-                                <div className="flex items-center gap-2">
-                                    <MapPin className="w-5 h-5 text-blue-400" />
-                                    <span className="text-sm font-bold text-text uppercase tracking-widest">Total Distance</span>
-                                </div>
-                            </div>
-
-                            <div className="text-3xl font-black text-white font-mono mb-6">
-                                {data.totalDistanceKm.toFixed(2)} <span className="text-base text-subtext font-normal">km</span>
-                            </div>
-
-                            <div className="bg-black/30 rounded-xl p-4 border border-white/5 flex items-center gap-4">
-                                <div className="text-4xl">{data.distanceEmoji}</div>
-                                <div className="text-sm text-zinc-300 font-medium italic leading-relaxed">
-                                    "{data.distanceComparison}"
+                                {/* Content */}
+                                <div className="relative z-10 p-4 text-center w-full">
+                                    <div className="inline-block bg-primary/90 text-black text-[10px] font-bold px-2 py-0.5 rounded mb-2 uppercase tracking-wide">Equivalent to</div>
+                                    <p className="text-white text-xl font-black italic leading-tight drop-shadow-md">
+                                        "{data.volumeComparison}"
+                                    </p>
                                 </div>
                             </div>
                         </div>
@@ -145,11 +153,12 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
                         </div>
                     </div>
 
-                    {/* SECTION B: MONTHLY ANALYSIS (Divider style) */}
+                    {/* SECTION B: MONTHLY ANALYSIS */}
                     <div className="border-t border-white/10 p-5 bg-black/40">
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-sm font-bold text-white uppercase tracking-widest flex items-center gap-2">
-                                <TrendingUp className="w-4 h-4 text-green-400" /> {data.monthName} Report
+                                <TrendingUp className="w-4 h-4 text-green-400" /> 
+                                {language === 'es' ? `${t('report_of')} ${data.monthName}` : `${data.monthName} Report`}
                             </h3>
                         </div>
                         
@@ -161,21 +170,17 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
 
                         {/* HIGHLIGHTS CARDS */}
                         {data.highlights && data.highlights.length > 0 && (
-                            <div className="space-y-3">
+                            <div className="space-y-3 mb-6">
                                 {data.highlights.map((highlight, idx) => (
                                     <div key={idx} className="bg-zinc-900 border border-white/10 rounded-xl p-4 flex gap-4 items-start relative overflow-hidden group">
-                                        {/* Colored Accent based on type */}
                                         <div className={`absolute left-0 top-0 bottom-0 w-1 ${
-                                            highlight.type === 'strength' ? 'bg-primary' : 
-                                            highlight.type === 'cardio' ? 'bg-blue-400' : 'bg-orange-400'
+                                            highlight.type === 'strength' ? 'bg-primary' : 'bg-orange-400'
                                         }`}></div>
 
                                         <div className={`p-2 rounded-lg shrink-0 ${
-                                            highlight.type === 'strength' ? 'bg-primary/10 text-primary' : 
-                                            highlight.type === 'cardio' ? 'bg-blue-400/10 text-blue-400' : 'bg-orange-400/10 text-orange-400'
+                                            highlight.type === 'strength' ? 'bg-primary/10 text-primary' : 'bg-orange-400/10 text-orange-400'
                                         }`}>
                                             {highlight.type === 'strength' && <Trophy className="w-5 h-5" />}
-                                            {highlight.type === 'cardio' && <Zap className="w-5 h-5" />}
                                             {highlight.type === 'consistency' && <Flame className="w-5 h-5" />}
                                         </div>
 
@@ -186,6 +191,25 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
                                         </div>
                                     </div>
                                 ))}
+                            </div>
+                        )}
+
+                        {/* MONTHLY MAX LIST */}
+                        {data.monthlyMaxes && data.monthlyMaxes.length > 0 && (
+                            <div>
+                                <h3 className="text-xs font-bold text-subtext uppercase tracking-widest mb-3 flex items-center gap-2">
+                                    <Dumbbell className="w-3.5 h-3.5" /> {t('monthly_maxes')}
+                                </h3>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {data.monthlyMaxes.map((entry, idx) => (
+                                        <div key={idx} className="bg-zinc-900/50 border border-white/5 rounded-lg p-2.5 flex flex-col">
+                                            <span className="text-xs text-zinc-400 truncate mb-1">{entry.exercise}</span>
+                                            <span className="text-sm font-bold text-white font-mono">
+                                                {entry.weight}{entry.unit}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </div>

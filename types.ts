@@ -100,19 +100,20 @@ export interface Highlight {
     title: string; // "Titan Lift"
     value: string; // "140kg Deadlift"
     description: string; // "Moved a small car."
-    type: 'strength' | 'cardio' | 'consistency';
+    type: 'strength' | 'consistency'; // Removed 'cardio' as highlight type preference
+}
+
+export interface MonthlyMaxEntry {
+    exercise: string;
+    weight: number;
+    unit: string;
 }
 
 export interface GlobalReportData {
-  winner: string; 
-  loser: string; 
-  // Section 1: Global Fun Facts
+  // Section 1: Global Fun Facts (Volume Only)
   totalVolumeKg: number;
-  totalDistanceKm: number;
   volumeComparison: string; 
-  volumeEmoji: string; 
-  distanceComparison: string; 
-  distanceEmoji: string; 
+  volumeType: string; // 'car' | 'animal' | 'building' | 'plane' | 'rocket' | 'mountain' | 'default'
   globalVerdict: string; 
 
   // Section 2: Monthly Comparison
@@ -121,6 +122,9 @@ export interface GlobalReportData {
   
   // Section 3: Highlights
   highlights: Highlight[];
+
+  // Section 4: Monthly Maxes List
+  monthlyMaxes: MonthlyMaxEntry[];
 }
 
 export interface GroupAnalysisData {

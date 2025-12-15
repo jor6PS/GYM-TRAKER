@@ -57,6 +57,8 @@ const translations = {
     today: "Hoy",
     
     // Monthly Report
+    ai_report_title: "Reporte IA",
+    global_monthly_subtitle: "Global y Mensual",
     monthly_report: "Reporte Mensual",
     exercise_highlights: "Destacados",
     gym_bro_analysis: "Análisis del Gym Bro",
@@ -64,6 +66,9 @@ const translations = {
     top_lift: "Récord",
     consulting_ai: "Consultando a los dioses del gym...",
     no_data_month: "No hay datos este mes. ¡A entrenar!",
+    monthly_maxes: "Máximos del Mes",
+    lifetime_load: "Carga Total Histórica",
+    report_of: "Reporte de",
     
     // Actions
     delete_exercise_title: "¿Borrar Ejercicio?",
@@ -190,6 +195,8 @@ const translations = {
     today: "Today",
     
     // Monthly Report
+    ai_report_title: "AI Report",
+    global_monthly_subtitle: "Global & Monthly",
     monthly_report: "Monthly Report",
     exercise_highlights: "Exercise Highlights",
     gym_bro_analysis: "Gym Bro Analysis",
@@ -197,6 +204,9 @@ const translations = {
     top_lift: "Top Lift",
     consulting_ai: "Consulting the Gym Gods...",
     no_data_month: "No data for this month.",
+    monthly_maxes: "Monthly Max Lifts",
+    lifetime_load: "Lifetime Total Load",
+    report_of: "Report of",
     
     // Actions
     delete_exercise_title: "Delete Exercise?",

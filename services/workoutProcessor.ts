@@ -1,7 +1,8 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { WorkoutData, Workout, User, GroupAnalysisData, ComparisonRow, UserStatsProfile, Highlight } from "../types";
+import { WorkoutData, Workout, User, GroupAnalysisData, ComparisonRow, UserStatsProfile, Highlight, GlobalReportData, MonthlyMaxEntry } from "../types";
 import { format, isSameMonth, subMonths } from "date-fns";
+import { es, enUS } from 'date-fns/locale';
 import { getCanonicalId, getLocalizedName } from "../utils";
 import { EXERCISE_DB } from "../data/exerciseDb";
 
@@ -131,21 +132,17 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
             text: `
               You are an expert fitness transcriber for a GYM TRACKER app.
               
-              YOUR GOAL: Extract workout data accurately. Focus on STRENGTH and CARDIO.
+              YOUR GOAL: Extract workout data accurately. Focus on STRENGTH.
               Ignore irrelevant sports chatter (football scores, tennis matches).
               
               EXAMPLES:
               Input: "Bench press 3 sets of 10 with 80 kilos"
               Output: {"exercises": [{"name": "Bench Press", "sets": [{"reps": 10, "weight": 80, "unit": "kg"}]}]}
               
-              Input: "Corrí 5 kilómetros en 25 minutos"
-              Output: {"exercises": [{"name": "Running", "sets": [{"distance": 5, "time": "25:00", "unit": "km"}]}]}
-              
-              RULES:
+              Rules:
               1. Strength: Extract weight and reps.
-              2. Cardio: Extract distance and time.
-              3. Normalize names (e.g., "bici" -> "Cycling", "pecho" -> "Chest Press").
-              4. If weight unit isn't specified, assume kg.
+              2. Normalize names (e.g., "pecho" -> "Chest Press").
+              3. If weight unit isn't specified, assume kg.
               
               Return strictly JSON.
             `
@@ -189,8 +186,7 @@ export const processWorkoutText = async (text: string): Promise<WorkoutData> => 
               
               Rules:
               - Normalize exercise names to English standard.
-              - Detect Cardio (Running/Swimming) vs Strength.
-              - Strength: Weight/Reps. Cardio: Dist/Time.
+              - Strength: Weight/Reps.
               - IGNORE non-gym sports.
             `
           }
@@ -217,24 +213,6 @@ export const processWorkoutText = async (text: string): Promise<WorkoutData> => 
   }
 };
 
-export interface GlobalReportData {
-    // Section 1: Global Fun Facts
-    totalVolumeKg: number;
-    totalDistanceKm: number;
-    volumeComparison: string; 
-    volumeEmoji: string; 
-    distanceComparison: string; 
-    distanceEmoji: string; 
-    globalVerdict: string; 
-
-    // Section 2: Monthly Comparison
-    monthName: string;
-    monthlyAnalysisText: string;
-
-    // Section 3: Highlights
-    highlights: Highlight[];
-}
-
 // Helper to parse time string "90" or "1:30" to minutes number
 const parseTimeToMinutes = (timeStr: string | undefined): number => {
     if (!timeStr) return 0;
@@ -256,7 +234,6 @@ export const generateGlobalReport = async (
 
         // 1. Calculate Grand Totals Locally (STRICT)
         let totalVolume = 0;
-        let totalDistance = 0;
 
         // 2. Prepare Data for Monthly Comparison & Highlights
         const now = new Date();
@@ -266,31 +243,40 @@ export const generateGlobalReport = async (
         // --- CALCULATE MONTHLY STATS LOCALLY ---
         // We do this to ensure accuracy before AI "Creative Writing"
         let maxLift = { name: '', weight: 0 };
-        let maxCardio = { name: '', distance: 0 };
         const freqMap = new Map<string, number>();
+        const monthlyMaxesMap = new Map<string, { weight: number, unit: string }>();
 
         currentMonthWorkouts.forEach(w => {
             w.structured_data.exercises.forEach(ex => {
                 const id = getCanonicalId(ex.name);
                 const def = EXERCISE_DB.find(d => d.id === id);
-                const type = def?.type || 'strength';
                 const displayName = getLocalizedName(id, language);
 
                 // Frequency
                 freqMap.set(displayName, (freqMap.get(displayName) || 0) + 1);
 
                 ex.sets.forEach(s => {
-                    // Max Lift
-                    if (type === 'strength' && s.weight && s.weight > maxLift.weight) {
-                        maxLift = { name: displayName, weight: s.weight };
-                    }
-                    // Max Cardio
-                    if (type === 'cardio' && s.distance && s.distance > maxCardio.distance) {
-                        maxCardio = { name: displayName, distance: s.distance };
+                    // Only process sets with weight
+                    if (s.weight && s.weight > 0) {
+                        // Max Lift Global
+                        if (s.weight > maxLift.weight) {
+                            maxLift = { name: displayName, weight: s.weight };
+                        }
+                        
+                        // Per Exercise Max
+                        const existingMax = monthlyMaxesMap.get(displayName);
+                        if (!existingMax || s.weight > existingMax.weight) {
+                            monthlyMaxesMap.set(displayName, { weight: s.weight, unit: s.unit });
+                        }
                     }
                 });
             });
         });
+
+        // Convert Map to Array for UI
+        const monthlyMaxesList = Array.from(monthlyMaxesMap.entries())
+            .map(([exercise, data]) => ({ exercise, weight: data.weight, unit: data.unit }))
+            .sort((a, b) => b.weight - a.weight); // Sort heaviest first
 
         // Find Most Frequent
         let favorite = { name: '', count: 0 };
@@ -304,12 +290,7 @@ export const generateGlobalReport = async (
             workouts.forEach(w => {
                 w.structured_data.exercises.forEach(ex => {
                     const id = getCanonicalId(ex.name);
-                    const def = EXERCISE_DB.find(d => d.id === id);
-                    const type = def?.type || 'strength';
-                    
-                    let maxVal = 0;
-                    if (type === 'strength') maxVal = Math.max(...ex.sets.map(s => s.weight || 0));
-                    else if (type === 'cardio') maxVal = Math.max(...ex.sets.map(s => s.distance || 0));
+                    const maxVal = Math.max(...ex.sets.map(s => s.weight || 0));
                     
                     if (!map.has(id) || maxVal > map.get(id)!) {
                         map.set(id, maxVal);
@@ -322,76 +303,63 @@ export const generateGlobalReport = async (
         const currentMonthStats = extractTopExercises(currentMonthWorkouts);
         const prevMonthStats = extractTopExercises(prevMonthWorkouts);
 
-        // Calculate Totals Strict
+        // Calculate Totals Strict (VOLUME ONLY)
         allWorkouts.forEach(w => {
             w.structured_data.exercises.forEach(ex => {
                 const id = getCanonicalId(ex.name);
                 const def = EXERCISE_DB.find(d => d.id === id);
-                const type = def?.type || 'strength';
+                // Strict check: defaults to strength if not defined, but skip if explicit cardio
+                if (def?.type === 'cardio') return;
 
                 ex.sets.forEach(s => {
                     // Volume Strict
-                    if (type === 'strength' && s.weight && s.reps && (s.unit === 'kg' || s.unit === 'lbs')) {
+                    if (s.weight && s.reps && (s.unit === 'kg' || s.unit === 'lbs')) {
                         let w = s.weight;
                         if (s.unit === 'lbs') w = w * 0.453592;
                         totalVolume += (w * s.reps);
-                    }
-                    // Distance
-                    if (s.distance) {
-                        totalDistance += s.distance;
-                    } else if (s.unit === 'km' && s.weight) {
-                        totalDistance += s.weight;
-                    } else if (s.unit === 'm' && s.weight) {
-                        totalDistance += (s.weight / 1000);
                     }
                 });
             });
         });
 
+        const langInstructions = language === 'es' 
+            ? "EL IDIOMA DE SALIDA DEBE SER 100% ESPAÑOL. NO USES INGLÉS EN LOS TÍTULOS NI DESCRIPCIONES." 
+            : "OUTPUT LANGUAGE MUST BE ENGLISH.";
+
         // 3. Ask AI for Analysis with PRE-CALCULATED Highlights
         const prompt = `
             Actúa como un "Gym Bro" analista de datos. Tono: Colegueo, motivador, sarcástico pero útil.
-            IDIOMA DE SALIDA: ${language === 'es' ? 'ESPAÑOL (Spanish)' : 'ENGLISH (English)'}
+            ${langInstructions}
+
+            **OBJETIVO**: Analizar SOLO el rendimiento de fuerza/gym. IGNORA cardio, distancia, running, ciclismo, etc.
 
             **PARTE 1: DATOS GLOBALES (HISTÓRICO)**
-            - Peso Total Levantado: ${Math.round(totalVolume)} kg
-            - Distancia Total: ${totalDistance.toFixed(2)} km
+            - Volumen Total Levantado (Hierro): ${Math.round(totalVolume)} kg
             
             **PARTE 2: ESTE MES vs MES ANTERIOR**
-            - Ejercicios Top Este Mes (Max): ${JSON.stringify(currentMonthStats.slice(0, 5))}
-            - Ejercicios Top Mes Pasado (Max): ${JSON.stringify(prevMonthStats.slice(0, 5))}
+            - Ejercicios Top Este Mes (Max Kg): ${JSON.stringify(currentMonthStats.slice(0, 5))}
+            - Ejercicios Top Mes Pasado (Max Kg): ${JSON.stringify(prevMonthStats.slice(0, 5))}
             
             **PARTE 3: HIGHLIGHTS DEL MES (Datos Reales)**
             - Levantamiento Más Pesado: ${maxLift.name ? `${maxLift.name} (${maxLift.weight}kg)` : 'N/A'}
-            - Cardio Más Largo: ${maxCardio.name ? `${maxCardio.name} (${maxCardio.distance}km)` : 'N/A'}
             - Ejercicio Favorito (Más frecuente): ${favorite.name ? `${favorite.name} (${favorite.count} sessions)` : 'N/A'}
             
             **TAREA:**
-            1. Genera "verdict_global": Una frase épica sobre el peso total (comparalo con objetos locos).
-            2. Genera "monthly_analysis": Un párrafo corto analizando si ha mejorado respecto al mes anterior.
-            3. Genera 3 "highlights" (Tarjetas) basados en los datos de la Parte 3.
-               - Si hay dato de fuerza, crea tarjeta 'strength'.
-               - Si hay dato de cardio, crea tarjeta 'cardio'.
-               - Si hay dato de frecuencia, crea tarjeta 'consistency'.
-               - Crea un titulo corto y un comentario divertido para cada uno. **IMPORTANTE: Si el idioma es español, los títulos y descripciones DEBEN ser en español.**
+            1. Genera "volume_comparison": Una frase corta comparando el volumen total (kg) con un objeto real (ej. "3 Ballenas", "1 Cohete", "200 Perros").
+            2. Clasifica el objeto de la comparación en "volume_type": ['car', 'animal', 'building', 'plane', 'rocket', 'mountain', 'ship', 'default'].
+            3. Genera "global_verdict": Una frase épica sobre el volumen total.
+            4. Genera "monthly_analysis": Un párrafo corto analizando si ha mejorado la FUERZA.
+            5. Genera 3 "highlights" (Tarjetas) basados en los datos de fuerza.
             
+            **IMPORTANTE: Si el idioma es español, traduce TODO el texto generado.**
+
             **FORMATO JSON:**
             {
-               "volume_comparison": "Texto corto comparación peso (ej. 3 Ballenas)",
-               "volume_emoji": "Emoji",
-               "distance_comparison": "Texto corto comparación distancia",
-               "distance_emoji": "Emoji",
-               "global_verdict": "Frase sentencia final estilo bro.",
+               "volume_comparison": "Texto corto (ej. 5 Coches)",
+               "volume_type": "car",
+               "global_verdict": "Frase sentencia final.",
                "monthly_analysis": "Texto análisis mensual.",
-               "highlights": [
-                  { 
-                    "title": "Titulo Corto (ej. Titan Strength)", 
-                    "value": "140kg Deadlift", 
-                    "description": "Comentario de una frase.", 
-                    "type": "strength" 
-                  },
-                  ...
-               ]
+               "highlights": [...]
             }
         `;
 
@@ -404,9 +372,11 @@ export const generateGlobalReport = async (
                     type: Type.OBJECT,
                     properties: {
                         volume_comparison: { type: Type.STRING },
-                        volume_emoji: { type: Type.STRING },
-                        distance_comparison: { type: Type.STRING },
-                        distance_emoji: { type: Type.STRING },
+                        volume_type: { 
+                            type: Type.STRING, 
+                            enum: ['car', 'animal', 'building', 'plane', 'rocket', 'mountain', 'ship', 'default'],
+                            description: "Category of the object used in comparison to select an icon."
+                        },
                         global_verdict: { type: Type.STRING },
                         monthly_analysis: { type: Type.STRING },
                         highlights: {
@@ -417,13 +387,13 @@ export const generateGlobalReport = async (
                                     title: { type: Type.STRING },
                                     value: { type: Type.STRING },
                                     description: { type: Type.STRING },
-                                    type: { type: Type.STRING, enum: ['strength', 'cardio', 'consistency'] }
+                                    type: { type: Type.STRING, enum: ['strength', 'consistency'] }
                                 },
                                 required: ["title", "value", "description", "type"]
                             }
                         }
                     },
-                    required: ["volume_comparison", "volume_emoji", "distance_comparison", "distance_emoji", "global_verdict", "monthly_analysis", "highlights"]
+                    required: ["volume_comparison", "volume_type", "global_verdict", "monthly_analysis", "highlights"]
                 }
             }
         });
@@ -431,17 +401,21 @@ export const generateGlobalReport = async (
         const text = response.text || "{}";
         const aiResult = JSON.parse(text);
 
+        // Date formatting based on language
+        const dateLocale = language === 'es' ? es : enUS;
+        const rawMonth = format(now, 'MMMM', { locale: dateLocale });
+        // Capitalize first letter
+        const displayMonth = rawMonth.charAt(0).toUpperCase() + rawMonth.slice(1);
+
         return {
             totalVolumeKg: totalVolume,
-            totalDistanceKm: totalDistance,
             volumeComparison: aiResult.volume_comparison || "Mucho peso",
-            volumeEmoji: aiResult.volume_emoji || "🏋️‍♂️",
-            distanceComparison: aiResult.distance_comparison || "Lejos",
-            distanceEmoji: aiResult.distance_emoji || "🏃‍♂️",
+            volumeType: aiResult.volume_type || "default",
             globalVerdict: aiResult.global_verdict || "Sigue así bestia.",
-            monthName: format(now, 'MMMM'),
+            monthName: displayMonth,
             monthlyAnalysisText: aiResult.monthly_analysis || "No data yet.",
-            highlights: aiResult.highlights || []
+            highlights: aiResult.highlights || [],
+            monthlyMaxes: monthlyMaxesList // Add the locally calculated list
         };
 
     } catch (error) {
