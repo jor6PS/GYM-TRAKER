@@ -375,7 +375,7 @@ function App() {
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><Loader2 className="animate-spin text-primary" /></div>}>
            <AdminDashboard 
              currentUser={currentUser} allUsers={allUsers} allWorkouts={allWorkouts} 
-             onImpersonate={(id) => {
+             onImpersonate={(id: string) => {
                  const target = allUsers.find(u => u.id === id);
                  if (target) { setRealAdminUser(currentUser); setCurrentUser(target); }
              }} 
@@ -599,8 +599,8 @@ function App() {
         {showPRModal && <PRModal isOpen={showPRModal} onClose={() => setShowPRModal(false)} workouts={workouts} initialExercise={selectedHistoryExercise} />}
         {showMonthlySummary && <MonthlySummaryModal isOpen={showMonthlySummary} onClose={() => setShowMonthlySummary(false)} workouts={workouts} />}
         {showCreatePlan && <CreatePlanModal isOpen={showCreatePlan} onClose={() => setShowCreatePlan(false)} onSave={handleSavePlan} initialPlan={editingPlan} />}
-        {currentUser && showProfileModal && <ProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} user={currentUser} workouts={workouts} onUpdateUser={(u) => setCurrentUser(prev => prev ? ({ ...prev, ...u }) : null)} onLogout={async () => { await supabase.auth.signOut(); setCurrentUser(null); }} />}
-        {editingExercise && <EditExerciseModal isOpen={!!editingExercise} onClose={() => setEditingExercise(null)} exercise={editingExercise.data} onSave={async (ex) => {
+        {currentUser && showProfileModal && <ProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} user={currentUser} workouts={workouts} onUpdateUser={(u: Partial<User>) => setCurrentUser(prev => prev ? ({ ...prev, ...u }) : null)} onLogout={async () => { await supabase.auth.signOut(); setCurrentUser(null); }} />}
+        {editingExercise && <EditExerciseModal isOpen={!!editingExercise} onClose={() => setEditingExercise(null)} exercise={editingExercise.data} onSave={async (ex: Exercise) => {
             const workout = workouts.find(w => w.id === editingExercise.workoutId);
             if (!workout) return; // Guard against stale state
             const newExs = [...workout.structured_data.exercises];
