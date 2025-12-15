@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, Save, Plus, Trash2, Gauge, Activity, Dumbbell } from 'lucide-react';
 import { Exercise, Set, MetricType } from '../types';
@@ -15,16 +16,16 @@ interface EditExerciseModalProps {
 export const EditExerciseModal: React.FC<EditExerciseModalProps> = ({ isOpen, onClose, exercise, onSave }) => {
   const { t } = useLanguage();
 
-  // FIX: Initialize state directly from props using lazy initializer to prevent crash on first render
-  // This avoids the "flash of undefined" that caused the black screen
+  // FIX: Initialize state correctly. If exercise is null (during closing anim or init), provide empty array.
+  // We check isOpen first to ensure we don't process stale props.
   const [sets, setSets] = useState<Set[]>(() => {
-    if (exercise && exercise.sets) {
+    if (isOpen && exercise && exercise.sets) {
         return exercise.sets.map(s => ({ ...s })); // Deep clone
     }
     return [];
   });
 
-  // Determine Type
+  // Determine Type safe check
   const exerciseType: MetricType = useMemo(() => {
       if (!exercise) return 'strength';
       const id = getCanonicalId(exercise.name);
@@ -34,7 +35,7 @@ export const EditExerciseModal: React.FC<EditExerciseModalProps> = ({ isOpen, on
 
   // Sync if exercise prop changes while open (rare but safe)
   useEffect(() => {
-    if (isOpen && exercise) {
+    if (isOpen && exercise && exercise.sets) {
       setSets(exercise.sets.map(s => ({ ...s })));
     }
   }, [exercise, isOpen]);
@@ -51,6 +52,7 @@ export const EditExerciseModal: React.FC<EditExerciseModalProps> = ({ isOpen, on
     };
   }, [isOpen]);
 
+  // Guard clause AFTER hooks to prevent render crashes, but hooks must run first
   if (!isOpen || !exercise) return null;
 
   const handleSetChange = (index: number, field: keyof Set, value: string | number) => {

@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { X, Trophy, TrendingUp, Search, Calendar, ChevronRight, ArrowLeft, Calculator, Activity } from 'lucide-react';
+import { X, Trophy, TrendingUp, Search, Calendar, ChevronRight, ArrowLeft, Calculator, Activity, Hash } from 'lucide-react';
 import { Workout, PersonalRecord, MetricType } from '../types';
 import { format } from 'date-fns';
 import { getExerciseIcon, getCanonicalId, getLocalizedName } from '../utils';
@@ -25,27 +25,31 @@ interface PRModalProps {
 
 interface HistoryPoint {
   date: string;
-  value: number; // Weight (kg), Distance (km)
+  value: number; // Value to plot (Weight or Reps or Dist)
   secondaryValue?: number; // 1RM or Time (for cardio)
   unit: string;
   reps?: number;
   label: string; // "80kg", "5km"
+  isBodyweight: boolean; // Added flag for plotting
 }
 
-// Epley Formula: 1RM = Weight * (1 + Reps/30)
+// Improved 1RM: Brzycki Formula (More accurate for reps < 10)
+// Weight / (1.0278 - 0.0278 * Reps)
 const calculate1RM = (weight: number, reps: number) => {
+    if (weight === 0) return 0; // 1RM is meaningless for 0 weight
     if (reps === 1) return weight;
-    return Math.round(weight * (1 + reps / 30));
+    // Cap reps at 30 for safety, as formulas break down
+    const r = Math.min(reps, 30);
+    return Math.round(weight / (1.0278 - 0.0278 * r));
 };
 
 // Helper to parse time string "90" or "1:30" to minutes number
 const parseTimeToMinutes = (timeStr: string | undefined): number => {
     if (!timeStr) return 0;
-    // If format is MM:SS or HH:MM
     if (timeStr.includes(':')) {
         const parts = timeStr.split(':').map(Number);
-        if (parts.length === 2) return parts[0]; // Treat as MM:SS, return minutes roughly
-        if (parts.length === 3) return parts[0] * 60 + parts[1]; // HH:MM:SS
+        if (parts.length === 2) return parts[0]; 
+        if (parts.length === 3) return parts[0] * 60 + parts[1];
     }
     return parseFloat(timeStr) || 0;
 };
@@ -55,7 +59,6 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
   const { language, t } = useLanguage();
 
-  // Normalize initial exercise to ID if provided
   useEffect(() => {
     if (isOpen) {
         if (initialExercise) {
@@ -67,7 +70,6 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
     }
   }, [isOpen, initialExercise]);
 
-  // Scroll Lock Effect
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -79,7 +81,6 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
     };
   }, [isOpen]);
 
-  // Determine the type of the currently selected exercise
   const selectedExerciseType: MetricType = useMemo(() => {
       if (!selectedExerciseId) return 'strength';
       const def = EXERCISE_DB.find(e => e.id === selectedExerciseId);
@@ -87,8 +88,7 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
   }, [selectedExerciseId]);
 
   const personalRecords = useMemo(() => {
-    // Map using Canonical ID -> PersonalRecord
-    const recordsMap = new Map<string, PersonalRecord>();
+    const recordsMap = new Map<string, PersonalRecord & { isBodyweight?: boolean }>();
 
     workouts.forEach(workout => {
       workout.structured_data.exercises.forEach(exercise => {
@@ -97,36 +97,69 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
         const type = def?.type || 'strength';
         
         exercise.sets.forEach(set => {
-          let value = 0;
+          let value = 0; // This is the sorting value
           let displayValue = '';
-          let comparisonValue = 0; // Value used to determine if it's a "better" record
+          let isBodyweight = false;
 
           if (type === 'cardio') {
-              // CARDIO PR: Max Distance
               const dist = set.distance || (set.unit === 'km' || set.unit === 'm' ? set.weight : 0) || 0;
               value = dist;
               displayValue = `${dist}km`;
-              comparisonValue = dist;
           } else {
-              // STRENGTH PR: Max Weight
-              value = set.weight || 0;
-              displayValue = `${value}${set.unit}`;
-              comparisonValue = value;
+              // STRENGTH LOGIC
+              if (set.weight && set.weight > 0) {
+                  // Weighted: Comparison based on Weight
+                  value = set.weight;
+                  displayValue = `${value}${set.unit}`;
+                  isBodyweight = false;
+              } else {
+                  // Bodyweight: Comparison based on Reps
+                  value = set.reps || 0;
+                  displayValue = `${value} reps`;
+                  isBodyweight = true;
+              }
           }
 
           const currentRecord = recordsMap.get(canonicalId);
           
-          // Logic: Keep record with highest comparison value
-          if (!currentRecord || comparisonValue > currentRecord.value) {
+          // Logic: 
+          // 1. If no record, set it.
+          // 2. If weighted vs bodyweight: Weighted usually wins (assuming weighted > 0kg is harder than 0kg).
+          // 3. If weighted vs weighted: Compare weight.
+          // 4. If bodyweight vs bodyweight: Compare reps.
+          
+          let isBetter = false;
+
+          if (!currentRecord) {
+              isBetter = true;
+          } else if (type === 'cardio') {
+              if (value > currentRecord.value) isBetter = true;
+          } else {
+              // Strength Comparison Logic
+              if (!isBodyweight && currentRecord.isBodyweight) {
+                  // Current set has weight, old record was bodyweight -> New wins
+                  isBetter = true;
+              } else if (!isBodyweight && !currentRecord.isBodyweight) {
+                  // Both weighted -> Compare weight
+                  if (value > currentRecord.value) isBetter = true;
+              } else if (isBodyweight && currentRecord.isBodyweight) {
+                  // Both bodyweight -> Compare reps
+                  if (value > currentRecord.value) isBetter = true;
+              }
+              // Else: New is bodyweight, old is weighted -> Old wins (keep record)
+          }
+
+          if (isBetter) {
             recordsMap.set(canonicalId, {
-              exerciseName: canonicalId, // Store ID internally
-              weight: value, // Reuse 'weight' prop as generic value holder for compatibility
+              exerciseName: canonicalId,
+              weight: isBodyweight ? 0 : value, 
               unit: set.unit,
               reps: set.reps || 0,
               date: workout.date,
-              estimated1RM: type === 'strength' ? calculate1RM(value, set.reps || 0) : undefined,
-              value: comparisonValue,
-              displayValue: displayValue
+              estimated1RM: (!isBodyweight && type === 'strength') ? calculate1RM(value, set.reps || 0) : undefined,
+              value: value,
+              displayValue: displayValue,
+              isBodyweight: isBodyweight
             });
           }
         });
@@ -135,7 +168,6 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
 
     return Array.from(recordsMap.entries()).map(([id, pr]) => ({
         ...pr,
-        // Override the ID name with the localized name for display
         exerciseName: getLocalizedName(id, language as 'es' | 'en')
     })).sort((a, b) => a.exerciseName.localeCompare(b.exerciseName));
 
@@ -159,26 +191,38 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
         );
 
         if (exerciseData) {
-            // Find max effort set in this workout based on Type
             let bestSet = exerciseData.sets[0];
-            let bestVal = 0;
+            let bestScore = -1;
+            let isBW = false;
 
             exerciseData.sets.forEach(set => {
-                let val = 0;
+                let score = 0;
                 if (selectedExerciseType === 'cardio') {
-                    val = set.distance || 0;
+                    score = set.distance || 0;
                 } else {
-                    // Strength: use 1RM to find best set, but plot weight
-                    val = calculate1RM(set.weight || 0, set.reps || 0);
+                    // Strength scoring for history graph:
+                    // If weight > 0, score is 1RM.
+                    // If weight == 0, score is Reps.
+                    if (set.weight && set.weight > 0) {
+                        score = calculate1RM(set.weight, set.reps || 0);
+                        // Add penalty to prioritize real weight over reps? No, standard 1RM.
+                        // But we need to handle "mixed" history (some days weighted, some BW).
+                        // Let's assume weighted 1RM > BW Reps for scoring magnitude usually.
+                    } else {
+                        score = set.reps || 0;
+                        isBW = true; 
+                    }
                 }
 
-                if (val > bestVal) {
-                    bestVal = val;
+                if (score > bestScore) {
+                    bestScore = score;
                     bestSet = set;
+                    // Check strict bodyweight on best set
+                    isBW = !set.weight || set.weight === 0;
                 }
             });
 
-            if (bestSet) {
+            if (bestSet && bestScore > 0) {
                 let primaryVal = 0;
                 let secondaryVal = 0;
                 let label = "";
@@ -188,34 +232,45 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
                     secondaryVal = parseTimeToMinutes(bestSet.time);
                     label = `${primaryVal}km`;
                 } else {
-                    primaryVal = bestSet.weight || 0;
-                    secondaryVal = calculate1RM(primaryVal, bestSet.reps || 0);
-                    label = `${primaryVal}${bestSet.unit}`;
+                    if (isBW) {
+                        primaryVal = bestSet.reps || 0;
+                        secondaryVal = 0; // No 1RM for bodyweight
+                        label = `${primaryVal} reps`;
+                    } else {
+                        primaryVal = bestSet.weight || 0;
+                        secondaryVal = calculate1RM(primaryVal, bestSet.reps || 0);
+                        label = `${primaryVal}${bestSet.unit}`;
+                    }
                 }
 
-                if (primaryVal > 0) {
-                    history.push({
-                        date: workout.date,
-                        value: primaryVal,
-                        secondaryValue: secondaryVal,
-                        unit: bestSet.unit,
-                        reps: bestSet.reps || 0,
-                        label
-                    });
-                }
+                history.push({
+                    date: workout.date,
+                    value: primaryVal, // Plots Weight (if weighted) or Reps (if BW)
+                    secondaryValue: secondaryVal,
+                    unit: bestSet.unit,
+                    reps: bestSet.reps || 0,
+                    label,
+                    isBodyweight: isBW
+                });
             }
         }
     });
 
-    // Sort by date ascending
     return history.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, [selectedExerciseId, workouts, selectedExerciseType]);
+
+  // Determine if the *current selection* is mostly bodyweight or weighted to adjust chart label
+  const isMostlyBodyweight = useMemo(() => {
+      if (exerciseHistory.length === 0) return false;
+      const bwCount = exerciseHistory.filter(h => h.isBodyweight).length;
+      return bwCount > exerciseHistory.length / 2;
+  }, [exerciseHistory]);
 
   if (!isOpen) return null;
 
   const displaySelectedName = selectedExerciseId ? getLocalizedName(selectedExerciseId, language as 'es' | 'en') : '';
 
-  // Dynamic Labels based on Type
+  // Dynamic Labels
   let primaryLabel = "Best Lift";
   let secondaryLabel = "Est. 1RM";
   let unitLabel = "kg";
@@ -226,6 +281,11 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
       secondaryLabel = "Time";
       unitLabel = "km";
       chartColor = "#60a5fa"; // Blue
+  } else if (isMostlyBodyweight) {
+      primaryLabel = "Max Reps";
+      secondaryLabel = "Est. 1RM";
+      unitLabel = "reps";
+      chartColor = "#f472b6"; // Pink for BW/Endurance
   }
 
   return (
@@ -267,14 +327,13 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4 bg-background">
             
-            {/* VIEW 1: DETAILS & CHART (When an exercise is selected) */}
             {selectedExerciseId ? (
                 <div className="space-y-6 animate-in slide-in-from-right-10 fade-in duration-300">
                     {/* Stats Summary */}
                     <div className="grid grid-cols-2 gap-3">
                         <div className="bg-surfaceHighlight border border-border p-4 rounded-2xl">
                              <div className="flex items-center gap-2 mb-1">
-                                <Trophy className="w-3.5 h-3.5" style={{ color: chartColor }} />
+                                {isMostlyBodyweight ? <Hash className="w-3.5 h-3.5 text-pink-400" /> : <Trophy className="w-3.5 h-3.5" style={{ color: chartColor }} />}
                                 <span className="text-[10px] uppercase font-mono text-subtext font-bold tracking-wider">{primaryLabel}</span>
                              </div>
                              <div className="text-2xl font-bold text-text">
@@ -282,7 +341,7 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
                              </div>
                         </div>
                         
-                        {/* Secondary Stat (Only for Strength currently, maybe average pace for others later) */}
+                        {/* Secondary Stat */}
                         {selectedExerciseType === 'strength' && (
                             <div className="bg-surfaceHighlight border border-border p-4 rounded-2xl">
                                 <div className="flex items-center gap-2 mb-1">
@@ -290,7 +349,11 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
                                     <span className="text-[10px] uppercase font-mono text-subtext font-bold tracking-wider">{secondaryLabel}</span>
                                 </div>
                                 <div className="text-2xl font-bold text-blue-400">
-                                    {Math.max(...exerciseHistory.map(h => h.secondaryValue || 0))} <span className="text-sm text-blue-400/70 font-normal">kg</span>
+                                    {isMostlyBodyweight ? "N/A" : (
+                                        <>
+                                            {Math.max(...exerciseHistory.map(h => h.secondaryValue || 0))} <span className="text-sm text-blue-400/70 font-normal">kg</span>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         )}
@@ -341,10 +404,13 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
                                         contentStyle={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '12px', color: 'var(--text)' }}
                                         itemStyle={{ padding: 0 }}
                                         labelFormatter={(label) => format(new Date(label), 'MMM do, yyyy')}
-                                        formatter={(value: any) => [`${value} ${unitLabel}`, primaryLabel]}
+                                        formatter={(value: any, name: any, props: any) => {
+                                            const isBW = props.payload.isBodyweight;
+                                            const unit = isBW ? 'reps' : (selectedExerciseType === 'cardio' ? 'km' : 'kg');
+                                            return [`${value} ${unit}`, isBW ? 'Reps' : primaryLabel];
+                                        }}
                                     />
                                     
-                                    {/* Main Metric Line */}
                                     <Area 
                                         type="monotone" 
                                         dataKey="value" 
@@ -378,9 +444,13 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
                                             {point.label}
                                         </div>
                                         <div className="text-[10px] text-subtext font-mono flex gap-2">
-                                            {selectedExerciseType === 'strength' && <span>{point.reps} reps</span>}
+                                            {selectedExerciseType === 'strength' && (
+                                                <>
+                                                    <span>{point.reps} reps</span>
+                                                    {!point.isBodyweight && <span className="text-blue-400">1RM: {point.secondaryValue}</span>}
+                                                </>
+                                            )}
                                             {selectedExerciseType === 'cardio' && point.secondaryValue && <span>{point.secondaryValue}m</span>}
-                                            {selectedExerciseType === 'strength' && <span>1RM: {point.secondaryValue}</span>}
                                         </div>
                                     </div>
                                 </div>
@@ -392,7 +462,7 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
                     </div>
                 </div>
             ) : (
-                /* VIEW 2: LIST OF ALL PRs (Default View) */
+                /* LIST OF ALL PRs (Default View) */
                 <div className="space-y-4 animate-in fade-in slide-in-from-left-10 duration-300">
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-subtext" />
@@ -410,6 +480,8 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
                                 const canonicalId = getCanonicalId(pr.exerciseName);
                                 const def = EXERCISE_DB.find(e => e.id === canonicalId);
                                 const type = def?.type || 'strength';
+                                // Hack to access the isBodyweight prop if it exists on the object
+                                const isBW = (pr as any).isBodyweight; 
                                 
                                 return (
                                 <button
@@ -435,9 +507,16 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
                                         <div className="text-lg font-bold text-text font-mono tracking-tight">
                                             {pr.displayValue}
                                         </div>
-                                        {type === 'strength' && pr.estimated1RM && (
+                                        
+                                        {/* Badge Logic */}
+                                        {type === 'strength' && !isBW && pr.estimated1RM && (
                                             <div className="text-[10px] text-blue-400 font-mono font-bold bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20 inline-block">
                                                 1RM: {pr.estimated1RM}
+                                            </div>
+                                        )}
+                                        {isBW && (
+                                            <div className="text-[10px] text-pink-400 font-mono font-bold bg-pink-500/10 px-1.5 py-0.5 rounded border border-pink-500/20 inline-block">
+                                                BODYWEIGHT
                                             </div>
                                         )}
                                         {type === 'cardio' && (
