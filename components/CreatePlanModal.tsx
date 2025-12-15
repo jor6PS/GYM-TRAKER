@@ -65,9 +65,12 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
     const exerciseName = selectedDbExercise || searchTerm.trim();
     if (!exerciseName) return;
 
+    // Ensure at least 1 set
+    const setsCount = Math.max(1, newExSets);
+
     const newExercise: Exercise = {
       name: exerciseName,
-      sets: Array(newExSets).fill({
+      sets: Array(setsCount).fill({
         reps: newExReps,
         weight: newExWeight,
         unit: 'kg'
@@ -142,22 +145,25 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
                 <span className="text-xs text-subtext">No exercises added yet.</span>
               </div>
             ) : (
-              exercises.map((ex, idx) => (
-                <div key={idx} className="flex items-center justify-between bg-zinc-900/50 p-2 rounded border border-white/5">
-                   <div>
-                     <div className="font-bold text-sm text-text">{ex.name}</div>
-                     <div className="text-xs text-subtext font-mono">
-                       {ex.sets.length} sets x {ex.sets[0].reps} reps {ex.sets[0].weight > 0 && `@ ${ex.sets[0].weight}kg`}
+              exercises.map((ex, idx) => {
+                const firstSet = ex.sets[0];
+                return (
+                  <div key={idx} className="flex items-center justify-between bg-zinc-900/50 p-2 rounded border border-white/5">
+                     <div>
+                       <div className="font-bold text-sm text-text">{ex.name}</div>
+                       <div className="text-xs text-subtext font-mono">
+                         {ex.sets.length} sets x {firstSet ? firstSet.reps : 0} reps {(firstSet && firstSet.weight && firstSet.weight > 0) ? `@ ${firstSet.weight}kg` : ''}
+                       </div>
                      </div>
-                   </div>
-                   <button 
-                     onClick={() => removeExercise(idx)}
-                     className="text-zinc-600 hover:text-red-500 transition-colors p-1"
-                   >
-                     <Trash2 className="w-4 h-4" />
-                   </button>
-                </div>
-              ))
+                     <button 
+                       onClick={() => removeExercise(idx)}
+                       className="text-zinc-600 hover:text-red-500 transition-colors p-1"
+                     >
+                       <Trash2 className="w-4 h-4" />
+                     </button>
+                  </div>
+                );
+              })
             )}
           </div>
 
