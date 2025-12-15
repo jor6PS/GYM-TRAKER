@@ -134,5 +134,7 @@ export interface GroupAnalysisData {
   roast: string; // From AI
   comparison_table: ComparisonRow[]; // Calculated Locally
   points_table: { name: string; points: number }[]; // Calculated Locally
+  volume_table: { name: string; total_volume_kg: number }[]; // Calculated Locally
+  volume_verdict: string; // New AI verdict on volume
   individual_records: UserStatsProfile[]; // New Top 10 per user
 }

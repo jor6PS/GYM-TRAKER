@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { 
   X, 
@@ -170,7 +169,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     setMessage(null);
     try {
       // 1. Save API Key locally
-      const trimmedKey = userApiKey.trim();
+      const trimmedKey = userApiKey.trim().replace(/\s/g, ''); // Remove spaces
       if (trimmedKey) {
           localStorage.setItem('USER_GEMINI_KEY', trimmedKey);
       } else {
@@ -384,12 +383,12 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                         </a>
                     </div>
                     <div className="relative group">
-                        <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500 group-focus-within:text-primary transition-colors" />
+                        <Key className={`absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors ${userApiKey ? 'text-primary' : 'text-zinc-500'}`} />
                         <input 
                             type="password"
                             value={userApiKey}
                             onChange={(e) => setUserApiKey(e.target.value)}
-                            className="w-full bg-black border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white font-mono placeholder:text-zinc-700 focus:outline-none focus:border-primary/50 focus:bg-zinc-900/50 transition-all"
+                            className={`w-full bg-black border rounded-xl py-3 pl-10 pr-4 text-sm text-white font-mono placeholder:text-zinc-700 focus:outline-none focus:bg-zinc-900/50 transition-all ${userApiKey ? 'border-primary/50' : 'border-white/10'}`}
                             placeholder={t('api_key_placeholder')}
                         />
                     </div>

@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Workout } from './types';
+import { Workout, WorkoutData, Exercise } from './types';
 import { EXERCISE_DB } from './data/exerciseDb';
 
 // --- Shared Helpers ---
@@ -35,7 +35,7 @@ export const formatWorkoutToString = (workout: Workout): string => {
   }).join('\n');
 };
 
-// --- NORMALIZATION HELPERS ---
+// --- NORMALIZATION & SANITIZATION HELPERS ---
 
 export const getCanonicalId = (name: string): string => {
     const n = normalizeText(name).trim();
@@ -76,6 +76,39 @@ export const getLocalizedName = (idOrName: string, lang: 'es' | 'en'): string =>
          return lang === 'es' ? reverseMatch.es : reverseMatch.en;
     }
     return idOrName.charAt(0).toUpperCase() + idOrName.slice(1);
+};
+
+/**
+ * Enforces Strict Catalog Validation.
+ * 1. Tries to match every exercise to the DB.
+ * 2. If matched, updates name to standard Spanish name (for consistency).
+ * 3. If NOT matched, removes it (prevents non-existent exercises).
+ */
+export const sanitizeWorkoutData = (data: WorkoutData): WorkoutData => {
+    const validExercises: Exercise[] = [];
+
+    if (data.exercises) {
+        data.exercises.forEach(ex => {
+            const id = getCanonicalId(ex.name);
+            const def = EXERCISE_DB.find(d => d.id === id);
+
+            if (def) {
+                // Match Found: Use the official Spanish Name for storage consistency
+                // (Display layer handles translation)
+                validExercises.push({
+                    ...ex,
+                    name: def.es 
+                });
+            } else {
+                console.warn(`Exercise "${ex.name}" removed: Not found in catalog.`);
+            }
+        });
+    }
+
+    return {
+        ...data,
+        exercises: validExercises
+    };
 };
 
 // --- Custom SVG Components (ILLUSTRATIVE & INTUITIVE) ---

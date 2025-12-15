@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Swords, Crown, Skull, Sparkles, Loader2, Trophy, Flame, Medal, Scale, Dumbbell, Activity, Timer } from 'lucide-react';
+import { X, Swords, Crown, Skull, Sparkles, Loader2, Trophy, Flame, Medal, Scale, Dumbbell, Activity, Timer, TrendingUp, Hash } from 'lucide-react';
 import { generateGroupAnalysis } from '../services/workoutProcessor';
 import { Workout, User, GroupAnalysisData } from '../types';
 import { clsx } from 'clsx';
@@ -50,6 +50,9 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
   };
 
   const isDraw = analysis?.winner === 'DRAW';
+
+  // Helper to find color
+  const getColor = (name: string) => friendsData.find(f => f.name === name)?.color || '#ffffff';
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
@@ -196,7 +199,56 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                         </div>
                     )}
 
-                    {/* 3. POINTS & COMMON MATCHUPS */}
+                    {/* 3. TOTAL VOLUME WAR (NEW SECTION) */}
+                    <div className="bg-zinc-900/40 border border-white/5 rounded-2xl p-4 md:p-6 space-y-4">
+                        <h3 className="text-xs font-bold text-subtext uppercase tracking-widest mb-2 flex items-center gap-2">
+                            <Dumbbell className="w-4 h-4 text-purple-400" /> Volumen Total (Heavy Duty)
+                        </h3>
+                        
+                        {/* Bars */}
+                        <div className="space-y-3">
+                            {analysis.volume_table.map((vol, idx) => {
+                                const maxVol = analysis.volume_table[0].total_volume_kg || 1;
+                                const percentage = (vol.total_volume_kg / maxVol) * 100;
+                                const color = getColor(vol.name);
+
+                                return (
+                                    <div key={idx} className="relative">
+                                        <div className="flex justify-between items-end mb-1 text-xs">
+                                            <span className="font-bold text-white flex items-center gap-2">
+                                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }}></div>
+                                                {vol.name}
+                                            </span>
+                                            <span className="font-mono text-zinc-400">{vol.total_volume_kg.toLocaleString()} kg</span>
+                                        </div>
+                                        <div className="h-2 w-full bg-black rounded-full overflow-hidden border border-white/5">
+                                            <div 
+                                                className="h-full rounded-full transition-all duration-1000 ease-out" 
+                                                style={{ width: `${percentage}%`, backgroundColor: color }}
+                                            ></div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Gym Bro Verdict */}
+                        {analysis.volume_verdict && (
+                            <div className="bg-purple-900/10 border border-purple-500/20 p-3 rounded-xl mt-4 flex gap-3 items-start">
+                                <div className="bg-purple-500/20 p-1.5 rounded-lg shrink-0">
+                                    <TrendingUp className="w-4 h-4 text-purple-400" />
+                                </div>
+                                <div>
+                                    <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wide">Gym Bro Verdict</span>
+                                    <p className="text-sm text-zinc-300 italic leading-snug mt-0.5">
+                                        "{analysis.volume_verdict}"
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* 4. POINTS & COMMON MATCHUPS */}
                     <div className="bg-zinc-900/40 border border-white/5 rounded-2xl p-4 md:p-6 space-y-6">
                         
                         {/* Points Leaderboard */}
@@ -268,7 +320,7 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                         </div>
                     </div>
 
-                    {/* 4. INDIVIDUAL GLADIATOR STATS (NEW SECTION) */}
+                    {/* 5. INDIVIDUAL GLADIATOR STATS (UPDATED: SHOW ALL) */}
                     {analysis.individual_records && analysis.individual_records.length > 0 && (
                         <div className="space-y-4">
                             <h3 className="text-xs font-bold text-subtext uppercase tracking-widest flex items-center gap-2 px-2">
@@ -289,7 +341,7 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                                                 <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-black text-xs" style={{ backgroundColor: color }}>
                                                     {profile.name.charAt(0)}
                                                 </div>
-                                                <h4 className="font-bold text-white text-sm">{t('top_feats').replace('Mejores Marcas', `Mejores Marcas de ${profile.name}`).replace('Top Feats', `${profile.name}'s Top Feats`)}</h4>
+                                                <h4 className="font-bold text-white text-sm">{profile.name} Records</h4>
                                             </div>
 
                                             {profile.stats.length === 0 ? (
@@ -298,9 +350,10 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                                                 <div className="grid grid-cols-2 gap-2">
                                                     {profile.stats.map((stat, sIdx) => (
                                                         <div key={sIdx} className="bg-black/40 rounded p-2 border border-white/5 flex flex-col">
-                                                            <div className="text-[10px] text-zinc-400 truncate mb-0.5 flex items-center gap-1">
+                                                            <div className="text-[10px] text-zinc-400 truncate mb-0.5 flex items-center gap-1" title={stat.exercise}>
                                                                 {stat.metric === 'kg' ? <Dumbbell className="w-3 h-3 text-zinc-600" /> : 
                                                                  stat.metric === 'km' ? <Activity className="w-3 h-3 text-zinc-600" /> : 
+                                                                 stat.metric === 'reps' ? <Hash className="w-3 h-3 text-zinc-600" /> :
                                                                  <Timer className="w-3 h-3 text-zinc-600" />}
                                                                 {stat.exercise}
                                                             </div>
@@ -318,7 +371,7 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                         </div>
                     )}
 
-                    {/* 5. Roast Section */}
+                    {/* 6. Roast Section */}
                     {analysis.roast && (
                         <div className="bg-surfaceHighlight/30 p-6 rounded-2xl border border-white/5 relative">
                             <QuoteIcon className="absolute top-4 left-4 w-6 h-6 text-primary opacity-20" />

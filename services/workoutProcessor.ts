@@ -1,7 +1,7 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 import { WorkoutData, Workout, User, GroupAnalysisData, ComparisonRow, UserStatsProfile, Highlight, GlobalReportData, MonthlyMaxEntry } from "../types";
-import { format, isSameMonth, subMonths } from "date-fns";
+import { format, isSameMonth, addMonths } from "date-fns";
 import { es, enUS } from 'date-fns/locale';
 import { getCanonicalId, getLocalizedName } from "../utils";
 import { EXERCISE_DB } from "../data/exerciseDb";
@@ -27,6 +27,12 @@ const getAIClient = () => {
   return new GoogleGenAI({ apiKey });
 };
 
+// --- HELPER: Prepare DB for AI Context ---
+// Creates a lightweight string of valid exercises to guide the AI
+const getExerciseContextString = () => {
+    return EXERCISE_DB.map(ex => `"${ex.es}" / "${ex.en}"`).join(", ");
+};
+
 const WORKOUT_SCHEMA = {
   type: Type.OBJECT,
   properties: {
@@ -35,7 +41,9 @@ const WORKOUT_SCHEMA = {
       items: {
         type: Type.OBJECT,
         properties: {
-          name: { type: Type.STRING, description: "Name of the exercise. Keep accents if Spanish (e.g., 'Jalón', 'Press de Banca')." },
+          name: { type: Type.STRING, description: "Official Name from the allowed list if matches." },
+          original_input: { type: Type.STRING, description: "What the user actually said." },
+          match_status: { type: Type.STRING, enum: ["exact", "inferred", "unknown"], description: "Did we find it in the catalog?" },
           sets: {
             type: Type.ARRAY,
             items: {
@@ -55,7 +63,7 @@ const WORKOUT_SCHEMA = {
         required: ["name", "sets"]
       }
     },
-    notes: { type: Type.STRING, description: "Any general notes. Preserve original language and accents." }
+    notes: { type: Type.STRING, description: "Any general notes." }
   },
   required: ["exercises"]
 };
@@ -83,7 +91,15 @@ const validateData = (data: any): WorkoutData => {
         throw new Error("No he detectado ejercicios en el audio. Intenta hablar más claro o acercarte al micro.");
     }
 
-    return data as WorkoutData;
+    // Post-processing: If AI couldn't match, maybe fallback to original input
+    // The UI handles canonical IDs via getCanonicalId utility, so we just pass the name the AI chose.
+    return {
+        exercises: data.exercises.map((ex: any) => ({
+            name: ex.name, // The AI should have normalized this based on the prompt
+            sets: ex.sets
+        })),
+        notes: data.notes
+    };
 };
 
 // Helper for error handling
@@ -117,6 +133,7 @@ const handleAIError = (error: any) => {
 export const processWorkoutAudio = async (audioBase64: string, mimeType: string): Promise<WorkoutData> => {
   try {
     const ai = getAIClient();
+    const exerciseList = getExerciseContextString();
     
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
@@ -130,26 +147,27 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
           },
           {
             text: `
-              You are an expert fitness transcriber for a GYM TRACKER app.
+              You are an expert fitness transcriber.
               
-              YOUR GOAL: Extract workout data accurately. Focus on STRENGTH.
-              Ignore irrelevant sports chatter.
+              **CRITICAL: EXERCISE MAPPING**
+              Here is the ALLOWED CATALOG of exercises: 
+              [${exerciseList}]
+
+              YOUR TASK:
+              1. Listen to the audio.
+              2. For each exercise mentioned, try to find the CLOSEST MATCH in the allowed catalog.
+                 - E.g. "Hice pecho" -> "Press Banca (Barra)" or similar standard chest exercise.
+                 - E.g. "Sentadillas" -> "Sentadilla (Barra)"
+              3. If a match is found, use the EXACT name from the catalog in the 'name' field.
+              4. If NO match is found (e.g. "Yoga", "Zumba"), use the original name but set 'match_status' to "unknown".
               
-              CRITICAL ENCODING RULES: 
-              1. PRESERVE Spanish accents and special characters (á, é, í, ó, ú, ñ). 
-              2. Do NOT normalize characters to ASCII if the input is Spanish. 
-              3. Example: Return "Máquina" instead of "Maquina".
+              **ENCODING RULES:**
+              - Output JSON only.
+              - PRESERVE Spanish accents (á, é, í, ó, ú, ñ) if the output name is Spanish.
               
-              EXAMPLES:
-              Input: "Press de banca 3 series de 10 con 80 kilos"
-              Output: {"exercises": [{"name": "Press de Banca", "sets": [{"reps": 10, "weight": 80, "unit": "kg"}]}]}
-              
-              Rules:
-              1. Strength: Extract weight and reps.
-              2. Normalize names to standard gym terminology (keep language of input).
-              3. If weight unit isn't specified, assume kg.
-              
-              Return strictly JSON.
+              Structure:
+              - Strength: Extract weight and reps. Default unit: 'kg'.
+              - Cardio: Extract distance/time.
             `
           }
         ]
@@ -179,6 +197,7 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
 export const processWorkoutText = async (text: string): Promise<WorkoutData> => {
   try {
     const ai = getAIClient();
+    const exerciseList = getExerciseContextString();
 
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
@@ -186,17 +205,18 @@ export const processWorkoutText = async (text: string): Promise<WorkoutData> => 
         parts: [
           {
             text: `
-              Parse this gym workout log into JSON.
+              Parse this workout log into JSON.
               Input: "${text}"
               
-              CRITICAL:
-              - PRESERVE accents (tildes) and special characters (ñ).
-              - Do NOT convert to English if input is Spanish.
+              **CRITICAL: EXERCISE CATALOG**
+              Map user input to these official names if possible:
+              [${exerciseList}]
               
               Rules:
-              - Normalize exercise names to standard terminology.
-              - Strength: Weight/Reps.
-              - IGNORE non-gym sports.
+              1. If user types "Banca", map to "Press Banca (Barra)" (or closest match).
+              2. If user types "Bici", map to "Ciclismo" or "Bici Estática".
+              3. If explicit match found, use Catalog Name.
+              4. PRESERVE accents.
             `
           }
         ]
@@ -247,7 +267,7 @@ export const generateGlobalReport = async (
         // 2. Prepare Data for Monthly Comparison & Highlights
         const now = new Date();
         const currentMonthWorkouts = allWorkouts.filter(w => isSameMonth(new Date(w.date), now));
-        const prevMonthWorkouts = allWorkouts.filter(w => isSameMonth(new Date(w.date), subMonths(now, 1)));
+        const prevMonthWorkouts = allWorkouts.filter(w => isSameMonth(new Date(w.date), addMonths(now, -1)));
 
         // --- CALCULATE MONTHLY STATS LOCALLY ---
         // We do this to ensure accuracy before AI "Creative Writing"
@@ -433,27 +453,76 @@ export const generateGlobalReport = async (
     }
 };
 
+/**
+ * INTELLIGENT EXERCISE GROUPING
+ * Normalizes specific variations into broad categories for comparison.
+ * e.g. 'bench_press_dumbbell' -> 'BENCH PRESS'
+ */
+const getComparisonGroup = (exerciseId: string): string => {
+    // 1. Bench Press
+    if (exerciseId.includes('bench_press') || exerciseId.includes('chest_press')) return 'BENCH PRESS';
+    // 2. Squat
+    if (exerciseId.includes('squat')) return 'SQUAT';
+    // 3. Deadlift
+    if (exerciseId.includes('deadlift')) return 'DEADLIFT';
+    // 4. Overhead/Shoulder Press
+    if (exerciseId.includes('overhead_press') || exerciseId.includes('shoulder_press') || exerciseId.includes('military')) return 'SHOULDER PRESS';
+    // 5. Pull-ups
+    if (exerciseId.includes('pull_up') || exerciseId.includes('chin_up')) return 'PULL-UPS';
+    // 6. Rows
+    if (exerciseId.includes('row')) return 'ROWS';
+    
+    // Default: Return the specific ID if no group match
+    return exerciseId;
+};
+
 export const generateGroupAnalysis = async (
     usersData: { name: string; workouts: Workout[] }[],
     language: 'es' | 'en' = 'es'
 ): Promise<GroupAnalysisData> => {
     try {
+        // 1. Calculate Consistency Points
         const pointsTable = usersData.map(u => {
             const uniqueDays = new Set(u.workouts.map(w => w.date)).size;
             return { name: u.name, points: uniqueDays };
         }).sort((a, b) => b.points - a.points);
 
-        // Store best value per exercise per user
-        // Value depends on type: Weight (Strength) or Distance (Cardio)
-        const userMaxes: Record<string, Record<string, { value: number; display: string; metric: string }>> = {};
-        
-        usersData.forEach(u => {
-            userMaxes[u.name] = {};
+        // 2. Calculate Total Volume (Load) per User
+        const volumeTable = usersData.map(u => {
+            let userVol = 0;
             u.workouts.forEach(w => {
                 w.structured_data.exercises.forEach(ex => {
-                    const normId = getCanonicalId(ex.name); 
+                    const normId = getCanonicalId(ex.name);
+                    const dbMatch = EXERCISE_DB.find(d => d.id === normId);
                     
-                    // Determine Type
+                    // Only count volume for strength exercises
+                    if (dbMatch?.type !== 'cardio') {
+                        ex.sets.forEach(s => {
+                            if (s.weight && s.reps && (s.unit === 'kg' || s.unit === 'lbs')) {
+                                let w = s.weight;
+                                if (s.unit === 'lbs') w = w * 0.453592;
+                                userVol += (w * s.reps);
+                            }
+                        });
+                    }
+                });
+            });
+            return { name: u.name, total_volume_kg: Math.round(userVol) };
+        }).sort((a, b) => b.total_volume_kg - a.total_volume_kg); // Sort by volume desc
+
+        // 3. Store Data for Profiles (Specific) AND Comparison (Grouped)
+        const userSpecificMaxes: Record<string, Record<string, { value: number; display: string; metric: string }>> = {};
+        const userGroupedMaxes: Record<string, Record<string, { value: number; display: string; metric: string }>> = {};
+        
+        usersData.forEach(u => {
+            userSpecificMaxes[u.name] = {};
+            userGroupedMaxes[u.name] = {};
+
+            u.workouts.forEach(w => {
+                w.structured_data.exercises.forEach(ex => {
+                    const normId = getCanonicalId(ex.name); // Specific ID (e.g. bench_press_dumbbell)
+                    const comparisonGroup = getComparisonGroup(normId); // Grouped ID (e.g. BENCH PRESS)
+                    
                     const dbMatch = EXERCISE_DB.find(d => d.id === normId);
                     const type = dbMatch?.type || 'strength';
 
@@ -461,63 +530,94 @@ export const generateGroupAnalysis = async (
                     let display = "";
                     let metric = "";
 
-                    // LOGIC: METRIC SELECTION
                     if (type === 'cardio') {
-                        // Max Distance
                         const maxDist = Math.max(...ex.sets.map(s => s.distance || 0));
                         bestVal = maxDist;
                         display = `${maxDist}km`;
                         metric = 'km';
                     } else {
-                        // Max Weight
+                        // Strength Logic: Weight Priority, then Reps (Bodyweight fallback)
                         const maxWeight = Math.max(...ex.sets.map(s => s.weight || 0));
-                        bestVal = maxWeight;
-                        display = `${maxWeight}kg`;
-                        metric = 'kg';
+                        
+                        if (maxWeight > 0) {
+                            bestVal = maxWeight;
+                            display = `${maxWeight}kg`;
+                            metric = 'kg';
+                        } else {
+                            // Bodyweight fallback: Use reps as value
+                            const maxReps = Math.max(...ex.sets.map(s => s.reps || 0));
+                            if (maxReps > 0) {
+                                bestVal = maxReps;
+                                display = `${maxReps} reps`;
+                                metric = 'reps';
+                            }
+                        }
                     }
                     
-                    if (!userMaxes[u.name][normId] || bestVal > userMaxes[u.name][normId].value) {
-                        userMaxes[u.name][normId] = { value: bestVal, display, metric };
+                    // A. Populate Specific Maxes (For Gladiator Profile)
+                    // We use the normalized specific ID to key, but we iterate ensuring we capture the best value for that specific variant
+                    if (bestVal > 0) {
+                        if (!userSpecificMaxes[u.name][normId] || bestVal > userSpecificMaxes[u.name][normId].value) {
+                            userSpecificMaxes[u.name][normId] = { 
+                                value: bestVal, 
+                                display, 
+                                metric 
+                            };
+                        }
+
+                        // B. Populate Grouped Maxes (For Comparison Table)
+                        if (!userGroupedMaxes[u.name][comparisonGroup] || bestVal > userGroupedMaxes[u.name][comparisonGroup].value) {
+                            userGroupedMaxes[u.name][comparisonGroup] = { 
+                                value: bestVal, 
+                                display, 
+                                metric 
+                            };
+                        }
                     }
                 });
             });
         });
 
-        // --- NEW: Generate Individual Top 10 Lists ---
+        // --- Generate Individual Profiles (ALL Exercises, Specific Names) ---
         const individualRecords: UserStatsProfile[] = usersData.map(u => {
-            const userData = userMaxes[u.name];
+            const userData = userSpecificMaxes[u.name];
             if (!userData) return { name: u.name, stats: [] };
 
             const sortedStats = Object.entries(userData)
-                .map(([exId, data]) => ({
-                    exercise: getLocalizedName(exId, language),
+                .map(([specificId, data]) => ({
+                    exercise: getLocalizedName(specificId, language),
                     value: data.value,
                     display: data.display,
                     metric: data.metric
                 }))
-                // Sort Descending by Value (Rough heuristic: High numbers (weight/dist) > Low numbers)
-                // This is imperfect but ensures "Records" are at top.
-                .sort((a, b) => b.value - a.value)
-                .slice(0, 10);
+                .filter(s => s.value > 0)
+                .sort((a, b) => b.value - a.value); 
+                // Removed .slice(0, 10) to show ALL exercises as requested
 
             return { name: u.name, stats: sortedStats };
         });
 
         if (usersData.length === 0) throw new Error("No users");
         
-        let commonExerciseIds = Object.keys(userMaxes[usersData[0].name]);
+        // --- Generate Comparison Table (Grouped Exercises) ---
+        
+        // Find Intersection of Comparison Groups
+        let commonGroups = Object.keys(userGroupedMaxes[usersData[0].name]);
         for (let i = 1; i < usersData.length; i++) {
-            const currentUserExercises = Object.keys(userMaxes[usersData[i].name]);
-            commonExerciseIds = commonExerciseIds.filter(exId => currentUserExercises.includes(exId));
+            const currentUserGroups = Object.keys(userGroupedMaxes[usersData[i].name]);
+            commonGroups = commonGroups.filter(gId => currentUserGroups.includes(gId));
         }
 
-        const comparisonTable: ComparisonRow[] = commonExerciseIds.map(exId => {
+        const comparisonTable: ComparisonRow[] = commonGroups.map(groupId => {
             let maxValue = -1;
             let winnerName = "";
             let metricLabel = "";
 
             const results = usersData.map(u => {
-                const data = userMaxes[u.name][exId];
+                const data = userGroupedMaxes[u.name][groupId];
+                // Handle missing data in common groups (shouldn't happen due to filter, but safe guard)
+                if (!data) return { userName: u.name, value: 0, display: '-' };
+
                 if (data.value > maxValue) {
                     maxValue = data.value;
                     winnerName = u.name;
@@ -525,12 +625,15 @@ export const generateGroupAnalysis = async (
                 }
                 return { userName: u.name, value: data.value, display: data.display };
             });
-            const displayExName = getLocalizedName(exId, language);
+            
+            // Format Group Name nicely (e.g. BENCH PRESS -> Bench Press)
+            const displayExName = groupId === groupId.toUpperCase() 
+                ? groupId.charAt(0) + groupId.slice(1).toLowerCase().replace('_', ' ') 
+                : getLocalizedName(groupId, language);
+
             return { exercise: displayExName, results, winnerName, metric: metricLabel };
         });
 
-        // DETECT DRAW CONDITION (TIE)
-        // If top 2 users have same points AND no common exercises to break tie
         const isTie = pointsTable.length > 1 && 
                       pointsTable[0].points === pointsTable[1].points &&
                       comparisonTable.length === 0;
@@ -538,17 +641,10 @@ export const generateGroupAnalysis = async (
         const ai = getAIClient();
 
         const context = {
-            points_standings: pointsTable,
+            consistency_leaderboard: pointsTable,
+            total_volume_leaderboard: volumeTable, // PASSED TO AI
             head_to_head_results: comparisonTable.map(c => `${c.exercise}: Winner ${c.winnerName} (${c.results.find(r => r.userName === c.winnerName)?.display})`),
-            raw_data_summary: usersData.map(u => ({
-                name: u.name,
-                total_sessions: u.workouts.length,
-                top_feats: Object.entries(userMaxes[u.name]).slice(0, 5).reduce((acc: any, [id, data]) => {
-                    acc[getLocalizedName(id, 'en')] = data.display; 
-                    return acc;
-                }, {})
-            })),
-            is_draw_condition: isTie // Pass this to AI
+            is_draw_condition: isTie
         };
 
         const prompt = `
@@ -556,19 +652,23 @@ export const generateGroupAnalysis = async (
             **DATA:** ${JSON.stringify(context)}
             
             **INSTRUCTIONS:**
-            1. Rank participants based on Consistency (Points) and Strength/Cardio Feats.
-            2. Ignore any non-gym related activities.
-            3. If 'is_draw_condition' is true, return 'DRAW'.
-            4. 1st is "Alpha" (Winner), Last is "Beta".
-            5. Short ranking reason (max 5 words).
-            6. Roast summarizing the group.
-            7. **IMPORTANT: ALL output text (reasons, roast) MUST be in ${language === 'es' ? 'SPANISH' : 'ENGLISH'}.**
-            8. **CRITICAL: PRESERVE SPANISH ACCENTS AND SPECIAL CHARACTERS.**
+            1. Rank participants based on a weighted mix of:
+               - **Consistency (Points)** (Most important)
+               - **Total Volume (Kg Moved)** (Secondary factor - heavily favors strong lifters)
+               - **Key Matchups** (Tie breakers)
+            2. Determine the ALPHA (Winner) and the BETA (Loser).
+            3. The 'rank' field must be a number (1 = First Place).
+            4. Short ranking reason (max 5 words).
+            5. Roast summarizing the group.
+            6. **NEW:** Generate a 'volume_verdict'. A specific comment about the Volume Leaderboard. Who moved the most weight? Who is "moving feathers"? Be sarcastic.
+            
+            **IMPORTANT: Output text in ${language === 'es' ? 'SPANISH' : 'ENGLISH'}.**
             
             **OUTPUT JSON:**
             {
-               "rankings": [{ "name": "UserA", "rank": 1, "reason": "Reason" }, ...],
-               "roast": "String"
+               "rankings": [{ "name": "UserA", "rank": 1, "reason": "Highest Volume & Consistency" }, ...],
+               "roast": "String",
+               "volume_verdict": "String"
             }
         `;
 
@@ -593,8 +693,9 @@ export const generateGroupAnalysis = async (
                             }
                         },
                         roast: { type: Type.STRING },
+                        volume_verdict: { type: Type.STRING, description: "Comment on total volume lifted." }
                     },
-                    required: ["rankings", "roast"]
+                    required: ["rankings", "roast", "volume_verdict"]
                 }
             }
         });
@@ -603,15 +704,16 @@ export const generateGroupAnalysis = async (
         const aiResult = JSON.parse(text);
         const sortedRankings = (aiResult.rankings || []).sort((a: any, b: any) => a.rank - b.rank);
         
-        // Force Draw logic if AI was ambiguous or to be safe
         if (isTie) {
             return {
                 winner: "DRAW",
                 loser: "DRAW",
                 rankings: sortedRankings,
                 roast: "Empate Técnico. A entrenar más.",
+                volume_verdict: "Nadie ha levantado suficiente peso para importar.",
                 comparison_table: comparisonTable,
                 points_table: pointsTable,
+                volume_table: volumeTable,
                 individual_records: individualRecords
             };
         }
@@ -621,8 +723,10 @@ export const generateGroupAnalysis = async (
             loser: sortedRankings.length > 0 ? sortedRankings[sortedRankings.length - 1].name : "Unknown",
             rankings: sortedRankings,
             roast: aiResult.roast || "Judge is silent.",
+            volume_verdict: aiResult.volume_verdict || "Volume analysis unavailable.",
             comparison_table: comparisonTable,
             points_table: pointsTable,
+            volume_table: volumeTable,
             individual_records: individualRecords
         };
 

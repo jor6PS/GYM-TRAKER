@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { X, Save, Clock, History, Edit3, ArrowRight, Search, Plus, Dumbbell, ChevronRight, Trash2, Layers, Activity, Pencil, Sparkles } from 'lucide-react';
-import type { WorkoutData, Exercise, Workout, Set, MetricType } from '../types';
+import { X, Save, Clock, History, Edit3, ArrowRight, Search, Plus, Dumbbell, ChevronRight, Trash2, Layers, Activity, Pencil, Sparkles, Zap } from 'lucide-react';
+import type { WorkoutData, Exercise, Workout, Set, MetricType, WorkoutPlan } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { EXERCISE_DB } from '../data/exerciseDb';
 import { format } from 'date-fns';
@@ -13,15 +13,19 @@ interface UnifiedEntryModalProps {
   onClose: () => void;
   onWorkoutProcessed: (data: WorkoutData) => void;
   pastWorkouts: Workout[];
+  plans: WorkoutPlan[]; // NEW PROP
+  onOpenCreatePlan: () => void; // NEW PROP
 }
 
-type Tab = 'overview' | 'library' | 'history';
+type Tab = 'overview' | 'library' | 'history' | 'routines';
 
 export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({ 
   isOpen, 
   onClose, 
   onWorkoutProcessed,
-  pastWorkouts 
+  pastWorkouts,
+  plans,
+  onOpenCreatePlan
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>('library');
   const [sessionExercises, setSessionExercises] = useState<Exercise[]>([]);
@@ -162,9 +166,9 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
       }
   };
 
-  const handleCloneGroup = (group: { date: string, exercises: Exercise[] }) => {
+  const handleCloneGroup = (exercises: Exercise[]) => {
       // Deep copy to avoid reference issues
-      const clonedExercises = group.exercises.map(ex => ({
+      const clonedExercises = exercises.map(ex => ({
           name: ex.name,
           sets: ex.sets.map(s => ({ ...s }))
       }));
@@ -235,7 +239,17 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                             : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-white/5'
                     }`}
                 >
-                    <Search className="w-3.5 h-3.5" /> {t('library')}
+                    <Search className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t('library')}</span>
+                </button>
+                <button 
+                    onClick={() => setActiveTab('routines')}
+                    className={`flex-1 py-3 text-xs font-bold uppercase rounded-t-lg transition-colors border-t border-x flex items-center justify-center gap-2 ${
+                        activeTab === 'routines' 
+                            ? 'bg-zinc-900 border-white/10 text-yellow-400 border-b-black translate-y-[1px]' 
+                            : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-white/5'
+                    }`}
+                >
+                    <Zap className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t('routines')}</span>
                 </button>
                 <button 
                     onClick={() => setActiveTab('overview')}
@@ -245,7 +259,7 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                             : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-white/5'
                     }`}
                 >
-                    <Layers className="w-3.5 h-3.5" /> {t('overview')}
+                    <Layers className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t('overview')}</span>
                     {sessionExercises.length > 0 && <span className="bg-primary text-black text-[9px] px-1.5 rounded-full">{sessionExercises.length}</span>}
                 </button>
                 <button 
@@ -256,7 +270,7 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                             : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-white/5'
                     }`}
                 >
-                    <History className="w-3.5 h-3.5" /> {t('history')}
+                    <History className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t('history')}</span>
                 </button>
             </div>
         </div>
@@ -395,6 +409,46 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                 </div>
             )}
 
+            {/* --- TAB: ROUTINES (PLANS) --- */}
+            {activeTab === 'routines' && (
+                <div className="flex flex-col h-full space-y-4">
+                    <button 
+                        onClick={onOpenCreatePlan}
+                        className="w-full py-4 border-2 border-dashed border-white/10 rounded-xl text-yellow-400 hover:bg-yellow-400/5 hover:border-yellow-400/30 transition-colors uppercase font-bold text-xs flex items-center justify-center gap-2 shrink-0"
+                    >
+                        <Plus className="w-4 h-4" /> {t('new')} {t('routines')}
+                    </button>
+
+                    <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar">
+                        {plans.length === 0 ? (
+                            <div className="text-center py-10 text-zinc-500 text-xs border border-dashed border-white/10 rounded-xl">
+                                <Zap className="w-8 h-8 mx-auto mb-2 text-zinc-700" />
+                                No routines yet.
+                            </div>
+                        ) : (
+                            plans.map((plan) => (
+                                <button
+                                    key={plan.id}
+                                    onClick={() => handleCloneGroup(plan.exercises)}
+                                    className="w-full bg-black border border-white/10 hover:border-yellow-400/30 hover:bg-white/5 rounded-xl p-4 text-left group transition-all"
+                                >
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div className="text-sm font-bold text-white group-hover:text-yellow-400 transition-colors flex items-center gap-2">
+                                            <Dumbbell className="w-3.5 h-3.5 text-zinc-500" />
+                                            {plan.name}
+                                        </div>
+                                        <ArrowRight className="w-4 h-4 text-zinc-600 group-hover:text-yellow-400 opacity-0 group-hover:opacity-100 transition-all" />
+                                    </div>
+                                    <div className="text-xs text-zinc-500 font-mono line-clamp-2">
+                                        {plan.exercises.length} exercises
+                                    </div>
+                                </button>
+                            ))
+                        )}
+                    </div>
+                </div>
+            )}
+
             {/* --- TAB: OVERVIEW --- */}
             {activeTab === 'overview' && (
                 <div className="space-y-4 h-full flex flex-col">
@@ -489,7 +543,7 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                         historyOptions.map((group, idx) => (
                             <button
                                 key={`${group.date}-${idx}`}
-                                onClick={() => handleCloneGroup(group)}
+                                onClick={() => handleCloneGroup(group.exercises)}
                                 className="w-full bg-black border border-white/10 hover:border-primary/30 hover:bg-white/5 rounded-xl p-4 text-left group transition-all"
                             >
                                 <div className="flex justify-between items-start mb-2">

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, Save, Plus, Trash2, Gauge, Activity, Dumbbell } from 'lucide-react';
 import { Exercise, Set, MetricType } from '../types';
@@ -14,8 +13,16 @@ interface EditExerciseModalProps {
 }
 
 export const EditExerciseModal: React.FC<EditExerciseModalProps> = ({ isOpen, onClose, exercise, onSave }) => {
-  const [sets, setSets] = useState<Set[]>([]);
   const { t } = useLanguage();
+
+  // FIX: Initialize state directly from props using lazy initializer to prevent crash on first render
+  // This avoids the "flash of undefined" that caused the black screen
+  const [sets, setSets] = useState<Set[]>(() => {
+    if (exercise && exercise.sets) {
+        return exercise.sets.map(s => ({ ...s })); // Deep clone
+    }
+    return [];
+  });
 
   // Determine Type
   const exerciseType: MetricType = useMemo(() => {
@@ -25,11 +32,12 @@ export const EditExerciseModal: React.FC<EditExerciseModalProps> = ({ isOpen, on
       return def?.type || 'strength';
   }, [exercise]);
 
+  // Sync if exercise prop changes while open (rare but safe)
   useEffect(() => {
     if (isOpen && exercise) {
-      setSets(exercise.sets.map(s => ({ ...s }))); // Deep clone
+      setSets(exercise.sets.map(s => ({ ...s })));
     }
-  }, [isOpen, exercise]);
+  }, [exercise, isOpen]);
 
   // Scroll Lock Effect
   useEffect(() => {
@@ -43,7 +51,7 @@ export const EditExerciseModal: React.FC<EditExerciseModalProps> = ({ isOpen, on
     };
   }, [isOpen]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !exercise) return null;
 
   const handleSetChange = (index: number, field: keyof Set, value: string | number) => {
     const newSets = [...sets];
