@@ -31,6 +31,18 @@ export const EditExerciseModal: React.FC<EditExerciseModalProps> = ({ isOpen, on
     }
   }, [isOpen, exercise]);
 
+  // Scroll Lock Effect
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const handleSetChange = (index: number, field: keyof Set, value: string | number) => {

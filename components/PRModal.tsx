@@ -67,6 +67,18 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
     }
   }, [isOpen, initialExercise]);
 
+  // Scroll Lock Effect
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isOpen]);
+
   // Determine the type of the currently selected exercise
   const selectedExerciseType: MetricType = useMemo(() => {
       if (!selectedExerciseId) return 'strength';

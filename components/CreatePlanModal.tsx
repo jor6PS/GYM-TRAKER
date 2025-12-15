@@ -46,6 +46,18 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
     }
   }, [isOpen, initialPlan]);
 
+  // Scroll Lock Effect
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isOpen]);
+
   // Filter exercises based on search (accent insensitive)
   const filteredExercises = useMemo(() => {
     const term = normalizeText(searchTerm);

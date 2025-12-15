@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { X, Search, UserPlus, Check, XCircle, Users, Loader2, Share2, Palette } from 'lucide-react';
 import { searchUsers, sendFriendRequest, getFriendships, respondToRequest } from '../services/supabase';
@@ -28,6 +29,18 @@ export const SocialModal: React.FC<SocialModalProps> = ({ isOpen, onClose, curre
     if (isOpen) {
         fetchFriends();
     }
+  }, [isOpen]);
+
+  // Scroll Lock Effect
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
   }, [isOpen]);
 
   const fetchFriends = async () => {

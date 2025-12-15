@@ -65,6 +65,18 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     }
   }, [isOpen]);
 
+  // Scroll Lock Effect
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isOpen]);
+
   // Calculate Stats based on Unique Days
   const stats = useMemo(() => {
     // Get unique dates (Set removes duplicates)

@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { 
   format, 
   endOfMonth, 
@@ -23,13 +23,13 @@ interface CalendarViewProps {
   viewDate: Date;
   onViewDateChange: (date: Date) => void;
   workouts: Workout[];
-  selectedFriendsWorkouts?: { userId: string; color: string; workouts: Workout[] }[]; // New Prop
+  selectedFriendsWorkouts?: { userId: string; color: string; workouts: Workout[] }[];
   onSelectDate: (date: Date) => void;
   selectedDate: Date;
-  onSummaryClick: () => void; // Deprecated but kept to avoid breaking interface immediately, though unused inside
+  onSummaryClick: () => void;
 }
 
-// Updated to start on Monday (M, T, W, T, F, S, S)
+// Static constant to avoid recreation
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; 
 
 export const CalendarView: React.FC<CalendarViewProps> = ({ 
@@ -39,19 +39,23 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   selectedFriendsWorkouts = [],
   onSelectDate,
   selectedDate,
-  onSummaryClick
 }) => {
   const { language } = useLanguage();
   const dateLocale = language === 'es' ? es : enUS;
 
-  const monthStart = startOfMonth(viewDate);
-  const monthEnd = endOfMonth(monthStart);
-  
-  // Force week to start on Monday (1)
-  const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
-  const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
-
-  const calendarDays = eachDayOfInterval({ start: startDate, end: endDate });
+  // Memoize date calculations to prevent expensive re-runs on every render
+  const { calendarDays, monthStart } = useMemo(() => {
+    const monthStart = startOfMonth(viewDate);
+    const monthEnd = endOfMonth(monthStart);
+    // Force week to start on Monday (1)
+    const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
+    const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
+    
+    return {
+      calendarDays: eachDayOfInterval({ start: startDate, end: endDate }),
+      monthStart
+    };
+  }, [viewDate]); // Only recalculate if viewDate changes
 
   const handlePrevMonth = () => onViewDateChange(addMonths(viewDate, -1));
   const handleNextMonth = () => onViewDateChange(addMonths(viewDate, 1));
@@ -88,7 +92,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       )}
 
       <div className="p-4">
-        {/* Weekday Headers */}
         <div className="grid grid-cols-7 mb-2">
           {WEEKDAYS.map((day, i) => (
             <div key={i} className="text-center text-[10px] font-bold text-subtext opacity-70">
@@ -97,43 +100,41 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           ))}
         </div>
 
-        {/* Days Grid */}
         <div className="grid grid-cols-7 gap-y-2 gap-x-1">
           {calendarDays.map((day) => {
-            // Fix: Use parseLocalDate to ensure we match days correctly
-            const hasMyWorkout = workouts.some(w => isSameDay(parseLocalDate(w.date), day));
-            const isSelected = isSameDay(day, selectedDate);
-            const isMonthDay = isSameMonth(day, monthStart);
-            const isToday = isSameDay(day, new Date());
+            // Optimizing the loop: check existence directly
+            const parsedDay = day.getTime();
+            
+            // Check own workouts
+            const hasMyWorkout = workouts.some(w => {
+                const wDate = parseLocalDate(w.date);
+                return isSameDay(wDate, day);
+            });
 
-            // Check friends workouts
+            // Check friends workouts (Memoized visually below)
             const friendDots = selectedFriendsWorkouts
                 .filter(fw => fw.workouts.some(w => isSameDay(parseLocalDate(w.date), day)))
                 .map(fw => fw.color);
 
+            const isSelected = isSameDay(day, selectedDate);
+            const isMonthDay = isSameMonth(day, monthStart);
+            const isToday = isSameDay(day, new Date());
+
             return (
               <button
-                key={day.toString()}
+                key={parsedDay}
                 onClick={() => {
                   onSelectDate(day);
                   if (!isMonthDay) onViewDateChange(day);
                 }}
                 className={clsx(
                   'relative h-11 w-full flex flex-col items-center justify-start pt-1 rounded-xl transition-all duration-300 border box-border',
-                  
-                  // Visibility for days outside month
                   !isMonthDay ? 'opacity-20 border-transparent' : '',
-                  
-                  // Selected State (High Priority)
                   isSelected 
                     ? 'bg-surfaceHighlight border-primary/50 scale-105 shadow-glow z-10' 
                     : isToday 
-                        // Today State (Thin solid border, NO fill)
                         ? 'border-text/30 border-solid' 
-                        // Default border
                         : 'border-transparent',
-                  
-                  // Hover State (Only if not selected)
                   !isSelected && 'hover:bg-surfaceHighlight'
                 )}
               >
@@ -144,14 +145,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     {format(day, 'd')}
                 </span>
                 
-                {/* Dots Container - Multiplayer */}
                 <div className="flex gap-0.5 justify-center flex-wrap px-0.5 w-full absolute bottom-1 max-w-[90%]">
-                    {/* My Dot */}
                     {hasMyWorkout && (
                         <div className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_5px_#D4FF00]"></div>
                     )}
-                    
-                    {/* Friends Dots */}
                     {friendDots.map((color, i) => (
                         <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color, boxShadow: `0 0 4px ${color}` }}></div>
                     ))}

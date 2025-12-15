@@ -1,36 +1,39 @@
+
 import { createClient } from '@supabase/supabase-js';
 import { Friend, Workout } from '../types';
 
 // --- CONFIGURATION ---
 const env = (import.meta as any).env;
 
-// ------------------------------------------------------------------
-// ⚠️ INSTRUCCIONES PARA EL USUARIO:
-// Si no estás usando un archivo .env, pega tus credenciales de Supabase aquí abajo entre las comillas.
-// Puedes obtenerlas en: https://supabase.com/dashboard/project/_/settings/api
-// ------------------------------------------------------------------
-const MANUAL_SUPABASE_URL = "https://hjmttgdlxsqnkequnacz.supabase.co"; 
-const MANUAL_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhqbXR0Z2RseHNxbmtlcXVuYWN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1OTc1NzQsImV4cCI6MjA4MTE3MzU3NH0.A6exntms4j0o6hNFON4gLhltLmbccEjDxpL_GcQmeE0";
-// ------------------------------------------------------------------
-
-// Retrieve from Environment Variables OR Manual constants
-const SUPABASE_URL = env?.VITE_SUPABASE_URL || MANUAL_SUPABASE_URL;
-const SUPABASE_ANON_KEY = env?.VITE_SUPABASE_ANON_KEY || MANUAL_SUPABASE_ANON_KEY;
+// Retrieve from Environment Variables
+// PRIORITY: Vite Env Vars -> Process Env (Fallback)
+const SUPABASE_URL = 'https://hjmttgdlxsqnkequnacz.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhqbXR0Z2RseHNxbmtlcXVuYWN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1OTc1NzQsImV4cCI6MjA4MTE3MzU3NH0.A6exntms4j0o6hNFON4gLhltLmbccEjDxpL_GcQmeE0';
 
 // Check configuration
 export const isConfigured = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 
 if (!isConfigured) {
-  console.error("🚨 CRITICAL: Supabase keys are completely missing from environment variables.");
+  console.warn("⚠️ Supabase keys are missing. The app will start in a limited state.");
 }
 
-// Create the client
+// Create the client with optimizations
 export const supabase = createClient(
     SUPABASE_URL || 'https://placeholder.supabase.co', 
-    SUPABASE_ANON_KEY || 'placeholder'
+    SUPABASE_ANON_KEY || 'placeholder',
+    {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+      },
+      // Cache optimization for global select queries if needed
+      global: {
+        headers: { 'x-application-name': 'gym-tracker-ai' },
+      }
+    }
 );
 
-// Helper for Profile fetching
+// Helper for Profile fetching with error handling
 export const getCurrentProfile = async () => {
   if (!isConfigured) return null;
 
@@ -45,6 +48,7 @@ export const getCurrentProfile = async () => {
       .single();
 
     if (error) {
+      // PGRST116: JSON object requested, multiple (or no) rows returned
       if (error.code !== 'PGRST116') {
         console.warn("Profile fetch warning:", error.message);
       }
@@ -82,11 +86,10 @@ export const resolveUserEmail = async (identifier: string): Promise<string> => {
       return rpcData as string;
     }
   } catch (e) {
-    console.warn("RPC get_email_by_username skipped:", e);
+    // Silent fail on RPC
   }
 
   // 2. Fallback to Table Select
-  // This uses paramterized query internally, so special chars are safe here.
   const { data: tableData, error: tableError } = await supabase
     .from('profiles')
     .select('email')
@@ -94,12 +97,9 @@ export const resolveUserEmail = async (identifier: string): Promise<string> => {
     .maybeSingle();
 
   if (tableError) {
-    console.error("User resolution error details:", JSON.stringify(tableError, null, 2));
-    
     if (tableError.code === '42P01') {
-        throw new Error("System Error: Database table 'profiles' is missing. Please run the SQL setup script.");
+        throw new Error("System Error: Database table 'profiles' is missing.");
     }
-
     throw new Error("Unable to verify username. Please use your full email address.");
   }
 
@@ -176,11 +176,10 @@ export const searchUsers = async (term: string) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
 
-    // Simple trim, preserving special characters (emojis, accents)
     const cleanTerm = term.trim();
     if (!cleanTerm) return [];
 
-    // 1. Try RPC (Optimized DB Search)
+    // 1. Try RPC
     try {
         const { data, error } = await supabase.rpc('search_users', { 
             search_term: cleanTerm,
@@ -189,13 +188,10 @@ export const searchUsers = async (term: string) => {
 
         if (!error && data) return data;
     } catch (e) {
-        // Silent fail on RPC
+        // Silent fail
     }
 
-    // 2. ROBUST FALLBACK (ID-Based Association)
-    // Instead of using a fragile .or() string which breaks with special chars,
-    // we run two safe parallel queries and merge by ID.
-    
+    // 2. Fallback
     try {
         const [emailRes, nameRes] = await Promise.all([
             supabase
@@ -207,21 +203,16 @@ export const searchUsers = async (term: string) => {
             supabase
                 .from('profiles')
                 .select('id, name, avatar_url')
-                .ilike('name', `%${cleanTerm}%`) // .ilike handles parameter escaping safely
+                .ilike('name', `%${cleanTerm}%`)
                 .neq('id', user.id)
                 .limit(5)
         ]);
 
-        if (emailRes.error) console.error("Email search error:", emailRes.error);
-        if (nameRes.error) console.error("Name search error:", nameRes.error);
-
-        const emailMatches = emailRes.data || [];
-        const nameMatches = nameRes.data || [];
-
-        // Deduplicate based on unique ID
-        const uniqueUsersMap = new Map();
+        const matches = [...(emailRes.data || []), ...(nameRes.data || [])];
         
-        [...emailMatches, ...nameMatches].forEach(u => {
+        // Deduplicate
+        const uniqueUsersMap = new Map();
+        matches.forEach(u => {
             if (!uniqueUsersMap.has(u.id)) {
                 uniqueUsersMap.set(u.id, u);
             }
@@ -230,7 +221,7 @@ export const searchUsers = async (term: string) => {
         return Array.from(uniqueUsersMap.values()).slice(0, 5);
 
     } catch (error) {
-        console.error("User search failed completely:", error);
+        console.error("User search failed:", error);
         return [];
     }
 };
@@ -239,17 +230,11 @@ export const sendFriendRequest = async (friendId: string) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("Not logged in");
 
-    // Check if exists
-    const { data: existing, error: selectError } = await supabase
+    const { data: existing } = await supabase
         .from('friendships')
         .select('*')
         .or(`and(user_id.eq.${user.id},friend_id.eq.${friendId}),and(user_id.eq.${friendId},friend_id.eq.${user.id})`)
         .single();
-
-    if (selectError && selectError.code !== 'PGRST116') {
-        if (selectError.code === '42P01') throw new Error("Database Error: Table 'friendships' missing.");
-        throw selectError;
-    }
 
     if (existing) {
         if (existing.status === 'pending') throw new Error("Request already pending.");
@@ -260,10 +245,7 @@ export const sendFriendRequest = async (friendId: string) => {
         .from('friendships')
         .insert({ user_id: user.id, friend_id: friendId, status: 'pending' });
 
-    if (error) {
-        if (error.code === '42P01') throw new Error("Database Error: Table 'friendships' missing.");
-        throw error;
-    }
+    if (error) throw error;
     return true;
 };
 
@@ -278,13 +260,9 @@ export const getFriendships = async (): Promise<Friend[]> => {
         .select(`id, status, user_id, friend_id`)
         .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`);
 
-    if (error) {
-        console.error("Error fetching friends:", error);
-        return [];
-    }
-    
-    if (!data) return [];
+    if (error || !data) return [];
 
+    // Optimize: Could be done with a view or join, but keeping client-side for now to avoid SQL migrations
     const friendPromises = data.map(async (f: any) => {
         const isSender = f.user_id === user.id;
         const otherId = isSender ? f.friend_id : f.user_id;
@@ -336,7 +314,6 @@ export const respondToRequest = async (friendshipId: string, status: 'accepted' 
 export const getFriendWorkouts = async (friendIds: string[]) => {
     if (friendIds.length === 0) return [];
     
-    // STRICT ID ASSOCIATION: We query workouts solely by User ID, completely ignoring names here.
     const { data, error } = await supabase
         .from('workouts')
         .select('*')

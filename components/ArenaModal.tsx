@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Swords, Crown, Skull, Sparkles, Loader2, Trophy, Flame, Medal, Scale, Dumbbell, Activity, Timer } from 'lucide-react';
 import { generateGroupAnalysis } from '../services/workoutProcessor';
 import { Workout, User, GroupAnalysisData } from '../types';
@@ -17,6 +17,18 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
   const [analysis, setAnalysis] = useState<GroupAnalysisData | null>(null);
   const [loading, setLoading] = useState(false);
   const { t, language } = useLanguage();
+
+  // Scroll Lock Effect
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

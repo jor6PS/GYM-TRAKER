@@ -39,6 +39,17 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
   // Editing State (For Overview Tab)
   const [editingItem, setEditingItem] = useState<{ index: number; data: Exercise } | null>(null);
 
+  // Scroll Lock Effect (Handles nested modal case)
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    }
+    // Note: We deliberately re-assert hidden overflow if editingItem changes (modal closes)
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isOpen, editingItem]);
+
   // --- LIBRARY FILTER (Localized & Accent Insensitive) ---
   const filteredLibrary = useMemo(() => {
       const term = normalizeText(libSearch);
