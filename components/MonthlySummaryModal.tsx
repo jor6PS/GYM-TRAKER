@@ -1,77 +1,22 @@
+
 import React, { useEffect, useState } from 'react';
-import { X, Sparkles, Loader2, Calendar, Dumbbell, TrendingUp, Quote } from 'lucide-react';
+import { X, Sparkles, Loader2, Globe2, Dumbbell, MapPin, Quote, TrendingUp, Trophy, Flame, Zap } from 'lucide-react';
 import { Workout } from '../types';
-import { generateMonthlyReport, MonthlyReportData } from '../services/workoutProcessor';
-import { endOfMonth, isWithinInterval, format } from 'date-fns';
-import startOfMonth from 'date-fns/startOfMonth';
-import subMonths from 'date-fns/subMonths';
-import es from 'date-fns/locale/es';
-import enUS from 'date-fns/locale/en-US';
+import { generateGlobalReport, GlobalReportData } from '../services/workoutProcessor';
 import { useLanguage } from '../contexts/LanguageContext';
 
 interface MonthlySummaryModalProps {
   isOpen: boolean;
   onClose: () => void;
-  viewDate: Date;
-  workouts: Workout[];
+  workouts: Workout[]; // All workouts
+  viewDate?: Date; // Deprecated but kept for interface compat if needed, unused now
 }
 
-// Simple Markdown Renderer component
-const MarkdownText = ({ text }: { text: string }) => {
-  if (!text) return null;
-
-  // Split by double newlines for paragraphs
-  const paragraphs = text.split('\n\n');
-
-  return (
-    <div className="space-y-3 text-sm text-text">
-      {paragraphs.map((para, idx) => {
-        // Check for headers
-        if (para.startsWith('###')) {
-            return <h4 key={idx} className="text-primary font-bold text-lg mt-4">{para.replace(/###\s*/, '')}</h4>;
-        }
-        if (para.startsWith('##')) {
-            return <h3 key={idx} className="text-primary font-bold text-xl mt-5">{para.replace(/##\s*/, '')}</h3>;
-        }
-
-        // Handle Lists
-        if (para.startsWith('- ') || para.startsWith('* ')) {
-            const items = para.split('\n');
-            return (
-                <ul key={idx} className="list-disc list-inside space-y-1 ml-2 marker:text-primary">
-                    {items.map((item, i) => (
-                        <li key={i} dangerouslySetInnerHTML={{ __html: parseInlineStyles(item.replace(/^[-*]\s/, '')) }} />
-                    ))}
-                </ul>
-            );
-        }
-
-        // Handle Horizontal Rules
-        if (para.trim() === '---' || para.trim() === '***') {
-            return <hr key={idx} className="border-border my-4" />;
-        }
-
-        // Default Paragraph
-        return <p key={idx} className="leading-relaxed" dangerouslySetInnerHTML={{ __html: parseInlineStyles(para) }} />;
-      })}
-    </div>
-  );
-};
-
-// Helper to handle bold (**text**) and italic (*text*)
-const parseInlineStyles = (text: string) => {
-  return text
-    .replace(/\*\*(.*?)\*\*/g, '<strong class="text-text font-extrabold">$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em class="text-primary">$1</em>')
-    .replace(/__(.*?)__/g, '<u>$1</u>');
-};
-
-export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen, onClose, viewDate, workouts }) => {
-  const [data, setData] = useState<MonthlyReportData | null>(null);
+export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen, onClose, workouts }) => {
+  const [data, setData] = useState<GlobalReportData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { t, language } = useLanguage();
-  const dateLocale = language === 'es' ? es : enUS;
 
   useEffect(() => {
     if (isOpen) {
@@ -80,44 +25,25 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
         setData(null);
         setError(null);
     }
-  }, [isOpen, viewDate]);
+  }, [isOpen]);
 
   const generateReport = async () => {
     setLoading(true);
     setError(null);
 
     try {
-        const currentMonthStart = startOfMonth(viewDate);
-        const currentMonthEnd = endOfMonth(viewDate);
-        
-        const prevMonthStart = startOfMonth(subMonths(viewDate, 1));
-        const prevMonthEnd = endOfMonth(subMonths(viewDate, 1));
-
-        const currentWorkouts = workouts.filter(w => 
-            isWithinInterval(new Date(w.date), { start: currentMonthStart, end: currentMonthEnd })
-        );
-
-        const prevWorkouts = workouts.filter(w => 
-            isWithinInterval(new Date(w.date), { start: prevMonthStart, end: prevMonthEnd })
-        );
-
-        if (currentWorkouts.length === 0) {
-            setError(t('no_data_month'));
+        if (workouts.length === 0) {
+            setError(t('no_data_month')); // Reuse error string, implies no data
             setLoading(false);
             return;
         }
 
-        const reportData = await generateMonthlyReport(
-            currentWorkouts, 
-            prevWorkouts, 
-            format(viewDate, 'MMMM', { locale: dateLocale }),
-            language
-        );
+        const reportData = await generateGlobalReport(workouts, language);
         setData(reportData);
 
     } catch (e: any) {
         console.error(e);
-        setError("La IA se ha lesionado pensando. Intenta de nuevo.");
+        setError("La IA está descansando entre series. Intenta de nuevo.");
     } finally {
         setLoading(false);
     }
@@ -135,12 +61,12 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
         <div className="flex items-center justify-between p-5 border-b border-border bg-gradient-to-r from-primary/5 to-transparent shrink-0">
           <div className="flex items-center gap-3">
              <div className="p-2 bg-primary text-black rounded-xl shadow-glow">
-                <Sparkles className="w-5 h-5" />
+                <Globe2 className="w-5 h-5" />
              </div>
              <div>
-                <h3 className="text-xl font-bold text-text leading-none tracking-tight">{t('monthly_report')}</h3>
+                <h3 className="text-xl font-bold text-text leading-none tracking-tight">AI Report</h3>
                 <p className="text-xs text-subtext font-mono mt-1 uppercase tracking-wider flex items-center gap-1">
-                   <Calendar className="w-3 h-3" /> {format(viewDate, 'MMMM yyyy', { locale: dateLocale })}
+                   Global & Monthly
                 </p>
              </div>
           </div>
@@ -164,54 +90,104 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
                     <p className="text-red-500 font-bold">{error}</p>
                 </div>
             ) : data ? (
-                <div className="divide-y divide-border">
+                <div className="space-y-0">
                     
-                    {/* SECTION 1: EXERCISE HIGHLIGHTS */}
-                    <div className="p-5">
-                        <div className="flex items-center gap-2 mb-4 text-subtext text-xs font-bold uppercase tracking-widest">
-                            <Dumbbell className="w-4 h-4 text-primary" />
-                            <span>{t('exercise_highlights')}</span>
+                    {/* SECTION A: GLOBAL LIFETIME */}
+                    <div className="p-5 space-y-6">
+                        <div className="bg-surfaceHighlight/50 border border-border rounded-2xl p-5 relative overflow-hidden group">
+                            <div className="absolute -right-5 -top-5 w-24 h-24 bg-primary/10 rounded-full blur-2xl group-hover:bg-primary/20 transition-colors"></div>
+                            
+                            <div className="flex items-center justify-between mb-4 relative z-10">
+                                <div className="flex items-center gap-2">
+                                    <Dumbbell className="w-5 h-5 text-primary" />
+                                    <span className="text-sm font-bold text-text uppercase tracking-widest">Total Volume</span>
+                                </div>
+                            </div>
+
+                            <div className="text-3xl font-black text-white font-mono mb-6">
+                                {Math.round(data.totalVolumeKg).toLocaleString('en-US')} <span className="text-base text-subtext font-normal">kg</span>
+                            </div>
+
+                            <div className="bg-black/30 rounded-xl p-4 border border-white/5 flex items-center gap-4">
+                                <div className="text-4xl">{data.volumeEmoji}</div>
+                                <div className="text-sm text-zinc-300 font-medium italic leading-relaxed">
+                                    "{data.volumeComparison}"
+                                </div>
+                            </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            {data.stats.map((stat, idx) => (
-                                <div key={idx} className="bg-surfaceHighlight/50 border border-border rounded-xl p-3 flex flex-col">
-                                    <div className="text-sm font-bold text-text truncate mb-2" title={stat.name}>{stat.name}</div>
-                                    <div className="flex justify-between items-end mt-auto">
-                                        <div>
-                                            <div className="text-[10px] text-subtext font-mono uppercase">{t('top_lift')}</div>
-                                            <div className="text-lg font-bold text-primary leading-none">{stat.topWeight}<span className="text-xs font-normal text-primary/70 ml-0.5">kg</span></div>
+
+                        <div className="bg-surfaceHighlight/50 border border-border rounded-2xl p-5 relative overflow-hidden group">
+                             <div className="absolute -right-5 -top-5 w-24 h-24 bg-blue-500/10 rounded-full blur-2xl group-hover:bg-blue-500/20 transition-colors"></div>
+
+                            <div className="flex items-center justify-between mb-4 relative z-10">
+                                <div className="flex items-center gap-2">
+                                    <MapPin className="w-5 h-5 text-blue-400" />
+                                    <span className="text-sm font-bold text-text uppercase tracking-widest">Total Distance</span>
+                                </div>
+                            </div>
+
+                            <div className="text-3xl font-black text-white font-mono mb-6">
+                                {data.totalDistanceKm.toFixed(2)} <span className="text-base text-subtext font-normal">km</span>
+                            </div>
+
+                            <div className="bg-black/30 rounded-xl p-4 border border-white/5 flex items-center gap-4">
+                                <div className="text-4xl">{data.distanceEmoji}</div>
+                                <div className="text-sm text-zinc-300 font-medium italic leading-relaxed">
+                                    "{data.distanceComparison}"
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-4 bg-gradient-to-b from-surfaceHighlight/30 to-black rounded-2xl border border-white/5 text-center">
+                            <p className="text-lg font-bold text-primary italic leading-tight">
+                                "{data.globalVerdict}"
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* SECTION B: MONTHLY ANALYSIS (Divider style) */}
+                    <div className="border-t border-white/10 p-5 bg-black/40">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-sm font-bold text-white uppercase tracking-widest flex items-center gap-2">
+                                <TrendingUp className="w-4 h-4 text-green-400" /> {data.monthName} Report
+                            </h3>
+                        </div>
+                        
+                        <div className="bg-surfaceHighlight/20 p-4 rounded-xl border border-white/5 mb-6">
+                            <p className="text-sm text-zinc-300 leading-relaxed font-medium">
+                                {data.monthlyAnalysisText}
+                            </p>
+                        </div>
+
+                        {/* HIGHLIGHTS CARDS */}
+                        {data.highlights && data.highlights.length > 0 && (
+                            <div className="space-y-3">
+                                {data.highlights.map((highlight, idx) => (
+                                    <div key={idx} className="bg-zinc-900 border border-white/10 rounded-xl p-4 flex gap-4 items-start relative overflow-hidden group">
+                                        {/* Colored Accent based on type */}
+                                        <div className={`absolute left-0 top-0 bottom-0 w-1 ${
+                                            highlight.type === 'strength' ? 'bg-primary' : 
+                                            highlight.type === 'cardio' ? 'bg-blue-400' : 'bg-orange-400'
+                                        }`}></div>
+
+                                        <div className={`p-2 rounded-lg shrink-0 ${
+                                            highlight.type === 'strength' ? 'bg-primary/10 text-primary' : 
+                                            highlight.type === 'cardio' ? 'bg-blue-400/10 text-blue-400' : 'bg-orange-400/10 text-orange-400'
+                                        }`}>
+                                            {highlight.type === 'strength' && <Trophy className="w-5 h-5" />}
+                                            {highlight.type === 'cardio' && <Zap className="w-5 h-5" />}
+                                            {highlight.type === 'consistency' && <Flame className="w-5 h-5" />}
                                         </div>
-                                        <div className="text-right">
-                                            <div className="text-[10px] text-subtext font-mono uppercase">{t('vol')}</div>
-                                            <div className="text-xs font-bold text-text">{stat.totalSets} <span className="text-[9px] font-normal text-subtext">sets</span></div>
+
+                                        <div>
+                                            <div className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-0.5">{highlight.title}</div>
+                                            <div className="text-base font-black text-white">{highlight.value}</div>
+                                            <div className="text-xs text-zinc-400 mt-1 italic">"{highlight.description}"</div>
                                         </div>
                                     </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* SECTION 2: AI ANALYSIS */}
-                    <div className="p-5 bg-surfaceHighlight/10">
-                        <div className="flex items-center gap-2 mb-4 text-subtext text-xs font-bold uppercase tracking-widest">
-                            <TrendingUp className="w-4 h-4 text-blue-400" />
-                            <span>{t('gym_bro_analysis')}</span>
-                        </div>
-                        <div className="bg-surface border border-border rounded-2xl p-5 shadow-sm">
-                            <MarkdownText text={data.analysis} />
-                        </div>
-                    </div>
-
-                    {/* SECTION 3: VERDICT */}
-                    <div className="p-6 bg-gradient-to-b from-surface to-surfaceHighlight/30 text-center">
-                        <div className="inline-flex items-center justify-center p-3 bg-primary/10 rounded-full mb-3">
-                            <Quote className="w-6 h-6 text-primary" />
-                        </div>
-                        <h3 className="text-sm font-bold text-subtext uppercase tracking-widest mb-2">{t('final_verdict')}</h3>
-                        <p 
-                            className="text-xl md:text-2xl font-black text-text italic leading-tight"
-                            dangerouslySetInnerHTML={{ __html: `"${parseInlineStyles(data.verdict)}"` }}
-                        />
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                 </div>

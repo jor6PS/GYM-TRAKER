@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { 
   format, 
@@ -13,7 +14,7 @@ import startOfMonth from 'date-fns/startOfMonth';
 import es from 'date-fns/locale/es';
 import enUS from 'date-fns/locale/en-US';
 import { clsx } from 'clsx';
-import { ChevronLeft, ChevronRight, RotateCcw, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
 import { Workout } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { parseLocalDate } from '../utils';
@@ -25,7 +26,7 @@ interface CalendarViewProps {
   selectedFriendsWorkouts?: { userId: string; color: string; workouts: Workout[] }[]; // New Prop
   onSelectDate: (date: Date) => void;
   selectedDate: Date;
-  onSummaryClick: () => void;
+  onSummaryClick: () => void; // Deprecated but kept to avoid breaking interface immediately, though unused inside
 }
 
 // Updated to start on Monday (M, T, W, T, F, S, S)
@@ -57,9 +58,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   
   const isCurrentMonth = isSameMonth(viewDate, new Date());
   
-  const workoutsInMonth = workouts.filter(w => isSameMonth(parseLocalDate(w.date), viewDate));
-  const hasEnoughData = workoutsInMonth.length > 0;
-
   return (
     <div className="w-full bg-surface border border-border rounded-3xl overflow-hidden shadow-2xl relative transition-colors duration-300">
       {/* Glossy Header */}
@@ -72,20 +70,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             <h2 className="text-sm font-bold text-text tracking-wide uppercase">
                 {format(viewDate, 'MMMM yyyy', { locale: dateLocale })}
             </h2>
-            {/* AI Summary Trigger */}
-            <button 
-                onClick={onSummaryClick}
-                disabled={!hasEnoughData}
-                className={clsx(
-                    "p-1.5 rounded-full transition-all border",
-                    hasEnoughData 
-                        ? "bg-primary/10 text-primary border-primary/20 hover:bg-primary/20 hover:scale-105 cursor-pointer shadow-[0_0_10px_rgba(212,255,0,0.1)]" 
-                        : "bg-surfaceHighlight text-subtext border-border cursor-not-allowed opacity-50"
-                )}
-                title="Generate AI Monthly Report"
-            >
-                <Sparkles className="w-3.5 h-3.5" />
-            </button>
         </div>
 
         <button onClick={handleNextMonth} className="p-2 hover:bg-surfaceHighlight rounded-full transition-colors text-subtext hover:text-text">

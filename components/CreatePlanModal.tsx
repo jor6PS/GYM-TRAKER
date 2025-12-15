@@ -1,8 +1,10 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { X, Plus, Trash2, Save, Search } from 'lucide-react';
 import { WorkoutPlan, Exercise } from '../types';
 import { EXERCISE_DB } from '../data/exerciseDb';
 import { useLanguage } from '../contexts/LanguageContext';
+import { normalizeText } from '../utils';
 
 interface CreatePlanModalProps {
   isOpen: boolean;
@@ -44,14 +46,15 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
     }
   }, [isOpen, initialPlan]);
 
-  // Filter exercises based on search
+  // Filter exercises based on search (accent insensitive)
   const filteredExercises = useMemo(() => {
-    if (!searchTerm) return [];
-    const term = searchTerm.toLowerCase();
+    const term = normalizeText(searchTerm);
+    if (!term) return [];
+    
     const langKey = language === 'es' ? 'es' : 'en';
 
     return EXERCISE_DB
-      .filter(ex => ex[langKey].toLowerCase().includes(term))
+      .filter(ex => normalizeText(ex[langKey]).includes(term))
       .map(ex => ex[langKey])
       .slice(0, 5);
   }, [searchTerm, language]);

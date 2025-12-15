@@ -1,8 +1,12 @@
 
+export type MetricType = 'strength' | 'cardio';
+
 export interface Set {
-  reps: number;
-  weight: number;
-  unit: string;
+  reps?: number;
+  weight?: number;
+  unit: string; // 'kg', 'lbs', 'km', 'm', 'mins'
+  distance?: number;
+  time?: string; // Format "MM:SS" or raw minutes string
   rpe?: number; // Rate of Perceived Exertion (1-10)
 }
 
@@ -50,6 +54,9 @@ export interface PersonalRecord {
   reps: number;
   date: string;
   estimated1RM?: number;
+  // New fields for PR tracking
+  value: number; // Generic value for sorting (weight or distance)
+  displayValue: string; // Formatted string
 }
 
 // --- SOCIAL TYPES ---
@@ -68,14 +75,52 @@ export interface Friend {
 
 export interface ComparisonRow {
   exercise: string;
-  results: { userName: string; weight: number }[];
+  results: { userName: string; value: number; display: string }[];
   winnerName: string;
+  metric: string; // 'kg', 'km', 'mins'
 }
 
 export interface RankingEntry {
   name: string;
   rank: number;
   reason: string; // Short AI reason like "Highest Volume" or "Skipped Leg Day"
+}
+
+export interface UserStatsProfile {
+    name: string;
+    stats: {
+        exercise: string;
+        display: string;
+        metric: string; // 'kg', 'km', 'mins'
+        value: number;
+    }[];
+}
+
+export interface Highlight {
+    title: string; // "Titan Lift"
+    value: string; // "140kg Deadlift"
+    description: string; // "Moved a small car."
+    type: 'strength' | 'cardio' | 'consistency';
+}
+
+export interface GlobalReportData {
+  winner: string; 
+  loser: string; 
+  // Section 1: Global Fun Facts
+  totalVolumeKg: number;
+  totalDistanceKm: number;
+  volumeComparison: string; 
+  volumeEmoji: string; 
+  distanceComparison: string; 
+  distanceEmoji: string; 
+  globalVerdict: string; 
+
+  // Section 2: Monthly Comparison
+  monthName: string;
+  monthlyAnalysisText: string;
+  
+  // Section 3: Highlights
+  highlights: Highlight[];
 }
 
 export interface GroupAnalysisData {
@@ -85,4 +130,5 @@ export interface GroupAnalysisData {
   roast: string; // From AI
   comparison_table: ComparisonRow[]; // Calculated Locally
   points_table: { name: string; points: number }[]; // Calculated Locally
+  individual_records: UserStatsProfile[]; // New Top 10 per user
 }

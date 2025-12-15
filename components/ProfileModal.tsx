@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useMemo } from 'react';
 import { 
   X, 
@@ -12,21 +13,23 @@ import {
   LogOut, 
   Check,
   Lock,
-  Activity,
   Trophy,
   Flame,
-  Star
+  Star,
+  Dumbbell
 } from 'lucide-react';
 import { User as UserType, Workout } from '../types';
 import { uploadAvatar, updateUserProfile, updateUserPassword, supabase } from '../services/supabase';
 import { format } from 'date-fns';
 import { useLanguage } from '../contexts/LanguageContext';
+import { EXERCISE_DB } from '../data/exerciseDb';
+import { getCanonicalId } from '../utils';
 
 interface ProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
   user: UserType;
-  workouts: Workout[]; // Changed from totalWorkouts to full array for calculation
+  workouts: Workout[]; 
   onUpdateUser: (updatedUser: Partial<UserType>) => void;
   onLogout: () => void;
 }
@@ -75,6 +78,34 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     });
 
     return { total, year, month };
+  }, [workouts]);
+
+  // Calculate Aggregated Totals (Volume Only)
+  const grandTotalVolume = useMemo(() => {
+    let volumeKg = 0;
+
+    workouts.forEach(w => {
+        w.structured_data.exercises.forEach(ex => {
+            // Determine type strictly
+            const id = getCanonicalId(ex.name);
+            const def = EXERCISE_DB.find(d => d.id === id);
+            const type = def?.type || 'strength'; 
+
+            ex.sets.forEach(s => {
+                // 1. Strength Volume (Weight * Reps)
+                // STRICT CHECK: Must be strength type AND have valid weight/reps AND unit must not be distance/time based
+                if (type === 'strength' && s.weight && s.reps && (s.unit === 'kg' || s.unit === 'lbs')) {
+                     let weight = s.weight;
+                     if (s.unit === 'lbs') {
+                         weight = weight * 0.453592;
+                     }
+                     volumeKg += (weight * s.reps);
+                }
+            });
+        });
+    });
+
+    return Math.round(volumeKg).toLocaleString('en-US') + " kg";
   }, [workouts]);
 
   if (!isOpen) return null;
@@ -236,8 +267,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 </div>
             </div>
 
-            {/* Stats Cards - Updated to show Month/Year/Total Days */}
-            <div className="grid grid-cols-3 gap-2 mb-6">
+            {/* Session Stats Cards */}
+            <div className="grid grid-cols-3 gap-2 mb-4">
                 <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-3 flex flex-col items-center justify-center text-center">
                     <div className="text-zinc-500 text-[9px] uppercase font-mono tracking-widest mb-1">{t('stats_month')}</div>
                     <div className="flex items-center gap-1.5 text-primary font-bold text-xl">
@@ -257,6 +288,23 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                     <div className="flex items-center gap-1.5 text-white font-bold text-xl">
                         <Trophy className="w-4 h-4 text-yellow-500" />
                         {stats.total}
+                    </div>
+                </div>
+            </div>
+
+            {/* LIFETIME TOTALS (REMOVED DISTANCE AS REQUESTED) */}
+            <div className="mb-6 bg-black/40 border border-white/10 rounded-xl p-4">
+                <h3 className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mb-3 border-b border-white/5 pb-2">
+                    {t('lifetime_aggregates')}
+                </h3>
+                <div className="w-full">
+                    <div className="flex flex-col bg-zinc-900/30 p-3 rounded-lg border border-white/5 items-center text-center">
+                        <div className="flex items-center gap-2 text-zinc-400 text-xs mb-2 uppercase tracking-wider">
+                            <Dumbbell className="w-4 h-4 text-primary" /> {t('total_load')}
+                        </div>
+                        <div className="text-white font-black text-2xl font-mono tracking-tight text-shadow-glow">
+                            {grandTotalVolume}
+                        </div>
                     </div>
                 </div>
             </div>

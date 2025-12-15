@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { CalendarView } from './components/CalendarView';
 import { AudioRecorder } from './components/AudioRecorder';
@@ -61,22 +62,17 @@ function App() {
   useEffect(() => {
     const checkModels = async () => {
         try {
-            // Raw fetch to check models because SDK wrapper might be strict
-            // Safe replace handling
             const apiKey = process.env.API_KEY;
-            
-            // GUARD CLAUSE: Don't attempt fetch if key is obviously bad
             if (!apiKey || apiKey === 'undefined' || apiKey === 'null') return; 
+            const key = apiKey.replace(/["']/g, '').trim(); 
+            if (!key || !key.startsWith('AIza')) return;
 
-            const key = apiKey.replace(/"/g, ''); 
-            
-            console.log("🔍 Checking available Gemini Models...");
             const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+            if (!res.ok) return;
+
             const data = await res.json();
-            
             if (data.models) {
-                console.group("✨ AVAILABLE GEMINI MODELS FOR YOUR KEY ✨");
-                // Filter for "generateContent" capability
+                console.groupCollapsed("✨ AVAILABLE GEMINI MODELS ✨");
                 const usable = data.models.filter((m: any) => m.supportedGenerationMethods.includes("generateContent"));
                 console.table(usable.map((m: any) => ({ 
                     name: m.name.replace('models/', ''), 
@@ -84,12 +80,8 @@ function App() {
                     displayName: m.displayName
                 })));
                 console.groupEnd();
-            } else {
-                console.warn("Could not list models. Check API Key permissions.", data);
             }
-        } catch (e) {
-            console.error("Failed to check models", e);
-        }
+        } catch (e) { }
     };
     checkModels();
   }, []);
@@ -125,7 +117,6 @@ function App() {
   const [realAdminUser, setRealAdminUser] = useState<User | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
   
-  // New State for Robust Recovery Flow
   const [isRecoveryMode, setIsRecoveryMode] = useState(false);
 
   // --- APP STATE ---
@@ -152,7 +143,7 @@ function App() {
   const [allWorkouts, setAllWorkouts] = useState<Workout[]>([]);
   
   const [isLoadingData, setIsLoadingData] = useState(false);
-  const [showUnifiedEntry, setShowUnifiedEntry] = useState(false); // REPLACES MANUAL/STRUCTURED
+  const [showUnifiedEntry, setShowUnifiedEntry] = useState(false);
   const [showPRModal, setShowPRModal] = useState(false);
   const [showCreatePlan, setShowCreatePlan] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -189,7 +180,6 @@ function App() {
 
   // --- AUTH INITIALIZATION ---
   useEffect(() => {
-    // Robust check for session
     supabase.auth.getSession()
       .then(({ data: { session }, error }) => {
         if (error) {
@@ -206,12 +196,7 @@ function App() {
       });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      // HANDLE PASSWORD RECOVERY EVENT
-      // This is the critical change. We hijack the flow here.
-      if (event === 'PASSWORD_RECOVERY') {
-        setIsRecoveryMode(true);
-      }
-
+      if (event === 'PASSWORD_RECOVERY') setIsRecoveryMode(true);
       if (session) {
         if (!realAdminUser) fetchUserProfile(session.user.id);
       } else {
@@ -474,8 +459,8 @@ function App() {
           for (const w of workouts) {
               const match = w.structured_data.exercises.find(we => we.name.trim().toLowerCase() === normalizedName);
               if (match) {
-                  const maxSet = match.sets.reduce((prev, current) => (prev.weight > current.weight) ? prev : current);
-                  lastWeight = maxSet.weight;
+                  const maxSet = match.sets.reduce((prev, current) => (prev.weight || 0) > (current.weight || 0) ? prev : current);
+                  lastWeight = maxSet.weight || 0;
                   found = true;
                   break;
               }
@@ -489,14 +474,12 @@ function App() {
   // --- RENDER ---
   if (sessionLoading) return <div className="min-h-screen bg-background flex items-center justify-center"><div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div></div>;
 
-  // --- RECOVERY MODE INTERCEPTION ---
   if (currentUser && isRecoveryMode) {
     return <ResetPasswordScreen onSuccess={() => setIsRecoveryMode(false)} />;
   }
 
   if (!currentUser) return <LoginScreen />;
 
-  // Lazy load Admin Dashboard
   if (currentUser.role === 'admin' && !realAdminUser) {
       return (
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>}>
@@ -505,19 +488,16 @@ function App() {
       );
   }
 
-  // Use parseLocalDate to avoid UTC mismatches
   const selectedWorkouts = workouts.filter(w => isSameDay(parseLocalDate(w.date), selectedDate));
   
-  // Also get selected friends workouts for this day
   const friendsSelectedWorkouts = calendarFriendsData.flatMap(fd => {
       const daysWorkouts = fd.workouts.filter(w => isSameDay(parseLocalDate(w.date), selectedDate));
-      // Find the name from activeFriends
       const friendName = activeFriends.find(f => f.userId === fd.userId)?.name || 'Friend';
       return daysWorkouts.map(w => ({ 
           ...w, 
           _friendColor: fd.color, 
           _friendId: fd.userId,
-          _friendName: friendName // Add name property
+          _friendName: friendName 
       }));
   });
 
@@ -553,8 +533,6 @@ function App() {
             </div>
             
             <div className="flex items-center gap-1">
-              
-               {/* LANGUAGE TOGGLE - RESTORED */}
                <button 
                 onClick={toggleLanguage}
                 className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surfaceHighlight transition-colors text-subtext hover:text-text font-mono text-xs font-bold"
@@ -562,13 +540,11 @@ function App() {
                 {language.toUpperCase()}
               </button>
 
-              {/* SOCIAL BUTTON */}
               <button 
                 onClick={() => setShowSocialModal(true)}
                 className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surfaceHighlight transition-colors text-subtext hover:text-blue-400 relative"
               >
                 <Users className="w-5 h-5" />
-                {/* Pending Request Indicator (Red) has priority */}
                 {pendingRequestsCount > 0 ? (
                      <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-surface"></span>
                 ) : activeFriends.length > 0 && (
@@ -581,6 +557,14 @@ function App() {
                 className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surfaceHighlight transition-colors text-subtext hover:text-primary"
               >
                 <Trophy className="w-5 h-5" />
+              </button>
+
+              {/* NEW GLOBAL REPORT BUTTON */}
+              <button 
+                onClick={() => setShowMonthlySummary(true)}
+                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surfaceHighlight transition-colors text-subtext hover:text-yellow-400"
+              >
+                <Sparkles className="w-5 h-5" />
               </button>
               
               <button onClick={() => setShowProfileModal(true)} className="ml-1">
@@ -603,9 +587,7 @@ function App() {
         
         {/* CALENDAR */}
         <section>
-          {/* Active Participants Strip */}
           <div className="flex items-center gap-2 mb-2 px-1 overflow-x-auto no-scrollbar">
-             {/* Me */}
              <div className="flex items-center gap-1.5 bg-primary/10 border border-primary/30 px-2 py-1 rounded-full shrink-0">
                 <div className="w-5 h-5 rounded-full bg-primary text-black text-[10px] flex items-center justify-center font-bold">
                    {currentUser.name.charAt(0).toUpperCase()}
@@ -613,7 +595,6 @@ function App() {
                 <span className="text-xs font-bold text-primary">Me</span>
              </div>
 
-             {/* Friends */}
              {activeFriends.map(friend => (
                  <div key={friend.userId} className="flex items-center gap-1.5 bg-surfaceHighlight border px-2 py-1 rounded-full shrink-0 animate-in fade-in zoom-in" style={{ borderColor: `${friend.color}50` }}>
                      <div className="w-5 h-5 rounded-full text-[10px] flex items-center justify-center font-bold shadow-sm" style={{ backgroundColor: friend.color, color: '#000' }}>
@@ -637,11 +618,11 @@ function App() {
             selectedFriendsWorkouts={calendarFriendsData}
             selectedDate={selectedDate}
             onSelectDate={setSelectedDate}
-            onSummaryClick={() => setShowMonthlySummary(true)}
+            onSummaryClick={() => {}} // Disabled prop
           />
         </section>
         
-        {/* ARENA BANNER (If friends selected) */}
+        {/* ARENA BANNER */}
         {activeFriends.length > 0 && (
             <section>
                 <button 
@@ -662,10 +643,9 @@ function App() {
             </section>
         )}
 
-        {/* PLANS (Horizontal Scroll - COMPACT) */}
+        {/* PLANS */}
         {canEdit && (
           <section>
-             {/* Header Section for Plans */}
              <div className="flex items-center justify-between mb-3 px-2">
                 <h2 className="text-sm font-bold text-text tracking-tight flex items-center gap-2">
                   <Zap className="w-4 h-4 text-primary" />
@@ -678,7 +658,6 @@ function App() {
 
              <div className="-mx-4 px-4 overflow-x-auto no-scrollbar py-6">
                  <div className="flex gap-4">
-                    {/* CREATE NEW BUTTON */}
                     <button 
                       onClick={() => { setEditingPlan(null); setShowCreatePlan(true); }}
                       className="flex flex-col items-center justify-center gap-2 w-[110px] h-[120px] rounded-2xl border border-dashed border-border hover:border-primary/50 bg-surface hover:bg-primary/5 transition-all shrink-0 group relative overflow-hidden"
@@ -689,7 +668,6 @@ function App() {
                        <span className="text-[10px] font-bold text-subtext group-hover:text-primary tracking-wide">{t('new')}</span>
                     </button>
                     
-                    {/* PLAN CARDS */}
                     {plans.map(plan => (
                        <div
                         key={plan.id}
@@ -709,23 +687,18 @@ function App() {
                         </div>
                         
                         <div className="flex items-center justify-between pt-2 border-t border-border mt-auto gap-1">
-                            {/* Edit */}
                             <button 
                                onClick={(e) => { e.stopPropagation(); setEditingPlan(plan); setShowCreatePlan(true); }}
                                className="p-1.5 rounded hover:bg-surface text-subtext hover:text-text transition-colors"
                             >
                                <Pencil className="w-3 h-3" />
                             </button>
-                            
-                            {/* Add/Run Button */}
                             <button 
                                 onClick={(e) => { e.stopPropagation(); handleApplyPlan(plan); }}
                                 className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-black hover:bg-primaryHover hover:scale-110 transition-all shadow-sm"
                             >
                                 <Plus className="w-4 h-4" />
                             </button>
-
-                            {/* Delete */}
                             <button 
                                onClick={(e) => { e.stopPropagation(); setDeletePlanConfirmation({ planId: plan.id, planName: plan.name }); }}
                                className="p-1.5 rounded hover:bg-surface text-subtext hover:text-danger transition-colors"
@@ -766,7 +739,6 @@ function App() {
               {/* MY WORKOUTS */}
               {selectedWorkouts.map((workout) => (
                 <div key={workout.id} className="bg-surface rounded-3xl p-5 border border-border shadow-sm relative overflow-hidden group">
-                   {/* Decorative gradient blob */}
                    <div className="absolute -right-10 -top-10 w-32 h-32 bg-primary/5 rounded-full blur-3xl pointer-events-none"></div>
 
                    <div className="flex items-center justify-between mb-4 relative z-10">
@@ -805,14 +777,6 @@ function App() {
                                    {getExerciseIcon(ex.name, "w-4 h-4")}
                                  </div>
                                  {ex.name}
-                                 <div className="flex gap-2">
-                                    <span className="text-[10px] font-mono text-subtext bg-surfaceHighlight px-1.5 py-0.5 rounded border border-border">
-                                      {ex.sets.length} {t('sets')}
-                                    </span>
-                                    <span className="text-[10px] font-mono text-subtext bg-surfaceHighlight px-1.5 py-0.5 rounded border border-border">
-                                      {ex.sets.reduce((acc, s) => acc + (s.weight * s.reps), 0).toLocaleString()} KG {t('vol')}
-                                    </span>
-                                 </div>
                               </div>
                               {canEdit && (
                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -822,32 +786,34 @@ function App() {
                               )}
                            </div>
                            
+                           {/* DYNAMIC SET RENDERING */}
                            <div className="flex flex-wrap gap-2 pl-9">
-                              {ex.sets.map((set, sIdx) => (
-                                <div key={sIdx} className="bg-surfaceHighlight border border-border rounded-lg px-3 py-1.5 flex items-center gap-1.5 shadow-sm group/set relative overflow-hidden">
-                                   {/* RPE Indicator Background */}
-                                   {set.rpe && (
-                                     <div 
-                                       className={clsx(
-                                          "absolute bottom-0 left-0 h-0.5 w-full",
-                                          set.rpe >= 9 ? "bg-red-500" : set.rpe >= 7 ? "bg-yellow-500" : "bg-green-500"
-                                       )} 
-                                       title={`RPE ${set.rpe}`}
-                                     />
-                                   )}
-                                   
-                                   <span className="text-primary font-bold font-mono text-sm">{set.weight}</span>
-                                   <span className="text-[10px] text-subtext font-bold">{set.unit}</span>
-                                   <span className="text-subtext text-xs">✕</span>
-                                   <span className="text-text font-bold font-mono text-sm">{set.reps}</span>
-                                   
-                                   {set.rpe && (
-                                     <div className="ml-2 pl-2 border-l border-border text-[9px] font-mono text-subtext flex items-center gap-1">
-                                       <Gauge className="w-2.5 h-2.5" /> {set.rpe}
-                                     </div>
-                                   )}
-                                </div>
-                              ))}
+                              {ex.sets.map((set, sIdx) => {
+                                // CARDIO DISPLAY
+                                if (set.distance || set.unit === 'km' || set.unit === 'm') {
+                                    return (
+                                        <div key={sIdx} className="bg-surfaceHighlight border border-blue-900/30 rounded-lg px-3 py-1.5 flex items-center gap-1.5 shadow-sm">
+                                            <Activity className="w-3 h-3 text-blue-400" />
+                                            <span className="text-blue-400 font-bold font-mono text-sm">{set.distance || set.weight}km</span>
+                                            {set.time && <span className="text-subtext text-xs border-l border-border pl-1.5 ml-0.5">{set.time}</span>}
+                                        </div>
+                                    )
+                                } 
+                                // STRENGTH DISPLAY (DEFAULT)
+                                return (
+                                    <div key={sIdx} className="bg-surfaceHighlight border border-border rounded-lg px-3 py-1.5 flex items-center gap-1.5 shadow-sm group/set relative overflow-hidden">
+                                        <span className="text-primary font-bold font-mono text-sm">{set.weight}</span>
+                                        <span className="text-[10px] text-subtext font-bold">{set.unit}</span>
+                                        <span className="text-subtext text-xs">✕</span>
+                                        <span className="text-text font-bold font-mono text-sm">{set.reps}</span>
+                                        {set.rpe && (
+                                            <div className="ml-2 pl-2 border-l border-border text-[9px] font-mono text-subtext flex items-center gap-1">
+                                                <Gauge className="w-2.5 h-2.5" /> {set.rpe}
+                                            </div>
+                                        )}
+                                    </div>
+                                )
+                              })}
                            </div>
                         </div>
                       ))}
@@ -855,10 +821,9 @@ function App() {
                 </div>
               ))}
 
-              {/* FRIENDS WORKOUTS */}
+              {/* FRIENDS WORKOUTS (Compact Render) */}
               {friendsSelectedWorkouts.map((workout) => (
                 <div key={workout.id} className="bg-surface rounded-3xl p-5 border border-border shadow-sm relative overflow-hidden opacity-90" style={{ borderColor: `${(workout as any)._friendColor}40` }}>
-                   {/* Friend Indicator */}
                    <div className="absolute top-0 right-0 px-3 py-1 text-[10px] font-bold uppercase text-black rounded-bl-xl" style={{ backgroundColor: (workout as any)._friendColor }}>
                       {(workout as any)._friendName}
                    </div>
@@ -885,10 +850,17 @@ function App() {
                            <div className="flex flex-wrap gap-2 pl-9">
                               {ex.sets.map((set, sIdx) => (
                                 <div key={sIdx} className="bg-surfaceHighlight border border-border rounded-lg px-3 py-1.5 flex items-center gap-1.5 shadow-sm opacity-80">
-                                   <span className="font-bold font-mono text-sm" style={{ color: (workout as any)._friendColor }}>{set.weight}</span>
-                                   <span className="text-[10px] text-subtext font-bold">{set.unit}</span>
-                                   <span className="text-subtext text-xs">✕</span>
-                                   <span className="text-text font-bold font-mono text-sm">{set.reps}</span>
+                                   {/* Simplified Render for friends */}
+                                   <span className="font-bold font-mono text-sm" style={{ color: (workout as any)._friendColor }}>
+                                      {set.distance ? `${set.distance}km` : set.time ? `${set.time}m` : set.weight}
+                                   </span>
+                                   {!set.distance && !set.time && (
+                                       <>
+                                        <span className="text-[10px] text-subtext font-bold">{set.unit}</span>
+                                        <span className="text-subtext text-xs">✕</span>
+                                        <span className="text-text font-bold font-mono text-sm">{set.reps}</span>
+                                       </>
+                                   )}
                                 </div>
                               ))}
                            </div>
@@ -913,16 +885,10 @@ function App() {
       {/* --- NEW ACTION ISLAND DOCK (INPUTS ONLY) --- */}
       {canEdit && (
         <div className="fixed bottom-8 left-0 right-0 z-50 flex flex-col items-center justify-end pointer-events-none">
-          
-          {/* Label Hint */}
           <div className="mb-2 bg-surface/80 backdrop-blur-md px-3 py-1 rounded-full border border-border text-[10px] font-bold text-subtext tracking-widest uppercase shadow-lg animate-in fade-in slide-in-from-bottom-2">
             {t('input_log')}
           </div>
-
-          {/* Glass Dock - Input Actions Only */}
           <div className="pointer-events-auto bg-surfaceHighlight/80 backdrop-blur-xl border border-border rounded-full p-2 pl-2 pr-2 shadow-[0_0_50px_rgba(0,0,0,0.5)] flex items-center gap-2 transition-transform hover:scale-105 duration-300">
-            
-            {/* Unified Input Entry (Text/Cloning) */}
             <button
               onClick={() => setShowUnifiedEntry(true)}
               className="flex items-center justify-center w-14 h-14 rounded-full bg-surface hover:bg-surfaceHighlight border border-border text-subtext hover:text-text transition-all group"
@@ -930,13 +896,8 @@ function App() {
             >
                <Edit3 className="w-6 h-6 group-hover:text-primary transition-colors" />
             </button>
-            
-            {/* Divider */}
             <div className="w-px h-8 bg-border"></div>
-
-            {/* AI Mic Button */}
             <AudioRecorder onWorkoutProcessed={handleWorkoutProcessed} />
-          
           </div>
         </div>
       )}
@@ -945,7 +906,7 @@ function App() {
       <Suspense fallback={null}>
         {showUnifiedEntry && <UnifiedEntryModal isOpen={showUnifiedEntry} onClose={() => setShowUnifiedEntry(false)} onWorkoutProcessed={handleWorkoutProcessed} pastWorkouts={workouts} />}
         {showPRModal && <PRModal isOpen={showPRModal} onClose={() => setShowPRModal(false)} workouts={workouts} initialExercise={selectedHistoryExercise} />}
-        {showMonthlySummary && <MonthlySummaryModal isOpen={showMonthlySummary} onClose={() => setShowMonthlySummary(false)} viewDate={viewDate} workouts={workouts} />}
+        {showMonthlySummary && <MonthlySummaryModal isOpen={showMonthlySummary} onClose={() => setShowMonthlySummary(false)} workouts={workouts} />}
         {showCreatePlan && <CreatePlanModal isOpen={showCreatePlan} onClose={() => setShowCreatePlan(false)} onSave={handleSavePlan} initialPlan={editingPlan} />}
         {currentUser && showProfileModal && <ProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} user={currentUser} workouts={workouts} onUpdateUser={handleUpdateUser} onLogout={handleLogout} />}
         {editingExercise && <EditExerciseModal isOpen={!!editingExercise} onClose={() => setEditingExercise(null)} exercise={editingExercise.data} onSave={executeEdit} />}

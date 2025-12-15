@@ -1,7 +1,9 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
-import { WorkoutData, Workout, User, GroupAnalysisData, ComparisonRow } from "../types";
-import { format } from "date-fns";
+import { WorkoutData, Workout, User, GroupAnalysisData, ComparisonRow, UserStatsProfile, Highlight } from "../types";
+import { format, isSameMonth, subMonths } from "date-fns";
 import { getCanonicalId, getLocalizedName } from "../utils";
+import { EXERCISE_DB } from "../data/exerciseDb";
 
 // --- CONFIGURATION ---
 const MODEL_NAME = 'gemini-2.5-flash'; 
@@ -40,10 +42,12 @@ const WORKOUT_SCHEMA = {
               properties: {
                 reps: { type: Type.NUMBER },
                 weight: { type: Type.NUMBER },
-                unit: { type: Type.STRING, enum: ["kg", "lbs"], description: "Weight unit" },
+                unit: { type: Type.STRING, enum: ["kg", "lbs", "km", "m", "mins"], description: "Weight, Distance or Time unit" },
+                distance: { type: Type.NUMBER, description: "Distance covered if cardio" },
+                time: { type: Type.STRING, description: "Time elapsed" },
                 rpe: { type: Type.NUMBER, description: "Rate of Perceived Exertion (1-10), if mentioned." }
               },
-              required: ["reps", "weight", "unit"]
+              required: ["unit"]
             }
           }
         },
@@ -125,23 +129,23 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
           },
           {
             text: `
-              You are an expert fitness transcriber. You understand gym slang, heavy breathing, and rapid speech.
+              You are an expert fitness transcriber for a GYM TRACKER app.
               
-              YOUR GOAL: Extract workout data accurately. Do not fail easily. If you hear an exercise, record it.
+              YOUR GOAL: Extract workout data accurately. Focus on STRENGTH and CARDIO.
+              Ignore irrelevant sports chatter (football scores, tennis matches).
               
               EXAMPLES:
               Input: "Bench press 3 sets of 10 with 80 kilos"
-              Output: {"exercises": [{"name": "Bench Press", "sets": [{"reps": 10, "weight": 80, "unit": "kg"}, {"reps": 10, "weight": 80, "unit": "kg"}, {"reps": 10, "weight": 80, "unit": "kg"}]}]}
+              Output: {"exercises": [{"name": "Bench Press", "sets": [{"reps": 10, "weight": 80, "unit": "kg"}]}]}
               
-              Input: "Hice sentadillas, 100 kilos, 5 repeticiones, luego 4 repeticiones, luego 3"
-              Output: {"exercises": [{"name": "Squat", "sets": [{"reps": 5, "weight": 100, "unit": "kg"}, {"reps": 4, "weight": 100, "unit": "kg"}, {"reps": 3, "weight": 100, "unit": "kg"}]}]}
+              Input: "Corrí 5 kilómetros en 25 minutos"
+              Output: {"exercises": [{"name": "Running", "sets": [{"distance": 5, "time": "25:00", "unit": "km"}]}]}
               
               RULES:
-              1. If weight is not mentioned, check context. If unknown, use 0.
-              2. Assume "kilos" or "kg" if unit is missing.
-              3. Normalize names (e.g., "pecho" -> "Chest Press" or "Bench Press" depending on context, "banca" -> "Bench Press").
-              4. IGNORE filler words like "um", "uh", "creo que", "bueno".
-              5. Extract RPE if mentioned (e.g., "costó mucho" -> RPE 9, "fácil" -> RPE 6).
+              1. Strength: Extract weight and reps.
+              2. Cardio: Extract distance and time.
+              3. Normalize names (e.g., "bici" -> "Cycling", "pecho" -> "Chest Press").
+              4. If weight unit isn't specified, assume kg.
               
               Return strictly JSON.
             `
@@ -180,15 +184,14 @@ export const processWorkoutText = async (text: string): Promise<WorkoutData> => 
         parts: [
           {
             text: `
-              Parse this workout log into JSON.
-              
+              Parse this gym workout log into JSON.
               Input: "${text}"
               
               Rules:
-              - Normalize exercise names to English standard (e.g. "Sentadilla" -> "Squat").
-              - Expand multiple sets if implied (e.g. "3x10").
-              - Default unit: kg.
-              - Return empty array ONLY if absolutely no workout data matches.
+              - Normalize exercise names to English standard.
+              - Detect Cardio (Running/Swimming) vs Strength.
+              - Strength: Weight/Reps. Cardio: Dist/Time.
+              - IGNORE non-gym sports.
             `
           }
         ]
@@ -214,82 +217,182 @@ export const processWorkoutText = async (text: string): Promise<WorkoutData> => 
   }
 };
 
-export interface ExerciseStat {
-    name: string;
-    topWeight: number;
-    topReps: number; // Reps performed at top weight
-    totalSets: number;
+export interface GlobalReportData {
+    // Section 1: Global Fun Facts
+    totalVolumeKg: number;
+    totalDistanceKm: number;
+    volumeComparison: string; 
+    volumeEmoji: string; 
+    distanceComparison: string; 
+    distanceEmoji: string; 
+    globalVerdict: string; 
+
+    // Section 2: Monthly Comparison
+    monthName: string;
+    monthlyAnalysisText: string;
+
+    // Section 3: Highlights
+    highlights: Highlight[];
 }
 
-export interface MonthlyReportData {
-    stats: ExerciseStat[];
-    analysis: string;
-    verdict: string;
-}
+// Helper to parse time string "90" or "1:30" to minutes number
+const parseTimeToMinutes = (timeStr: string | undefined): number => {
+    if (!timeStr) return 0;
+    if (timeStr.includes(':')) {
+        const parts = timeStr.split(':').map(Number);
+        if (parts.length === 2) return parts[0]; 
+        if (parts.length === 3) return parts[0] * 60 + parts[1];
+    }
+    return parseFloat(timeStr) || 0;
+};
 
-export const generateMonthlyReport = async (
-    currentMonthWorkouts: Workout[], 
-    prevMonthWorkouts: Workout[],
-    monthName: string,
+// REPLACED OLD MONTHLY REPORT WITH NEW GLOBAL FUN REPORT + MONTHLY ANALYSIS
+export const generateGlobalReport = async (
+    allWorkouts: Workout[],
     language: 'es' | 'en' = 'es' 
-): Promise<MonthlyReportData> => {
+): Promise<GlobalReportData> => {
     try {
         const ai = getAIClient();
 
-        // 1. Calculate Statistics Locally (Deterministic & Accurate)
-        const statsMap = new Map<string, ExerciseStat>();
+        // 1. Calculate Grand Totals Locally (STRICT)
+        let totalVolume = 0;
+        let totalDistance = 0;
+
+        // 2. Prepare Data for Monthly Comparison & Highlights
+        const now = new Date();
+        const currentMonthWorkouts = allWorkouts.filter(w => isSameMonth(new Date(w.date), now));
+        const prevMonthWorkouts = allWorkouts.filter(w => isSameMonth(new Date(w.date), subMonths(now, 1)));
+
+        // --- CALCULATE MONTHLY STATS LOCALLY ---
+        // We do this to ensure accuracy before AI "Creative Writing"
+        let maxLift = { name: '', weight: 0 };
+        let maxCardio = { name: '', distance: 0 };
+        const freqMap = new Map<string, number>();
 
         currentMonthWorkouts.forEach(w => {
             w.structured_data.exercises.forEach(ex => {
-                const canonicalId = getCanonicalId(ex.name);
-                const displayName = getLocalizedName(canonicalId, language);
-                
-                const existing = statsMap.get(canonicalId) || { name: displayName, topWeight: 0, topReps: 0, totalSets: 0 };
-                
-                existing.totalSets += ex.sets.length;
-                
+                const id = getCanonicalId(ex.name);
+                const def = EXERCISE_DB.find(d => d.id === id);
+                const type = def?.type || 'strength';
+                const displayName = getLocalizedName(id, language);
+
+                // Frequency
+                freqMap.set(displayName, (freqMap.get(displayName) || 0) + 1);
+
                 ex.sets.forEach(s => {
-                    if (s.weight > existing.topWeight) {
-                        existing.topWeight = s.weight;
-                        existing.topReps = s.reps;
-                    } else if (s.weight === existing.topWeight && s.reps > existing.topReps) {
-                        existing.topReps = s.reps;
+                    // Max Lift
+                    if (type === 'strength' && s.weight && s.weight > maxLift.weight) {
+                        maxLift = { name: displayName, weight: s.weight };
+                    }
+                    // Max Cardio
+                    if (type === 'cardio' && s.distance && s.distance > maxCardio.distance) {
+                        maxCardio = { name: displayName, distance: s.distance };
                     }
                 });
-                
-                statsMap.set(canonicalId, existing);
             });
         });
 
-        const statsArray = Array.from(statsMap.values()).sort((a, b) => a.name.localeCompare(b.name));
-
-        // 2. Prepare Data for AI Context
-        const simplify = (w: Workout) => ({
-            d: w.date.substring(5), // MM-DD
-            e: w.structured_data.exercises.map(e => `${e.name}: ${e.sets.length}sets @ max ${Math.max(...e.sets.map(s=>s.weight))}kg`)
+        // Find Most Frequent
+        let favorite = { name: '', count: 0 };
+        freqMap.forEach((count, name) => {
+            if (count > favorite.count) favorite = { name, count };
         });
 
-        const currentContext = currentMonthWorkouts.map(simplify);
-        const prevContext = prevMonthWorkouts.map(simplify);
+        // Helper to extract top exercises for comparison
+        const extractTopExercises = (workouts: Workout[]) => {
+            const map = new Map<string, number>();
+            workouts.forEach(w => {
+                w.structured_data.exercises.forEach(ex => {
+                    const id = getCanonicalId(ex.name);
+                    const def = EXERCISE_DB.find(d => d.id === id);
+                    const type = def?.type || 'strength';
+                    
+                    let maxVal = 0;
+                    if (type === 'strength') maxVal = Math.max(...ex.sets.map(s => s.weight || 0));
+                    else if (type === 'cardio') maxVal = Math.max(...ex.sets.map(s => s.distance || 0));
+                    
+                    if (!map.has(id) || maxVal > map.get(id)!) {
+                        map.set(id, maxVal);
+                    }
+                });
+            });
+            return Array.from(map.entries());
+        };
 
+        const currentMonthStats = extractTopExercises(currentMonthWorkouts);
+        const prevMonthStats = extractTopExercises(prevMonthWorkouts);
+
+        // Calculate Totals Strict
+        allWorkouts.forEach(w => {
+            w.structured_data.exercises.forEach(ex => {
+                const id = getCanonicalId(ex.name);
+                const def = EXERCISE_DB.find(d => d.id === id);
+                const type = def?.type || 'strength';
+
+                ex.sets.forEach(s => {
+                    // Volume Strict
+                    if (type === 'strength' && s.weight && s.reps && (s.unit === 'kg' || s.unit === 'lbs')) {
+                        let w = s.weight;
+                        if (s.unit === 'lbs') w = w * 0.453592;
+                        totalVolume += (w * s.reps);
+                    }
+                    // Distance
+                    if (s.distance) {
+                        totalDistance += s.distance;
+                    } else if (s.unit === 'km' && s.weight) {
+                        totalDistance += s.weight;
+                    } else if (s.unit === 'm' && s.weight) {
+                        totalDistance += (s.weight / 1000);
+                    }
+                });
+            });
+        });
+
+        // 3. Ask AI for Analysis with PRE-CALCULATED Highlights
         const prompt = `
-            Actúa como el "Gym Bro" definitivo. Tu personalidad es sarcástica, dura, pero motivadora.
+            Actúa como un "Gym Bro" analista de datos. Tono: Colegueo, motivador, sarcástico pero útil.
+            IDIOMA DE SALIDA: ${language === 'es' ? 'ESPAÑOL (Spanish)' : 'ENGLISH (English)'}
+
+            **PARTE 1: DATOS GLOBALES (HISTÓRICO)**
+            - Peso Total Levantado: ${Math.round(totalVolume)} kg
+            - Distancia Total: ${totalDistance.toFixed(2)} km
             
-            **IDIOMA DE RESPUESTA:** ${language === 'es' ? 'ESPAÑOL (Castellano)' : 'ENGLISH'}
+            **PARTE 2: ESTE MES vs MES ANTERIOR**
+            - Ejercicios Top Este Mes (Max): ${JSON.stringify(currentMonthStats.slice(0, 5))}
+            - Ejercicios Top Mes Pasado (Max): ${JSON.stringify(prevMonthStats.slice(0, 5))}
             
-            **CONTEXTO:**
-            Analiza el mes de: ${monthName}.
+            **PARTE 3: HIGHLIGHTS DEL MES (Datos Reales)**
+            - Levantamiento Más Pesado: ${maxLift.name ? `${maxLift.name} (${maxLift.weight}kg)` : 'N/A'}
+            - Cardio Más Largo: ${maxCardio.name ? `${maxCardio.name} (${maxCardio.distance}km)` : 'N/A'}
+            - Ejercicio Favorito (Más frecuente): ${favorite.name ? `${favorite.name} (${favorite.count} sessions)` : 'N/A'}
             
-            **DATOS:**
-            Resumen Mes Actual: ${JSON.stringify(currentContext)}
-            Resumen Mes Pasado: ${JSON.stringify(prevContext)}
+            **TAREA:**
+            1. Genera "verdict_global": Una frase épica sobre el peso total (comparalo con objetos locos).
+            2. Genera "monthly_analysis": Un párrafo corto analizando si ha mejorado respecto al mes anterior.
+            3. Genera 3 "highlights" (Tarjetas) basados en los datos de la Parte 3.
+               - Si hay dato de fuerza, crea tarjeta 'strength'.
+               - Si hay dato de cardio, crea tarjeta 'cardio'.
+               - Si hay dato de frecuencia, crea tarjeta 'consistency'.
+               - Crea un titulo corto y un comentario divertido para cada uno. **IMPORTANTE: Si el idioma es español, los títulos y descripciones DEBEN ser en español.**
             
-            **INSTRUCCIONES:**
-            Devuelve un JSON con dos campos:
-            1. "analysis": Un texto en Markdown analizando el progreso en ${language === 'es' ? 'Español' : 'Inglés'}.
-            2. "verdict": Una frase final lapidaria en ${language === 'es' ? 'Español' : 'Inglés'}.
-            
-            Response MIME Type: application/json
+            **FORMATO JSON:**
+            {
+               "volume_comparison": "Texto corto comparación peso (ej. 3 Ballenas)",
+               "volume_emoji": "Emoji",
+               "distance_comparison": "Texto corto comparación distancia",
+               "distance_emoji": "Emoji",
+               "global_verdict": "Frase sentencia final estilo bro.",
+               "monthly_analysis": "Texto análisis mensual.",
+               "highlights": [
+                  { 
+                    "title": "Titulo Corto (ej. Titan Strength)", 
+                    "value": "140kg Deadlift", 
+                    "description": "Comentario de una frase.", 
+                    "type": "strength" 
+                  },
+                  ...
+               ]
+            }
         `;
 
         const response = await ai.models.generateContent({
@@ -300,10 +403,27 @@ export const generateMonthlyReport = async (
                 responseSchema: {
                     type: Type.OBJECT,
                     properties: {
-                        analysis: { type: Type.STRING },
-                        verdict: { type: Type.STRING }
+                        volume_comparison: { type: Type.STRING },
+                        volume_emoji: { type: Type.STRING },
+                        distance_comparison: { type: Type.STRING },
+                        distance_emoji: { type: Type.STRING },
+                        global_verdict: { type: Type.STRING },
+                        monthly_analysis: { type: Type.STRING },
+                        highlights: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    title: { type: Type.STRING },
+                                    value: { type: Type.STRING },
+                                    description: { type: Type.STRING },
+                                    type: { type: Type.STRING, enum: ['strength', 'cardio', 'consistency'] }
+                                },
+                                required: ["title", "value", "description", "type"]
+                            }
+                        }
                     },
-                    required: ["analysis", "verdict"]
+                    required: ["volume_comparison", "volume_emoji", "distance_comparison", "distance_emoji", "global_verdict", "monthly_analysis", "highlights"]
                 }
             }
         });
@@ -312,14 +432,21 @@ export const generateMonthlyReport = async (
         const aiResult = JSON.parse(text);
 
         return {
-            stats: statsArray,
-            analysis: aiResult.analysis || "No análisis disponible.",
-            verdict: aiResult.verdict || "A entrenar."
+            totalVolumeKg: totalVolume,
+            totalDistanceKm: totalDistance,
+            volumeComparison: aiResult.volume_comparison || "Mucho peso",
+            volumeEmoji: aiResult.volume_emoji || "🏋️‍♂️",
+            distanceComparison: aiResult.distance_comparison || "Lejos",
+            distanceEmoji: aiResult.distance_emoji || "🏃‍♂️",
+            globalVerdict: aiResult.global_verdict || "Sigue así bestia.",
+            monthName: format(now, 'MMMM'),
+            monthlyAnalysisText: aiResult.monthly_analysis || "No data yet.",
+            highlights: aiResult.highlights || []
         };
 
     } catch (error) {
         handleAIError(error);
-        throw new Error("Error connecting to the gym bro AI.");
+        throw new Error("Error generating fun report.");
     }
 };
 
@@ -333,20 +460,64 @@ export const generateGroupAnalysis = async (
             return { name: u.name, points: uniqueDays };
         }).sort((a, b) => b.points - a.points);
 
-        const userMaxes: Record<string, Record<string, number>> = {};
+        // Store best value per exercise per user
+        // Value depends on type: Weight (Strength) or Distance (Cardio)
+        const userMaxes: Record<string, Record<string, { value: number; display: string; metric: string }>> = {};
         
         usersData.forEach(u => {
             userMaxes[u.name] = {};
             u.workouts.forEach(w => {
                 w.structured_data.exercises.forEach(ex => {
                     const normId = getCanonicalId(ex.name); 
-                    const maxSet = Math.max(...ex.sets.map(s => s.weight));
                     
-                    if (!userMaxes[u.name][normId] || maxSet > userMaxes[u.name][normId]) {
-                        userMaxes[u.name][normId] = maxSet;
+                    // Determine Type
+                    const dbMatch = EXERCISE_DB.find(d => d.id === normId);
+                    const type = dbMatch?.type || 'strength';
+
+                    let bestVal = 0;
+                    let display = "";
+                    let metric = "";
+
+                    // LOGIC: METRIC SELECTION
+                    if (type === 'cardio') {
+                        // Max Distance
+                        const maxDist = Math.max(...ex.sets.map(s => s.distance || 0));
+                        bestVal = maxDist;
+                        display = `${maxDist}km`;
+                        metric = 'km';
+                    } else {
+                        // Max Weight
+                        const maxWeight = Math.max(...ex.sets.map(s => s.weight || 0));
+                        bestVal = maxWeight;
+                        display = `${maxWeight}kg`;
+                        metric = 'kg';
+                    }
+                    
+                    if (!userMaxes[u.name][normId] || bestVal > userMaxes[u.name][normId].value) {
+                        userMaxes[u.name][normId] = { value: bestVal, display, metric };
                     }
                 });
             });
+        });
+
+        // --- NEW: Generate Individual Top 10 Lists ---
+        const individualRecords: UserStatsProfile[] = usersData.map(u => {
+            const userData = userMaxes[u.name];
+            if (!userData) return { name: u.name, stats: [] };
+
+            const sortedStats = Object.entries(userData)
+                .map(([exId, data]) => ({
+                    exercise: getLocalizedName(exId, language),
+                    value: data.value,
+                    display: data.display,
+                    metric: data.metric
+                }))
+                // Sort Descending by Value (Rough heuristic: High numbers (weight/dist) > Low numbers)
+                // This is imperfect but ensures "Records" are at top.
+                .sort((a, b) => b.value - a.value)
+                .slice(0, 10);
+
+            return { name: u.name, stats: sortedStats };
         });
 
         if (usersData.length === 0) throw new Error("No users");
@@ -358,18 +529,21 @@ export const generateGroupAnalysis = async (
         }
 
         const comparisonTable: ComparisonRow[] = commonExerciseIds.map(exId => {
-            let maxWeight = -1;
+            let maxValue = -1;
             let winnerName = "";
+            let metricLabel = "";
+
             const results = usersData.map(u => {
-                const weight = userMaxes[u.name][exId];
-                if (weight > maxWeight) {
-                    maxWeight = weight;
+                const data = userMaxes[u.name][exId];
+                if (data.value > maxValue) {
+                    maxValue = data.value;
                     winnerName = u.name;
+                    metricLabel = data.metric;
                 }
-                return { userName: u.name, weight };
+                return { userName: u.name, value: data.value, display: data.display };
             });
             const displayExName = getLocalizedName(exId, language);
-            return { exercise: displayExName, results, winnerName };
+            return { exercise: displayExName, results, winnerName, metric: metricLabel };
         });
 
         // DETECT DRAW CONDITION (TIE)
@@ -382,12 +556,12 @@ export const generateGroupAnalysis = async (
 
         const context = {
             points_standings: pointsTable,
-            head_to_head_results: comparisonTable.map(c => `${c.exercise}: Winner ${c.winnerName} (${Math.max(...c.results.map(r=>r.weight))}kg)`),
+            head_to_head_results: comparisonTable.map(c => `${c.exercise}: Winner ${c.winnerName} (${c.results.find(r => r.userName === c.winnerName)?.display})`),
             raw_data_summary: usersData.map(u => ({
                 name: u.name,
                 total_sessions: u.workouts.length,
-                top_lifts: Object.entries(userMaxes[u.name]).reduce((acc: any, [id, w]) => {
-                    acc[getLocalizedName(id, 'en')] = w; 
+                top_feats: Object.entries(userMaxes[u.name]).slice(0, 5).reduce((acc: any, [id, data]) => {
+                    acc[getLocalizedName(id, 'en')] = data.display; 
                     return acc;
                 }, {})
             })),
@@ -395,15 +569,17 @@ export const generateGroupAnalysis = async (
         };
 
         const prompt = `
-            Role: Ruthless bodybuilding judge. Language: ${language === 'es' ? 'Spanish' : 'English'}.
+            Role: Ruthless fitness judge (Gym Bro style). Language: ${language === 'es' ? 'Spanish' : 'English'}.
             **DATA:** ${JSON.stringify(context)}
             
             **INSTRUCTIONS:**
-            1. Rank participants.
-            2. CRITICAL: If 'is_draw_condition' is true, return 'DRAW' for both the winner's name and the roast. Do NOT pick a winner arbitrarily.
-            3. Otherwise, 1st is "Alpha" (Winner), Last is "Beta" (Loser).
-            4. Short ranking reason (max 5 words).
-            5. Roast summarizing the group.
+            1. Rank participants based on Consistency (Points) and Strength/Cardio Feats.
+            2. Ignore any non-gym related activities.
+            3. If 'is_draw_condition' is true, return 'DRAW'.
+            4. 1st is "Alpha" (Winner), Last is "Beta".
+            5. Short ranking reason (max 5 words).
+            6. Roast summarizing the group.
+            7. **IMPORTANT: ALL output text (reasons, roast) MUST be in ${language === 'es' ? 'SPANISH' : 'ENGLISH'}.**
             
             **OUTPUT JSON:**
             {
@@ -451,7 +627,8 @@ export const generateGroupAnalysis = async (
                 rankings: sortedRankings,
                 roast: "Empate Técnico. A entrenar más.",
                 comparison_table: comparisonTable,
-                points_table: pointsTable
+                points_table: pointsTable,
+                individual_records: individualRecords
             };
         }
 
@@ -461,7 +638,8 @@ export const generateGroupAnalysis = async (
             rankings: sortedRankings,
             roast: aiResult.roast || "Judge is silent.",
             comparison_table: comparisonTable,
-            points_table: pointsTable
+            points_table: pointsTable,
+            individual_records: individualRecords
         };
 
     } catch (error) {

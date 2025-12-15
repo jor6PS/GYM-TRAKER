@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 type Language = 'es' | 'en';
@@ -36,7 +37,7 @@ const translations = {
     send_recovery: "Enviar Enlace",
     recovery_sent_title: "Correo enviado",
     recovery_sent_desc: "Si existe una cuenta con ese correo, recibirás un enlace para restablecer tu contraseña.",
-    username_taken: "Este nombre de usuario ya está en uso.", // ADDED
+    username_taken: "Este nombre de usuario ya está en uso.", 
     
     // Dashboard
     routines: "RUTINAS",
@@ -113,6 +114,8 @@ const translations = {
     display_name: "Nombre Visible",
     new_password: "Nueva Contraseña (Opcional)",
     confirm_password: "Confirmar Contraseña",
+    lifetime_aggregates: "Totales Históricos",
+    total_load: "Carga Total (Volumen)",
     
     // Rest Timer
     rest_timer: "Descanso",
@@ -130,6 +133,9 @@ const translations = {
     consistency_points: "Puntos de Consistencia",
     key_matchups: "Enfrentamientos Clave",
     no_common_exercises: "No hay ejercicios en común entre todos.",
+    gladiator_highlights: "Ficha de Gladiador",
+    top_feats: "Mejores Marcas",
+    no_valid_records: "Sin registros válidos aún.",
   },
   en: {
     // General
@@ -164,7 +170,7 @@ const translations = {
     send_recovery: "Send Link",
     recovery_sent_title: "Email sent",
     recovery_sent_desc: "If an account exists with this email, you will receive a password reset link.",
-    username_taken: "This username is already taken.", // ADDED
+    username_taken: "This username is already taken.", 
     
     // Dashboard
     routines: "WORKOUT ROUTINES",
@@ -241,6 +247,8 @@ const translations = {
     display_name: "Display Name",
     new_password: "New Password (Optional)",
     confirm_password: "Confirm Password",
+    lifetime_aggregates: "Lifetime Aggregates",
+    total_load: "Total Load (Volume)",
     
     // Rest Timer
     rest_timer: "Rest Timer",
@@ -258,6 +266,9 @@ const translations = {
     consistency_points: "Consistency Points",
     key_matchups: "Key Matchups",
     no_common_exercises: "No common exercises found between all participants.",
+    gladiator_highlights: "Gladiator Highlights",
+    top_feats: "Top Feats",
+    no_valid_records: "No valid records yet.",
   }
 };
 

@@ -1,5 +1,6 @@
+
 import React, { useState } from 'react';
-import { X, Swords, Crown, Skull, Sparkles, Loader2, Trophy, Flame, Medal, Scale } from 'lucide-react';
+import { X, Swords, Crown, Skull, Sparkles, Loader2, Trophy, Flame, Medal, Scale, Dumbbell, Activity, Timer } from 'lucide-react';
 import { generateGroupAnalysis } from '../services/workoutProcessor';
 import { Workout, User, GroupAnalysisData } from '../types';
 import { clsx } from 'clsx';
@@ -183,7 +184,7 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                         </div>
                     )}
 
-                    {/* 3. Points & Comparison Table Container */}
+                    {/* 3. POINTS & COMMON MATCHUPS */}
                     <div className="bg-zinc-900/40 border border-white/5 rounded-2xl p-4 md:p-6 space-y-6">
                         
                         {/* Points Leaderboard */}
@@ -242,7 +243,7 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                                                                 "font-mono font-bold",
                                                                 isWinner ? "text-primary" : "text-zinc-500"
                                                             )}>
-                                                                {res.weight}kg
+                                                                {res.display}
                                                             </span>
                                                         </div>
                                                     )
@@ -255,7 +256,57 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                         </div>
                     </div>
 
-                    {/* 4. Roast Section */}
+                    {/* 4. INDIVIDUAL GLADIATOR STATS (NEW SECTION) */}
+                    {analysis.individual_records && analysis.individual_records.length > 0 && (
+                        <div className="space-y-4">
+                            <h3 className="text-xs font-bold text-subtext uppercase tracking-widest flex items-center gap-2 px-2">
+                                <Crown className="w-4 h-4 text-yellow-500" /> {t('gladiator_highlights')}
+                            </h3>
+                            
+                            <div className="grid grid-cols-1 gap-4">
+                                {analysis.individual_records.map((profile, idx) => {
+                                    // Get user color from friendsData or default
+                                    const friendData = friendsData.find(f => f.name === profile.name);
+                                    const color = friendData?.color || '#ffffff';
+
+                                    return (
+                                        <div key={idx} className="bg-surfaceHighlight/30 border border-white/10 rounded-2xl p-4 relative overflow-hidden">
+                                            <div className="absolute top-0 left-0 w-1 h-full" style={{ backgroundColor: color }}></div>
+                                            
+                                            <div className="flex items-center gap-2 mb-4">
+                                                <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-black text-xs" style={{ backgroundColor: color }}>
+                                                    {profile.name.charAt(0)}
+                                                </div>
+                                                <h4 className="font-bold text-white text-sm">{t('top_feats').replace('Mejores Marcas', `Mejores Marcas de ${profile.name}`).replace('Top Feats', `${profile.name}'s Top Feats`)}</h4>
+                                            </div>
+
+                                            {profile.stats.length === 0 ? (
+                                                <p className="text-xs text-zinc-500 italic">{t('no_valid_records')}</p>
+                                            ) : (
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    {profile.stats.map((stat, sIdx) => (
+                                                        <div key={sIdx} className="bg-black/40 rounded p-2 border border-white/5 flex flex-col">
+                                                            <div className="text-[10px] text-zinc-400 truncate mb-0.5 flex items-center gap-1">
+                                                                {stat.metric === 'kg' ? <Dumbbell className="w-3 h-3 text-zinc-600" /> : 
+                                                                 stat.metric === 'km' ? <Activity className="w-3 h-3 text-zinc-600" /> : 
+                                                                 <Timer className="w-3 h-3 text-zinc-600" />}
+                                                                {stat.exercise}
+                                                            </div>
+                                                            <div className="text-sm font-mono font-bold text-white">
+                                                                {stat.display}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 5. Roast Section */}
                     {analysis.roast && (
                         <div className="bg-surfaceHighlight/30 p-6 rounded-2xl border border-white/5 relative">
                             <QuoteIcon className="absolute top-4 left-4 w-6 h-6 text-primary opacity-20" />

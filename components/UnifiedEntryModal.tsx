@@ -1,10 +1,12 @@
-import React, { useState, useMemo } from 'react';
-import { X, Save, Clock, History, Edit3, ArrowRight, Search, Plus, Dumbbell, ChevronRight, Trash2, Layers } from 'lucide-react';
-import type { WorkoutData, Exercise, Workout, Set } from '../types';
+
+import React, { useState, useMemo, useEffect } from 'react';
+import { X, Save, Clock, History, Edit3, ArrowRight, Search, Plus, Dumbbell, ChevronRight, Trash2, Layers, Activity, Pencil, Sparkles } from 'lucide-react';
+import type { WorkoutData, Exercise, Workout, Set, MetricType } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { EXERCISE_DB } from '../data/exerciseDb';
 import { format } from 'date-fns';
-import { parseLocalDate } from '../utils';
+import { parseLocalDate, getCanonicalId, normalizeText } from '../utils';
+import { EditExerciseModal } from './EditExerciseModal';
 
 interface UnifiedEntryModalProps {
   isOpen: boolean;
@@ -28,25 +30,77 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
   // --- LIBRARY STATE ---
   const [libSearch, setLibSearch] = useState('');
   const [selectedLibExercise, setSelectedLibExercise] = useState<string | null>(null);
+  const [selectedMetricType, setSelectedMetricType] = useState<MetricType>('strength');
+  const [isHistoryBased, setIsHistoryBased] = useState(false); // Visual indicator for user
   
-  // Builder State for selected exercise
+  // Builder State
   const [setsConfig, setSetsConfig] = useState<Set[]>([{ reps: 10, weight: 0, unit: 'kg' }]);
 
-  // --- LIBRARY FILTER (Localized) ---
+  // Editing State (For Overview Tab)
+  const [editingItem, setEditingItem] = useState<{ index: number; data: Exercise } | null>(null);
+
+  // --- LIBRARY FILTER (Localized & Accent Insensitive) ---
   const filteredLibrary = useMemo(() => {
-      const term = libSearch.toLowerCase().trim();
-      
-      // Filter based on the CURRENT language preference
+      const term = normalizeText(libSearch);
       const langKey = language === 'es' ? 'es' : 'en';
 
       if (!term) return EXERCISE_DB.slice(0, 20);
       
       return EXERCISE_DB.filter(ex => 
-          ex[langKey].toLowerCase().includes(term)
+          normalizeText(ex[langKey]).includes(term)
       ).slice(0, 20);
   }, [libSearch, language]);
 
   // --- HANDLERS ---
+
+  const handleSelectExercise = (name: string) => {
+      setSelectedLibExercise(name);
+      
+      const targetId = getCanonicalId(name);
+
+      // Determine Type from DB
+      const dbMatch = EXERCISE_DB.find(ex => ex.es === name || ex.en === name);
+      const type = dbMatch?.type || 'strength';
+      setSelectedMetricType(type);
+
+      // --- SMART PRE-FILL LOGIC (MEMORIA MUSCULAR) ---
+      let historyFound = false;
+
+      // Sort history desc to find most recent occurrence
+      const sortedHistory = [...pastWorkouts].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+      for (const workout of sortedHistory) {
+          const match = workout.structured_data.exercises.find(ex => getCanonicalId(ex.name) === targetId);
+          
+          if (match && match.sets.length > 0) {
+              // Deep clone sets to avoid reference issues
+              const historySets = match.sets.map(s => ({
+                  ...s,
+                  // Ensure cleanliness
+                  reps: s.reps || 0,
+                  weight: s.weight || 0,
+                  distance: s.distance || 0,
+                  time: s.time || '',
+                  unit: s.unit || (type === 'cardio' ? 'km' : 'kg')
+              }));
+              
+              setSetsConfig(historySets);
+              historyFound = true;
+              setIsHistoryBased(true);
+              break; // Stop at the most recent one
+          }
+      }
+
+      // Fallback defaults if no history found
+      if (!historyFound) {
+          setIsHistoryBased(false);
+          if (type === 'cardio') {
+              setSetsConfig([{ distance: 0, time: '', unit: 'km' }]);
+          } else {
+              setSetsConfig([{ reps: 10, weight: 0, unit: 'kg' }]);
+          }
+      }
+  };
 
   const handleAddSet = () => {
       const last = setsConfig[setsConfig.length - 1];
@@ -60,7 +114,7 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
       setSetsConfig(newSets);
   };
 
-  const handleUpdateSet = (index: number, field: keyof Set, value: number) => {
+  const handleUpdateSet = (index: number, field: keyof Set, value: string | number) => {
       const newSets = [...setsConfig];
       newSets[index] = { ...newSets[index], [field]: value };
       setSetsConfig(newSets);
@@ -76,9 +130,8 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
 
       setSessionExercises([...sessionExercises, newExercise]);
       
-      // Reset and go to overview
+      // Reset
       setSelectedLibExercise(null);
-      setSetsConfig([{ reps: 10, weight: 0, unit: 'kg' }]);
       setLibSearch('');
       setActiveTab('overview');
   };
@@ -89,7 +142,17 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
       setSessionExercises(newSession);
   };
 
+  const handleEditSessionExercise = (updatedExercise: Exercise) => {
+      if (editingItem) {
+          const newSession = [...sessionExercises];
+          newSession[editingItem.index] = updatedExercise;
+          setSessionExercises(newSession);
+          setEditingItem(null);
+      }
+  };
+
   const handleCloneGroup = (group: { date: string, exercises: Exercise[] }) => {
+      // Deep copy to avoid reference issues
       const clonedExercises = group.exercises.map(ex => ({
           name: ex.name,
           sets: ex.sets.map(s => ({ ...s }))
@@ -206,16 +269,21 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                                 />
                             </div>
                             <div className="flex-1 overflow-y-auto space-y-1 custom-scrollbar pr-1">
-                                {filteredLibrary.map((ex, i) => (
+                                {filteredLibrary.map((ex, i) => {
+                                    const Icon = ex.type === 'cardio' ? Activity : Dumbbell;
+                                    return (
                                     <button
                                         key={i}
-                                        onClick={() => setSelectedLibExercise(ex[langKey])}
+                                        onClick={() => handleSelectExercise(ex[langKey])}
                                         className="w-full text-left px-4 py-3 bg-black/40 border border-white/5 hover:border-green-400/30 hover:bg-white/5 rounded-xl text-sm text-zinc-300 hover:text-white transition-all flex items-center justify-between group"
                                     >
-                                        {ex[langKey]}
+                                        <div className="flex items-center gap-3">
+                                            <Icon className="w-4 h-4 text-zinc-600 group-hover:text-green-400 transition-colors" />
+                                            {ex[langKey]}
+                                        </div>
                                         <Plus className="w-4 h-4 opacity-0 group-hover:opacity-100 text-green-400 transition-opacity" />
                                     </button>
-                                ))}
+                                )})}
                                 {filteredLibrary.length === 0 && (
                                     <div className="text-center py-8 text-zinc-500 text-xs border border-dashed border-white/10 rounded-xl mt-4">
                                         {t('no_matches')}
@@ -232,40 +300,66 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                                 </button>
                                 <div className="h-4 w-px bg-white/10"></div>
                                 <h3 className="text-white font-bold truncate flex-1 text-lg">{selectedLibExercise}</h3>
+                                {selectedMetricType === 'cardio' && <Activity className="w-4 h-4 text-blue-400" />}
+                                {isHistoryBased && (
+                                    <div className="ml-auto flex items-center gap-1 bg-yellow-500/10 text-yellow-500 px-2 py-0.5 rounded border border-yellow-500/20 text-[10px] font-mono animate-in fade-in">
+                                        <Sparkles className="w-3 h-3" /> Auto-filled
+                                    </div>
+                                )}
                             </div>
                             
-                            {/* Sets Builder */}
+                            {/* DYNAMIC BUILDER BASED ON TYPE */}
                             <div className="bg-black border border-white/10 rounded-2xl p-4 flex-1 overflow-y-auto custom-scrollbar">
-                                <div className="grid grid-cols-12 gap-2 text-[10px] text-zinc-500 font-mono uppercase text-center mb-2 sticky top-0 bg-black z-10 py-2">
-                                    <div className="col-span-2">{t('sets').slice(0,3)}</div>
-                                    <div className="col-span-4">KG</div>
-                                    <div className="col-span-4">REPS</div>
-                                    <div className="col-span-2"></div>
-                                </div>
+                                
+                                {/* STRENGTH HEADER */}
+                                {selectedMetricType === 'strength' && (
+                                    <div className="grid grid-cols-12 gap-2 text-[10px] text-zinc-500 font-mono uppercase text-center mb-2 sticky top-0 bg-black z-10 py-2">
+                                        <div className="col-span-2">SET</div>
+                                        <div className="col-span-4">KG</div>
+                                        <div className="col-span-4">REPS</div>
+                                        <div className="col-span-2"></div>
+                                    </div>
+                                )}
+
+                                {/* CARDIO HEADER */}
+                                {selectedMetricType === 'cardio' && (
+                                    <div className="grid grid-cols-12 gap-2 text-[10px] text-zinc-500 font-mono uppercase text-center mb-2 sticky top-0 bg-black z-10 py-2">
+                                        <div className="col-span-2">INT</div>
+                                        <div className="col-span-4">DIST (KM)</div>
+                                        <div className="col-span-4">TIME</div>
+                                        <div className="col-span-2"></div>
+                                    </div>
+                                )}
+
                                 <div className="space-y-2">
                                     {setsConfig.map((set, idx) => (
                                         <div key={idx} className="grid grid-cols-12 gap-2 items-center">
                                             <div className="col-span-2 flex justify-center">
                                                 <div className="w-6 h-6 rounded bg-zinc-800 flex items-center justify-center text-xs font-mono text-zinc-400">{idx + 1}</div>
                                             </div>
-                                            <div className="col-span-4">
-                                                <input 
-                                                    type="number" 
-                                                    value={set.weight === 0 ? '' : set.weight} 
-                                                    onChange={(e) => handleUpdateSet(idx, 'weight', Number(e.target.value))}
-                                                    className="w-full bg-zinc-900 border border-white/10 rounded p-2 text-center text-white font-bold text-lg focus:border-green-400 focus:outline-none"
-                                                    placeholder="0"
-                                                />
-                                            </div>
-                                            <div className="col-span-4">
-                                                <input 
-                                                    type="number" 
-                                                    value={set.reps === 0 ? '' : set.reps} 
-                                                    onChange={(e) => handleUpdateSet(idx, 'reps', Number(e.target.value))}
-                                                    className="w-full bg-zinc-900 border border-white/10 rounded p-2 text-center text-white font-bold text-lg focus:border-green-400 focus:outline-none"
-                                                    placeholder="0"
-                                                />
-                                            </div>
+                                            
+                                            {/* DYNAMIC INPUTS */}
+                                            {selectedMetricType === 'strength' ? (
+                                                <>
+                                                    <div className="col-span-4">
+                                                        <input type="number" value={set.weight === 0 ? '' : set.weight} onChange={(e) => handleUpdateSet(idx, 'weight', Number(e.target.value))} className="w-full bg-zinc-900 border border-white/10 rounded p-2 text-center text-white font-bold text-lg focus:border-green-400 focus:outline-none" placeholder="0" />
+                                                    </div>
+                                                    <div className="col-span-4">
+                                                        <input type="number" value={set.reps === 0 ? '' : set.reps} onChange={(e) => handleUpdateSet(idx, 'reps', Number(e.target.value))} className="w-full bg-zinc-900 border border-white/10 rounded p-2 text-center text-white font-bold text-lg focus:border-green-400 focus:outline-none" placeholder="0" />
+                                                    </div>
+                                                </>
+                                            ) : (
+                                                /* CARDIO */
+                                                <>
+                                                    <div className="col-span-4">
+                                                        <input type="number" value={set.distance || ''} onChange={(e) => handleUpdateSet(idx, 'distance', Number(e.target.value))} className="w-full bg-zinc-900 border border-white/10 rounded p-2 text-center text-white font-bold text-lg focus:border-blue-400 focus:outline-none" placeholder="km" />
+                                                    </div>
+                                                    <div className="col-span-4">
+                                                        <input type="text" value={set.time || ''} onChange={(e) => handleUpdateSet(idx, 'time', e.target.value)} className="w-full bg-zinc-900 border border-white/10 rounded p-2 text-center text-white font-bold text-sm focus:border-blue-400 focus:outline-none" placeholder="25m / 25:00" />
+                                                    </div>
+                                                </>
+                                            )}
+
                                             <div className="col-span-2 flex justify-center">
                                                 <button onClick={() => handleRemoveSet(idx)} disabled={setsConfig.length === 1} className="text-zinc-600 hover:text-red-500 disabled:opacity-30">
                                                     <Trash2 className="w-5 h-5" />
@@ -290,7 +384,7 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                 </div>
             )}
 
-            {/* --- TAB: OVERVIEW (THE CART) --- */}
+            {/* --- TAB: OVERVIEW --- */}
             {activeTab === 'overview' && (
                 <div className="space-y-4 h-full flex flex-col">
                     {sessionExercises.length === 0 ? (
@@ -308,7 +402,11 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                         </div>
                     ) : (
                         <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar">
-                            {sessionExercises.map((ex, idx) => (
+                            {sessionExercises.map((ex, idx) => {
+                                // Simple detection for display logic
+                                const hasDistance = ex.sets.some(s => s.distance);
+                                
+                                return (
                                 <div key={idx} className="bg-black border border-white/10 rounded-xl p-4 relative group animate-in slide-in-from-bottom-2 duration-300">
                                     <div className="flex justify-between items-start mb-3">
                                         <div className="flex items-center gap-3">
@@ -317,22 +415,42 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                                             </div>
                                             <h4 className="font-bold text-white text-base">{ex.name}</h4>
                                         </div>
-                                        <button onClick={() => removeSessionExercise(idx)} className="p-2 text-zinc-600 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors">
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
+                                        <div className="flex gap-1">
+                                            <button 
+                                                onClick={() => setEditingItem({ index: idx, data: ex })} 
+                                                className="p-2 text-zinc-600 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+                                            >
+                                                <Pencil className="w-4 h-4" />
+                                            </button>
+                                            <button onClick={() => removeSessionExercise(idx)} className="p-2 text-zinc-600 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors">
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
                                     </div>
                                     <div className="flex flex-wrap gap-2 pl-11">
-                                        {ex.sets.map((s, sIdx) => (
-                                            <div key={sIdx} className="bg-zinc-900 border border-white/10 rounded px-2.5 py-1.5 text-xs text-zinc-400 font-mono">
-                                                <span className="text-primary font-bold text-sm">{s.weight}</span>
-                                                <span className="text-[10px] ml-0.5 mr-1.5">{s.unit}</span>
-                                                <span className="text-zinc-600">x</span>
-                                                <span className="text-white font-bold ml-1.5">{s.reps}</span>
-                                            </div>
-                                        ))}
+                                        {ex.sets.map((s, sIdx) => {
+                                            if (s.distance) {
+                                                return (
+                                                    <div key={sIdx} className="bg-zinc-900 border border-blue-900/30 rounded px-2.5 py-1.5 text-xs text-zinc-300 font-mono">
+                                                        <span className="text-blue-400 font-bold">{s.distance}km</span>
+                                                        <span className="text-zinc-500 mx-1">/</span>
+                                                        <span className="text-white">{s.time}</span>
+                                                    </div>
+                                                )
+                                            } else {
+                                                return (
+                                                    <div key={sIdx} className="bg-zinc-900 border border-white/10 rounded px-2.5 py-1.5 text-xs text-zinc-400 font-mono">
+                                                        <span className="text-primary font-bold text-sm">{s.weight}</span>
+                                                        <span className="text-[10px] ml-0.5 mr-1.5">{s.unit}</span>
+                                                        <span className="text-zinc-600">x</span>
+                                                        <span className="text-white font-bold ml-1.5">{s.reps}</span>
+                                                    </div>
+                                                )
+                                            }
+                                        })}
                                     </div>
                                 </div>
-                            ))}
+                            )})}
                             
                             <button 
                                 onClick={() => setActiveTab('library')}
@@ -371,7 +489,6 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                                     <ArrowRight className="w-4 h-4 text-zinc-600 group-hover:text-primary opacity-0 group-hover:opacity-100 transition-all" />
                                 </div>
                                 <div className="text-xs text-zinc-500 font-mono line-clamp-2">
-                                    {/* Deduplicate and join names */}
                                     {Array.from(new Set(group.exercises.map(e => e.name))).join(', ')}
                                 </div>
                             </button>
@@ -393,6 +510,16 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                     <Save className="w-5 h-5" /> {t('save_session')} ({sessionExercises.length})
                 </button>
             </div>
+        )}
+
+        {/* Editing Modal Overlay */}
+        {editingItem && (
+            <EditExerciseModal 
+                isOpen={!!editingItem} 
+                exercise={editingItem.data}
+                onSave={handleEditSessionExercise}
+                onClose={() => setEditingItem(null)}
+            />
         )}
       </div>
     </div>
