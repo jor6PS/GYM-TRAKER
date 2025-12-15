@@ -11,18 +11,18 @@ const MODEL_NAME = 'gemini-2.5-flash';
 
 // Helper to safely get the AI instance only when needed
 const getAIClient = () => {
-  // 1. Get the raw key from the environment
-  const rawKey = process.env.API_KEY;
+  // 1. Try to get User's Personal Key (BYOK)
+  const userKey = typeof window !== 'undefined' ? localStorage.getItem('USER_GEMINI_KEY') : null;
   
-  // 2. SANITIZATION: Remove any accidental quotes (" or ') and whitespace.
-  // This fixes common .env parsing issues in Vite where the key gets double-quoted.
+  // 2. Fallback to System Key
+  const rawKey = userKey || process.env.API_KEY;
+  
+  // 3. SANITIZATION
   const apiKey = rawKey ? rawKey.replace(/["']/g, '').trim() : '';
   
   if (!apiKey || apiKey === 'undefined' || apiKey === 'null') {
      console.error("🚨 CRITICAL ERROR: Google Gemini API Key is missing or invalid.");
-     // Log masked key for debugging
-     console.log(`Current Key Length: ${rawKey ? rawKey.length : 0}`);
-     throw new Error("Falta la API Key de Gemini. Revisa tu archivo .env.");
+     throw new Error("Falta la API Key de Gemini. Revisa tu perfil o el archivo .env.");
   }
   return new GoogleGenAI({ apiKey });
 };
@@ -35,7 +35,7 @@ const WORKOUT_SCHEMA = {
       items: {
         type: Type.OBJECT,
         properties: {
-          name: { type: Type.STRING, description: "Name of the exercise (e.g., Bench Press). Normalize to standard gym terminology." },
+          name: { type: Type.STRING, description: "Name of the exercise. Keep accents if Spanish (e.g., 'Jalón', 'Press de Banca')." },
           sets: {
             type: Type.ARRAY,
             items: {
@@ -55,7 +55,7 @@ const WORKOUT_SCHEMA = {
         required: ["name", "sets"]
       }
     },
-    notes: { type: Type.STRING, description: "Any general notes about the workout energy or feelings." }
+    notes: { type: Type.STRING, description: "Any general notes. Preserve original language and accents." }
   },
   required: ["exercises"]
 };
@@ -104,7 +104,7 @@ const handleAIError = (error: any) => {
         throw new Error("⚠️ Has superado el límite de uso de la IA. Espera un minuto.");
     }
     if (msg.includes('400') || msg.includes('api key') || msg.includes('invalid')) {
-        throw new Error("⚠️ API Key inválida o malformada.");
+        throw new Error("⚠️ API Key inválida o malformada. Revisa tu configuración.");
     }
     if (error instanceof SyntaxError) {
         throw new Error("Error de IA: La respuesta no tuvo el formato correcto.");
@@ -133,15 +133,20 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
               You are an expert fitness transcriber for a GYM TRACKER app.
               
               YOUR GOAL: Extract workout data accurately. Focus on STRENGTH.
-              Ignore irrelevant sports chatter (football scores, tennis matches).
+              Ignore irrelevant sports chatter.
+              
+              CRITICAL ENCODING RULES: 
+              1. PRESERVE Spanish accents and special characters (á, é, í, ó, ú, ñ). 
+              2. Do NOT normalize characters to ASCII if the input is Spanish. 
+              3. Example: Return "Máquina" instead of "Maquina".
               
               EXAMPLES:
-              Input: "Bench press 3 sets of 10 with 80 kilos"
-              Output: {"exercises": [{"name": "Bench Press", "sets": [{"reps": 10, "weight": 80, "unit": "kg"}]}]}
+              Input: "Press de banca 3 series de 10 con 80 kilos"
+              Output: {"exercises": [{"name": "Press de Banca", "sets": [{"reps": 10, "weight": 80, "unit": "kg"}]}]}
               
               Rules:
               1. Strength: Extract weight and reps.
-              2. Normalize names (e.g., "pecho" -> "Chest Press").
+              2. Normalize names to standard gym terminology (keep language of input).
               3. If weight unit isn't specified, assume kg.
               
               Return strictly JSON.
@@ -184,8 +189,12 @@ export const processWorkoutText = async (text: string): Promise<WorkoutData> => 
               Parse this gym workout log into JSON.
               Input: "${text}"
               
+              CRITICAL:
+              - PRESERVE accents (tildes) and special characters (ñ).
+              - Do NOT convert to English if input is Spanish.
+              
               Rules:
-              - Normalize exercise names to English standard.
+              - Normalize exercise names to standard terminology.
               - Strength: Weight/Reps.
               - IGNORE non-gym sports.
             `
@@ -323,7 +332,7 @@ export const generateGlobalReport = async (
         });
 
         const langInstructions = language === 'es' 
-            ? "EL IDIOMA DE SALIDA DEBE SER 100% ESPAÑOL. NO USES INGLÉS EN LOS TÍTULOS NI DESCRIPCIONES." 
+            ? "EL IDIOMA DE SALIDA DEBE SER 100% ESPAÑOL. IMPORTANTE: USA TILDES (á,é,í,ó,ú) Y Ñ CORRECTAMENTE. NO OMITE ACENTOS." 
             : "OUTPUT LANGUAGE MUST BE ENGLISH.";
 
         // 3. Ask AI for Analysis with PRE-CALCULATED Highlights
@@ -554,6 +563,7 @@ export const generateGroupAnalysis = async (
             5. Short ranking reason (max 5 words).
             6. Roast summarizing the group.
             7. **IMPORTANT: ALL output text (reasons, roast) MUST be in ${language === 'es' ? 'SPANISH' : 'ENGLISH'}.**
+            8. **CRITICAL: PRESERVE SPANISH ACCENTS AND SPECIAL CHARACTERS.**
             
             **OUTPUT JSON:**
             {

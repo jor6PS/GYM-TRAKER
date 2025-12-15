@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { 
   X, 
   Camera, 
@@ -16,7 +16,9 @@ import {
   Trophy,
   Flame,
   Star,
-  Dumbbell
+  Dumbbell,
+  Key,
+  ExternalLink
 } from 'lucide-react';
 import { User as UserType, Workout } from '../types';
 import { uploadAvatar, updateUserProfile, updateUserPassword, supabase } from '../services/supabase';
@@ -45,11 +47,23 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [name, setName] = useState(user.name);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  
+  // API Key State
+  const [userApiKey, setUserApiKey] = useState('');
+
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { t } = useLanguage();
+
+  // Load existing key from localStorage
+  useEffect(() => {
+    if (isOpen) {
+        const storedKey = localStorage.getItem('USER_GEMINI_KEY');
+        if (storedKey) setUserApiKey(storedKey);
+    }
+  }, [isOpen]);
 
   // Calculate Stats based on Unique Days
   const stats = useMemo(() => {
@@ -143,7 +157,15 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     setIsSaving(true);
     setMessage(null);
     try {
-      // 1. Update Name if changed
+      // 1. Save API Key locally
+      const trimmedKey = userApiKey.trim();
+      if (trimmedKey) {
+          localStorage.setItem('USER_GEMINI_KEY', trimmedKey);
+      } else {
+          localStorage.removeItem('USER_GEMINI_KEY');
+      }
+
+      // 2. Update Name if changed
       if (name !== user.name) {
         const cleanName = name.trim();
         if (cleanName.length < 3) throw new Error("Username too short.");
@@ -164,7 +186,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
         onUpdateUser({ name: cleanName });
       }
 
-      // 2. Update Password if provided
+      // 3. Update Password if provided
       if (password) {
         if (password !== confirmPassword) {
             throw new Error("Passwords do not match.");
@@ -292,7 +314,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 </div>
             </div>
 
-            {/* LIFETIME TOTALS (REMOVED DISTANCE AS REQUESTED) */}
+            {/* LIFETIME TOTALS */}
             <div className="mb-6 bg-black/40 border border-white/10 rounded-xl p-4">
                 <h3 className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mb-3 border-b border-white/5 pb-2">
                     {t('lifetime_aggregates')}
@@ -334,6 +356,32 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                             placeholder="Your Name"
                         />
                     </div>
+                </div>
+                
+                {/* API KEY SECTION */}
+                <div className="space-y-1 pt-2">
+                    <div className="flex justify-between items-center">
+                        <label className="text-xs font-mono text-primary uppercase ml-1 font-bold">{t('api_key_label')}</label>
+                        <a 
+                            href="https://aistudio.google.com/app/apikey" 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-[10px] text-zinc-500 hover:text-white flex items-center gap-1 transition-colors"
+                        >
+                            {t('get_api_key')} <ExternalLink className="w-3 h-3" />
+                        </a>
+                    </div>
+                    <div className="relative group">
+                        <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500 group-focus-within:text-primary transition-colors" />
+                        <input 
+                            type="password"
+                            value={userApiKey}
+                            onChange={(e) => setUserApiKey(e.target.value)}
+                            className="w-full bg-black border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white font-mono placeholder:text-zinc-700 focus:outline-none focus:border-primary/50 focus:bg-zinc-900/50 transition-all"
+                            placeholder={t('api_key_placeholder')}
+                        />
+                    </div>
+                    <p className="text-[10px] text-zinc-500 ml-1">{t('api_key_help')}</p>
                 </div>
 
                 {/* Password Change */}
@@ -385,7 +433,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 <div className="pt-4 flex flex-col gap-3">
                     <button 
                         onClick={handleSaveProfile}
-                        disabled={isSaving || (name === user.name && !password)}
+                        disabled={isSaving}
                         className="w-full bg-primary hover:bg-primaryHover text-black font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-glow active:scale-95"
                     >
                         {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}

@@ -121,6 +121,10 @@ const translations = {
     confirm_password: "Confirmar Contraseña",
     lifetime_aggregates: "Totales Históricos",
     total_load: "Carga Total (Volumen)",
+    api_key_label: "Tu API Key de Gemini (Opcional)",
+    api_key_placeholder: "Pega tu clave AIza...",
+    api_key_help: "Usa tu propia cuota gratuita de Google.",
+    get_api_key: "Conseguir Key Gratis",
     
     // Rest Timer
     rest_timer: "Descanso",
@@ -259,6 +263,10 @@ const translations = {
     confirm_password: "Confirm Password",
     lifetime_aggregates: "Lifetime Aggregates",
     total_load: "Total Load (Volume)",
+    api_key_label: "Your Gemini API Key (Optional)",
+    api_key_placeholder: "Paste your AIza key...",
+    api_key_help: "Use your own free Google quota.",
+    get_api_key: "Get Free Key",
     
     // Rest Timer
     rest_timer: "Rest Timer",
@@ -318,7 +326,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
 export const useLanguage = () => {
   const context = useContext(LanguageContext);
-  if (!context) {
+  if (context === undefined) {
     throw new Error('useLanguage must be used within a LanguageProvider');
   }
   return context;
