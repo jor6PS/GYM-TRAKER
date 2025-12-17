@@ -56,8 +56,8 @@ const translations = {
     today: "Hoy",
     
     // Monthly Report
-    ai_report_title: "Reporte IA",
-    global_monthly_subtitle: "Global y Mensual",
+    ai_report_title: "Crónicas del Hierro",
+    global_monthly_subtitle: "Legado y Batalla Actual",
     monthly_report: "Reporte Mensual",
     exercise_highlights: "Destacados",
     gym_bro_analysis: "Análisis del Gym Bro",
@@ -120,7 +120,7 @@ const translations = {
     confirm_password: "Confirmar Contraseña",
     lifetime_aggregates: "Totales Históricos",
     total_load: "Carga Total (Volumen)",
-    api_key_label: "Tu API Key de Gemini (Opcional)",
+    api_key_label: "Tu API Key de Gemini",
     api_key_placeholder: "Pega tu clave AIza...",
     api_key_help: "Usa tu propia cuota gratuita de Google.",
     get_api_key: "Conseguir Key Gratis",

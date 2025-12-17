@@ -105,8 +105,9 @@ export interface Highlight {
 
 export interface MonthlyMaxEntry {
     exercise: string;
-    weight: number;
-    unit: string;
+    value: number;
+    unit: string; // 'kg', 'lbs', 'reps'
+    isBodyweight: boolean;
 }
 
 export interface GlobalReportData {
@@ -116,14 +117,17 @@ export interface GlobalReportData {
   volumeType: string; // 'car' | 'animal' | 'building' | 'plane' | 'rocket' | 'mountain' | 'default'
   globalVerdict: string; 
 
-  // Section 2: Monthly Comparison
+  // Section 2: Monthly Specific Volume
+  monthlyVolumeKg: number;
+  monthlyVolumeComparison: string;
+  monthlyVolumeType: string;
+
+  // Section 3: Monthly Analysis
   monthName: string;
   monthlyAnalysisText: string;
   
-  // Section 3: Highlights
+  // Section 4: Highlights & Maxes
   highlights: Highlight[];
-
-  // Section 4: Monthly Maxes List
   monthlyMaxes: MonthlyMaxEntry[];
 }
 

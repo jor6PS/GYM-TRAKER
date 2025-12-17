@@ -1,18 +1,16 @@
-
 import React, { useMemo } from 'react';
 import { 
   format, 
+  startOfMonth,
   endOfMonth, 
+  startOfWeek,
+  endOfWeek,
   eachDayOfInterval, 
   isSameMonth, 
   isSameDay, 
-  endOfWeek,
   addMonths
 } from 'date-fns';
-import startOfWeek from 'date-fns/startOfWeek';
-import startOfMonth from 'date-fns/startOfMonth';
-import es from 'date-fns/locale/es';
-import enUS from 'date-fns/locale/en-US';
+import { es, enUS } from 'date-fns/locale';
 import { clsx } from 'clsx';
 import { ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
 import { Workout } from '../types';

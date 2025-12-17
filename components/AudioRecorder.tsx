@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Square, Loader2, AlertCircle } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -17,12 +18,12 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onWorkoutProcessed
   const audioChunksRef = useRef<Blob[]>([]);
   const mimeTypeRef = useRef<string>("");
 
-  // Auto-dismiss error after 4 seconds
+  // Auto-dismiss error after 7 seconds (Guidance needs more time to read)
   useEffect(() => {
     if (error) {
         const timer = setTimeout(() => {
             setError(null);
-        }, 4000);
+        }, 7000); // Increased time for user guidance
         return () => clearTimeout(timer);
     }
   }, [error]);
@@ -39,15 +40,7 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onWorkoutProcessed
         } 
       });
       
-      // Priority list for Gemini compatibility
-      const mimeTypes = [
-        'audio/webm;codecs=opus',
-        'audio/mp4', // Better for iOS
-        'audio/webm',
-        'audio/ogg',
-        'audio/wav'
-      ];
-      
+      const mimeTypes = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm', 'audio/ogg', 'audio/wav'];
       let selectedType = '';
       for (const type of mimeTypes) {
         if (MediaRecorder.isTypeSupported(type)) {
@@ -56,40 +49,20 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onWorkoutProcessed
         }
       }
 
-      if (!selectedType) {
-         console.warn("No specific MIME type supported, letting browser decide.");
-         selectedType = ''; // Let browser use default
-      }
-
-      // OPTIMIZATION: Reduced bitrate to 32kbps. 
-      // This reduces token usage by ~75% compared to 128kbps, helping avoid API limits.
-      // Speech is still perfectly clear for AI at this rate.
-      const options = selectedType ? { 
-        mimeType: selectedType,
-        audioBitsPerSecond: 32000 
-      } : undefined;
-
+      const options = selectedType ? { mimeType: selectedType, audioBitsPerSecond: 32000 } : undefined;
       const mediaRecorder = new MediaRecorder(stream, options);
       
-      // Store the actual mime type being used
       mimeTypeRef.current = mediaRecorder.mimeType || selectedType || 'audio/webm';
-      console.log("Recording with MIME:", mimeTypeRef.current);
-      
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
       mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
       };
 
       mediaRecorder.onstop = async () => {
-        // Create blob with the correct mime type
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeTypeRef.current });
         await handleAudioProcessing(audioBlob);
-        
-        // Stop all tracks to release microphone
         stream.getTracks().forEach(track => track.stop());
       };
 
@@ -116,7 +89,6 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onWorkoutProcessed
       
       reader.onloadend = async () => {
         const base64data = reader.result as string;
-        // Extract raw base64 (remove data:audio/xyz;base64, prefix)
         const rawBase64 = base64data.split(',')[1];
         
         try {
@@ -125,7 +97,7 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onWorkoutProcessed
           onWorkoutProcessed(data);
         } catch (err: any) {
             console.error("AI Processing Error:", err);
-            setError(err.message || "No te he entendido bien.");
+            setError(err.message || "Error al procesar el audio.");
         } finally {
             setIsProcessing(false);
         }
@@ -140,10 +112,15 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onWorkoutProcessed
   return (
     <div className="flex flex-col items-center gap-2 relative">
       {/* Status Messages - Floating above the dock */}
-      <div className="absolute bottom-full mb-4 w-max flex flex-col items-center pointer-events-none">
+      <div className="absolute bottom-full mb-4 flex flex-col items-center pointer-events-none w-screen max-w-sm px-4 left-1/2 -translate-x-1/2">
         {error && (
-            <div className="bg-red-500/10 border border-red-500/50 text-red-500 font-mono text-xs px-3 py-2 rounded shadow-lg backdrop-blur flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 mb-2">
-            <AlertCircle className="w-4 h-4" /> {error}
+            <div className="bg-surface border border-red-500 rounded-2xl p-4 shadow-[0_10px_40px_rgba(0,0,0,0.5)] flex flex-col items-center gap-2 animate-in slide-in-from-bottom-2 fade-in zoom-in-95 mb-3 w-full max-w-[280px] text-center pointer-events-auto z-50">
+                <div className="w-10 h-10 bg-red-500/10 rounded-full flex items-center justify-center shrink-0">
+                    <AlertCircle className="w-6 h-6 text-red-500" />
+                </div>
+                <p className="text-red-500 font-bold text-xs whitespace-pre-wrap leading-relaxed">
+                    {error}
+                </p>
             </div>
         )}
 
@@ -175,18 +152,10 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onWorkoutProcessed
           isProcessing ? "opacity-50 cursor-not-allowed grayscale" : "opacity-100"
         )}
       >
-        {/* Ripple effect when recording */}
         {isRecording && (
             <span className="absolute inset-0 rounded-full border-2 border-red-500 animate-ping opacity-75"></span>
         )}
-
-        {isRecording ? (
-          <Square className="w-6 h-6 fill-current" />
-        ) : isProcessing ? (
-          <Loader2 className="w-6 h-6 animate-spin" />
-        ) : (
-          <Mic className="w-7 h-7" />
-        )}
+        {isRecording ? <Square className="w-6 h-6 fill-current" /> : isProcessing ? <Loader2 className="w-6 h-6 animate-spin" /> : <Mic className="w-7 h-7" />}
       </button>
     </div>
   );
