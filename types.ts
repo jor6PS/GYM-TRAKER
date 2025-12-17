@@ -54,36 +54,33 @@ export interface PersonalRecord {
   reps: number;
   date: string;
   estimated1RM?: number;
-  // New fields for PR tracking
-  value: number; // Generic value for sorting (weight or distance)
-  displayValue: string; // Formatted string
+  value: number; 
+  displayValue: string; 
 }
-
-// --- SOCIAL TYPES ---
 
 export type FriendshipStatus = 'pending' | 'accepted' | 'rejected';
 
 export interface Friend {
-  id: string; // The friend's user ID
+  id: string; 
   friendship_id: string;
   name: string;
   avatar_url?: string;
   status: FriendshipStatus;
-  is_sender: boolean; // Did I send the request?
-  color?: string; // UI Color assignment
+  is_sender: boolean; 
+  color?: string; 
 }
 
 export interface ComparisonRow {
   exercise: string;
   results: { userName: string; value: number; display: string }[];
   winnerName: string;
-  metric: string; // 'kg', 'km', 'mins'
+  metric: string; 
 }
 
 export interface RankingEntry {
   name: string;
   rank: number;
-  reason: string; // Short AI reason like "Highest Volume" or "Skipped Leg Day"
+  reason: string; 
 }
 
 export interface UserStatsProfile {
@@ -91,54 +88,46 @@ export interface UserStatsProfile {
     stats: {
         exercise: string;
         display: string;
-        metric: string; // 'kg', 'km', 'mins'
+        metric: string; 
         value: number;
     }[];
 }
 
 export interface Highlight {
-    title: string; // "Titan Lift"
-    value: string; // "140kg Deadlift"
-    description: string; // "Moved a small car."
-    type: 'strength' | 'consistency'; // Removed 'cardio' as highlight type preference
+    title: string;
+    value: string;
+    description: string;
+    type: 'strength' | 'consistency';
 }
 
 export interface MonthlyMaxEntry {
     exercise: string;
     value: number;
-    unit: string; // 'kg', 'lbs', 'reps'
+    unit: string; 
     isBodyweight: boolean;
 }
 
 export interface GlobalReportData {
-  // Section 1: Global Fun Facts (Volume Only)
   totalVolumeKg: number;
   volumeComparison: string; 
-  volumeType: string; // 'car' | 'animal' | 'building' | 'plane' | 'rocket' | 'mountain' | 'default'
-  globalVerdict: string; 
-
-  // Section 2: Monthly Specific Volume
+  volumeType: string;
   monthlyVolumeKg: number;
   monthlyVolumeComparison: string;
   monthlyVolumeType: string;
-
-  // Section 3: Monthly Analysis
   monthName: string;
   monthlyAnalysisText: string;
-  
-  // Section 4: Highlights & Maxes
-  highlights: Highlight[];
+  efficiencyScore: number;
   monthlyMaxes: MonthlyMaxEntry[];
 }
 
 export interface GroupAnalysisData {
-  winner: string; // From AI judgment (Alpha)
-  loser: string; // From AI judgment (Beta)
-  rankings: RankingEntry[]; // Full ordered list
-  roast: string; // From AI
-  comparison_table: ComparisonRow[]; // Calculated Locally
-  points_table: { name: string; points: number }[]; // Calculated Locally
-  volume_table: { name: string; total_volume_kg: number }[]; // Calculated Locally
-  volume_verdict: string; // New AI verdict on volume
-  individual_records: UserStatsProfile[]; // New Top 10 per user
+  winner: string; 
+  loser: string; 
+  rankings: RankingEntry[]; 
+  roast: string; 
+  comparison_table: ComparisonRow[]; 
+  points_table: { name: string; points: number }[]; 
+  volume_table: { name: string; total_volume_kg: number }[]; 
+  volume_verdict: string; 
+  individual_records: UserStatsProfile[]; 
 }
