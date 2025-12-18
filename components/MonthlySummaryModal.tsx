@@ -4,6 +4,7 @@ import { Workout, GlobalReportData, User } from '../types';
 import { generateGlobalReport } from '../services/workoutProcessor';
 import { useLanguage } from '../contexts/LanguageContext';
 import { AppLogo } from '../utils';
+import { useScrollLock } from '../hooks/useScrollLock';
 
 interface MonthlySummaryModalProps {
   isOpen: boolean;
@@ -177,12 +178,12 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
   const [error, setError] = useState<string | null>(null);
   const { t, language } = useLanguage();
 
+  useScrollLock(isOpen);
+
   useEffect(() => {
     if (isOpen) {
-      document.body.style.overflow = 'hidden';
       generateReport();
     } else {
-      document.body.style.overflow = '';
       const timer = setTimeout(() => {
           setData(null); 
           setError(null);

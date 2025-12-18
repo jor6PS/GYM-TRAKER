@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { WorkoutData, Workout, GlobalReportData, MaxComparisonEntry, GroupAnalysisData } from "../types";
 import { format, isSameMonth, subMonths, isAfter, startOfMonth } from "date-fns";
@@ -60,12 +61,25 @@ const getAIClient = (): GoogleGenAI => {
 
 const cleanJson = (text: string): string => {
   if (!text) return "{}";
+  
+  // 1. Eliminar bloques de código Markdown y espacios externos
   let clean = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+  
+  // 2. Extraer solo el objeto JSON (desde el primer { hasta el último })
   const firstOpen = clean.indexOf('{');
   const lastClose = clean.lastIndexOf('}');
   if (firstOpen !== -1 && lastClose !== -1 && lastClose > firstOpen) {
     clean = clean.substring(firstOpen, lastClose + 1);
   }
+
+  // 3. SANITIZACIÓN CRÍTICA (Fix para errores de parseo):
+  // Reemplaza saltos de línea reales dentro de la cadena por espacios para evitar rotura de strings JSON
+  clean = clean.replace(/\n/g, " ");
+  // Reemplaza tabuladores por espacios
+  clean = clean.replace(/\t/g, " ");
+  // Escapa backslashes sueltos que no sean parte de un escape válido (como \n o \")
+  clean = clean.replace(/\\(?![/\\bfnrtu"']|u[0-9a-fA-F]{4})/g, "\\\\");
+
   return clean;
 };
 
@@ -466,23 +480,29 @@ export const generateGroupAnalysis = async (
             }
         });
 
-        // --- FASE 3: GENERACIÓN IA (Prompt Experto) ---
-        const systemInstruction = `Eres un Juez de Competición de Powerlifting y Bodybuilding de clase mundial.
-        OBJETIVO: Analizar los datos procesados de un grupo de atletas y generar un informe competitivo, técnico y con un toque de "humor gym-bro".
-        
-        FORMATO DE SALIDA (JSON Puro, sin markdown blocks):
+        // --- FASE 3: GENERACIÓN IA ---
+        const systemInstruction = `Eres el Juez Supremo de una Competición de Powerlifting y Bodybuilding de Élite.
+        TU ROL: Analista de datos deportivo, despiadado, técnico y con un humor "gym-bro" inteligente.
+        OBJETIVO: Humillar la mediocridad y glorificar la fuerza basándote E STRICTAMENTE en los datos provistos.
+
+        INSTRUCCIONES DE SEGURIDAD JSON (CRÍTICO):
+        1. Tu respuesta debe ser un JSON válido (RFC 8259).
+        2. El campo "markdown_report" debe ser UNA SOLA LÍNEA de texto. Usa '\\n' para los saltos de línea visuales. NUNCA uses saltos de línea reales.
+        3. NO uses comillas dobles (") dentro del texto del reporte a menos que las escapes correctamente (\\"). Prefiere comillas simples (').
+
+        ESTRUCTURA DE SALIDA (JSON):
         {
-            "alpha_user": "Nombre del ganador general (Basado en Volumen + Constancia)",
-            "beta_user": "Nombre del que necesita espabilar",
-            "markdown_report": "Informe completo en Markdown enriquecido"
+            "alpha_user": "Nombre del ganador indiscutible (Volumen + Constancia)",
+            "beta_user": "Nombre del que necesita espabilar (Bajo rendimiento)",
+            "markdown_report": "Informe completo en Markdown enriquecido (ver contenido abajo)"
         }
 
-        REGLAS DEL MARKDOWN:
-        1. Usa emojis para dar vida (🏆, 💀, 💪).
-        2. **TABLA 1: BATALLA REAL**. Usa los datos de "Head-to-Head". Compara ejercicios comunes.
-        3. **TABLA 2: DOMINIO MUSCULAR**. Analiza los volúmenes por grupo muscular (quién es el rey del Pecho, quién de Pierna).
-        4. **TABLA 3: HALL OF FAME**. Los 3 mejores levantamientos de cada usuario.
-        5. **ROAST TÉCNICO**: Un párrafo final ácido pero constructivo criticando desequilibrios (ej: mucho pecho, poca pierna).
+        CONTENIDO DEL REPORTE (Markdown):
+        1. Usa Emojis para dar vida (🏆, 💀, 🧬, 🛡️).
+        2. **TABLA 1: BATALLA REAL (Head-to-Head)**. Usa 'head_to_head_results'. Compara quién levantó más en ejercicios comunes. Sé descriptivo (ej: 'Juan aplastó a Pedro en Banca').
+        3. **TABLA 2: ANATOMÍA DEL DOMINIO**. Usa 'muscle_focus'. ¿Quién domina qué grupo muscular? Muestra una tabla y realiza comparaciones (ej: 'Carlos es el rey del Push, pero Ana domina Legs').
+        4. **TABLA 3: HALL OF FAME**. Lista todos los levantamientos (PRs) de cada usuario ordenados por impacto.
+        5. **VEREDICTO FINAL (ROAST TÉCNICO)**: Un párrafo final ácido. Critica desequilibrios (ej: "Mucho pecho y patas de pollo"), falta de constancia o pesos bajos ("levantando pesos de calentamiento"). Sé gracioso pero técnico.
         `;
 
         // Preparamos el resumen para la IA (Solo datos digeridos para ahorrar tokens y mejorar precisión)
@@ -528,3 +548,4 @@ export const generateGroupAnalysis = async (
 
     } catch (error) { handleAIError(error); throw error; }
 };
+

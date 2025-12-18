@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { X, Swords, Crown, Skull, Sparkles, Loader2, Trophy, Flame, Medal, Scale, Dumbbell, Activity, TrendingUp, AlertTriangle, BicepsFlexed, Zap } from 'lucide-react';
+import { X, Swords, Crown, Sparkles, Loader2, Trophy, Flame, Medal, Scale, Dumbbell, Activity, Zap, AlertTriangle, BicepsFlexed, FileText, Target } from 'lucide-react';
 import { generateGroupAnalysis } from '../services/workoutProcessor';
 import { Workout, User } from '../types';
 import { clsx } from 'clsx';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useScrollLock } from '../hooks/useScrollLock';
 
 interface ArenaModalProps {
   isOpen: boolean;
@@ -12,17 +13,121 @@ interface ArenaModalProps {
   friendsData: { userId: string; name: string; workouts: Workout[]; color: string }[];
 }
 
+// --- RENDERIZADOR DE TEXTO (CORREGIDO) ---
+const DossierRenderer = ({ text }: { text: string }) => {
+  if (!text) return null;
+  
+  // Normalización agresiva de saltos de línea
+  let normalizedText = text.replace(/\\n/g, '\n').replace(/\\n/g, '\n');
+  const lines = normalizedText.split('\n').map(l => l.trim());
+  
+  const elements: React.ReactNode[] = [];
+  
+  // Función para procesar negritas dentro de una línea
+  const renderFormattedText = (content: string) => {
+    // Regex para capturar **texto**
+    const parts = content.split(/(\*\*.*?\*\*)/g);
+    return (
+      <>{parts.map((part, i) => {
+          if (part.startsWith('**') && part.endsWith('**')) {
+            const boldText = part.slice(2, -2).trim();
+            // Renderizamos con un color blanco brillante y sombra
+            return <strong key={i} className="text-white font-bold drop-shadow-sm">{boldText}</strong>;
+          }
+          return part;
+        })}</>
+    );
+  };
+
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    
+    if (!line) { i++; continue; }
+
+    // 1. TABLAS (Detecta formato Markdown)
+    if (line.startsWith('|')) {
+      const tableRows: string[][] = [];
+      while (i < lines.length && lines[i].startsWith('|')) {
+        const rowContent = lines[i];
+        // Ignorar separadores tipo |---| o | :--- |
+        if (!/^\|[\s-:|]+\|$/.test(rowContent)) { 
+            const cells = rowContent.split('|').filter((_, idx, arr) => idx > 0 && idx < arr.length - 1).map(c => c.trim());
+            tableRows.push(cells);
+        }
+        i++;
+      }
+      if (tableRows.length > 0) {
+        elements.push(
+          <div key={`table-${i}`} className="my-4 overflow-hidden rounded-xl border border-white/10 bg-black/40 shadow-lg">
+            <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs whitespace-nowrap">
+                <thead>
+                    <tr className="bg-white/5 border-b border-white/10">
+                    {tableRows[0].map((cell, idx) => (
+                        <th key={idx} className="px-4 py-3 font-black text-primary uppercase tracking-widest bg-zinc-900/50 text-[10px]">{cell}</th>
+                    ))}
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                    {tableRows.slice(1).map((row, rowIdx) => (
+                    <tr key={rowIdx} className="hover:bg-white/5 transition-colors">
+                        {row.map((cell, cellIdx) => (
+                        <td key={cellIdx} className="px-4 py-2 font-mono text-zinc-300 border-r border-white/5 last:border-0 text-[11px]">
+                            {renderFormattedText(cell)}
+                        </td>
+                        ))}
+                    </tr>
+                    ))}
+                </tbody>
+                </table>
+            </div>
+          </div>
+        );
+      }
+      continue;
+    }
+
+    // 2. TÍTULOS (## o ###) -> CORRECCIÓN DE ASTERISCOS AQUÍ
+    if (line.startsWith('#')) {
+      // 1. Quitar las almohadillas
+      let cleanTitle = line.replace(/^#+\s*/, '').trim();
+      
+      // 2. CORRECCIÓN: Si el título entero está envuelto en **, quitarlos
+      // (Porque el h4 ya aplica negrita, no necesitamos los asteriscos visibles)
+      cleanTitle = cleanTitle.replace(/^\*\*(.*)\*\*$/, '$1'); 
+      cleanTitle = cleanTitle.replace(/^__(.*)__$/, '$1');
+
+      elements.push(
+        <div key={i} className="flex items-center gap-3 pt-6 border-b border-white/10 pb-2 mb-3 mt-4">
+           <Target className="w-4 h-4 text-primary" />
+           {/* Pasamos por renderFormattedText por si queda alguna negrita parcial dentro */}
+           <h4 className="text-sm font-black uppercase tracking-[0.2em] text-white italic">{renderFormattedText(cleanTitle)}</h4>
+        </div>
+      );
+      i++; continue;
+    }
+
+    // 3. TEXTO NORMAL
+    if (line.length > 0) {
+        elements.push(
+            <div key={i} className="mb-2 text-xs text-zinc-400 leading-relaxed font-mono">
+                {renderFormattedText(line)}
+            </div>
+        );
+    }
+    i++;
+  }
+  return <div className="space-y-1">{elements}</div>;
+};
+
 export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, currentUser, friendsData }) => {
   const [analysis, setAnalysis] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { t, language } = useLanguage();
 
-  useEffect(() => {
-    if (isOpen) document.body.style.overflow = 'hidden';
-    else document.body.style.overflow = '';
-    return () => { document.body.style.overflow = ''; };
-  }, [isOpen]);
+  useScrollLock(isOpen);
 
   useEffect(() => {
     if (error) {
@@ -42,26 +147,23 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
             workouts: f.workouts
         }));
 
-        // 1. Llamada al Backend Nuevo
         const rawResult: any = await generateGroupAnalysis(usersPayload, language);
 
-        // 2. Lógica de Adaptación para Visualización
+        // --- ADAPTER LOGIC ---
         const maxVol = Math.max(...rawResult.rawStats.map((s: any) => s.totalVolume));
         const maxDays = Math.max(...rawResult.rawStats.map((s: any) => s.workoutCount));
         
-        // Calcular Puntuaciones y detectar Músculo Dominante
         const scoredUsers = rawResult.rawStats.map((s: any) => {
-            const volScore = maxVol > 0 ? (s.totalVolume / maxVol) * 60 : 0; // 60% peso volumen
-            const dayScore = maxDays > 0 ? (s.workoutCount / maxDays) * 40 : 0; // 40% peso constancia
+            const volScore = maxVol > 0 ? (s.totalVolume / maxVol) * 60 : 0;
+            const dayScore = maxDays > 0 ? (s.workoutCount / maxDays) * 40 : 0;
             
-            // Encontrar el grupo muscular con mayor volumen
             let topMuscle = "General";
             let maxMuscleVol = 0;
             if (s.muscleVol) {
                 Object.entries(s.muscleVol).forEach(([m, v]: [string, any]) => {
                     if (v > maxMuscleVol) {
                         maxMuscleVol = v;
-                        topMuscle = m.split(' ')[0]; // Tomar solo la primera palabra (PUSH, LEGS...)
+                        topMuscle = m.split(' ')[0];
                     }
                 });
             }
@@ -73,7 +175,6 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
             };
         }).sort((a: any, b: any) => b.score - a.score);
 
-        // Construir Ranking
         const rankings = scoredUsers.map((u: any, index: number) => ({
             rank: index + 1,
             name: u.name,
@@ -82,10 +183,40 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
             topMuscle: u.topMuscleName
         }));
 
+        // --- LÓGICA DE LIMPIEZA DE REPORTE ---
+        const fullReport = rawResult.markdown_report || "";
+        
+        let roastText = "Análisis completado.";
+        if (fullReport.toUpperCase().includes('ROAST TÉCNICO')) {
+            roastText = fullReport.split(/ROAST TÉCNICO/i)[1]?.replace(/^[:*#\s]+/, '').trim() || roastText;
+        } else if (fullReport.toUpperCase().includes('VEREDICTO')) {
+             roastText = fullReport.split(/VEREDICTO/i)[1]?.replace(/^[:*#\s]+/, '').trim() || roastText;
+        }
+
+        const cutOffMarkers = ["TABLA 3", "HALL OF FAME", "ROAST TÉCNICO", "VEREDICTO FINAL"];
+        let reportBody = fullReport;
+        
+        let earliestIndex = -1;
+        for (const marker of cutOffMarkers) {
+            const idx = reportBody.toUpperCase().indexOf(marker);
+            if (idx !== -1) {
+                if (earliestIndex === -1 || idx < earliestIndex) {
+                    earliestIndex = idx;
+                }
+            }
+        }
+
+        if (earliestIndex !== -1) {
+            reportBody = reportBody.substring(0, earliestIndex).trim();
+        }
+        
+        reportBody = reportBody.replace(/[#*]+\s*$/, '').trim();
+
         const processedData = {
             winner: rawResult.alpha_user || rankings[0].name,
             loser: rawResult.beta_user || rankings[rankings.length - 1].name,
             rankings: rankings,
+            markdown_body: reportBody, 
             
             volume_table: rawResult.rawStats
                 .sort((a: any, b: any) => b.totalVolume - a.totalVolume)
@@ -100,8 +231,7 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                 winnerName: h.winner,
                 results: h.entries.map((e: any) => ({
                     userName: e.userName,
-                    // Formatear display bonito
-                    display: e.weight > 0 ? `${e.weight}kg` : `${e.reps} reps`,
+                    display: e.weight > 0 ? `${e.weight}${e.unit || 'kg'}` : `${e.reps} reps`,
                     subDisplay: e.weight > 0 ? `x${e.reps}` : '',
                     isWinner: e.userName === h.winner
                 }))
@@ -112,15 +242,22 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                 return {
                     name: s.name,
                     topMuscle: userData?.topMuscleName || 'FLEX',
-                    stats: Object.entries(s.maxLifts).slice(0, 4).map(([k, v]: [string, any]) => ({
-                        exercise: k,
-                        display: v.weight > 0 ? `${v.weight}${v.unit === 'lbs' ? 'lbs' : 'kg'}` : `${v.reps} reps`,
-                        metric: v.weight > 0 ? 'load' : 'reps'
-                    }))
+                    stats: Object.entries(s.maxLifts)
+                        .sort(([, a]: any, [, b]: any) => {
+                             const wA = a.isBodyweight ? 0 : a.weight;
+                             const wB = b.isBodyweight ? 0 : b.weight;
+                             return wB - wA;
+                        })
+                        .slice(0, 4)
+                        .map(([k, v]: [string, any]) => ({
+                            exercise: k,
+                            display: v.weight > 0 ? `${v.weight}${v.unit === 'lbs' ? 'lbs' : 'kg'}` : `${v.reps} reps`,
+                            metric: v.weight > 0 ? 'load' : 'reps'
+                        }))
                 };
             }),
 
-            roast: rawResult.markdown_report.split('ROAST TÉCNICO')[1]?.replace(/[:*#]/g, '').trim() || "Análisis completado."
+            roast: roastText
         };
 
         setAnalysis(processedData);
@@ -261,6 +398,17 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                             )}
                         </div>
                     )}
+
+                    {/* --- AI TACTICAL REPORT (Solo Intro + Tabla 1 + Tabla 2) --- */}
+                    {analysis.markdown_body && (
+                        <div className="bg-zinc-900/30 border border-white/5 rounded-3xl p-6 relative overflow-hidden backdrop-blur-sm">
+                            <div className="flex items-center gap-2 mb-4 border-b border-white/5 pb-2">
+                                <FileText className="w-4 h-4 text-primary" />
+                                <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Tactical Analysis</h3>
+                            </div>
+                            <DossierRenderer text={analysis.markdown_body} />
+                        </div>
+                    )}
                     
                     {/* 2. VOLUME GRAPH */}
                     <div className="bg-zinc-900/30 border border-white/5 rounded-3xl p-6 relative overflow-hidden backdrop-blur-sm">
@@ -369,7 +517,7 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                                                         <div className="text-[9px] text-zinc-500 truncate mb-1 uppercase tracking-wide">{stat.exercise}</div>
                                                         <div className="text-xs font-mono font-bold text-white tracking-tight flex items-baseline gap-1">
                                                             {stat.display} 
-                                                            {stat.metric === 'reps' && <span className="text-[9px] text-zinc-600 font-normal">reps</span>}
+                                                            {stat.metric === 'reps' ? '' : <span className="text-[9px] text-zinc-500 font-normal">{stat.subDisplay}</span>}
                                                         </div>
                                                     </div>
                                                 ))}
