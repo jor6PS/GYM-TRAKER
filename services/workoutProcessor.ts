@@ -6,7 +6,7 @@ import { es, enUS } from 'date-fns/locale';
 import { getCanonicalId, getLocalizedName } from "../utils";
 import { EXERCISE_DB } from "../data/exerciseDb";
 
-const MODEL_NAME = 'gemini-3-pro-preview'; 
+const MODEL_NAME = 'gemini-2.5-flash'; 
 
 const getAIClient = () => {
   const userKey = localStorage.getItem('USER_GEMINI_API_KEY');
@@ -168,7 +168,7 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
   try {
     const ai = getAIClient();
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: MODEL_NAME,
       contents: { parts: [{ inlineData: { mimeType, data: audioBase64 } }, { text: "Transcribe audio to structured JSON workout data." }] },
       config: { responseMimeType: "application/json", temperature: 0.1 }
     });
@@ -180,7 +180,7 @@ export const processWorkoutText = async (text: string): Promise<WorkoutData> => 
   try {
     const ai = getAIClient();
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: MODEL_NAME,
       contents: { parts: [{ text: `Parse text to structured JSON workout data: "${text}"` }] },
       config: { responseMimeType: "application/json", temperature: 0.1 }
     });
