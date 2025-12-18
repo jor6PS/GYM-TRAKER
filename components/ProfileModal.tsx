@@ -1,30 +1,27 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   X, 
   Camera, 
   User, 
-  Mail, 
-  Calendar, 
-  Shield, 
-  ShieldCheck,
   Save, 
   Loader2, 
   LogOut, 
-  Check,
+  Scale,
+  Ruler,
   Lock,
-  Trophy,
-  Flame,
-  Star,
-  Dumbbell,
+  ShieldCheck,
   Key,
-  ExternalLink
+  ExternalLink,
+  Zap,
+  CheckCircle2,
+  AlertCircle,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { User as UserType, Workout } from '../types';
-import { uploadAvatar, updateUserProfile, updateUserPassword, supabase } from '../services/supabase';
-import { format } from 'date-fns';
+import { uploadAvatar, updateUserProfile, updateUserPassword } from '../services/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
-import { EXERCISE_DB } from '../data/exerciseDb';
-import { getCanonicalId } from '../utils';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -39,426 +36,176 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   isOpen, 
   onClose, 
   user, 
-  workouts,
   onUpdateUser,
   onLogout
 }) => {
   const [name, setName] = useState(user.name);
+  const [weight, setWeight] = useState(user.weight || 80);
+  const [height, setHeight] = useState(user.height || 180);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  
-  // API Key State
-  const [userApiKey, setUserApiKey] = useState('');
-
+  const [apiKey, setApiKey] = useState(localStorage.getItem('USER_GEMINI_API_KEY') || '');
+  const [showApiKey, setShowApiKey] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { t } = useLanguage();
 
-  // Load existing key from localStorage
   useEffect(() => {
     if (isOpen) {
-        const storedKey = localStorage.getItem('USER_GEMINI_KEY');
-        if (storedKey) setUserApiKey(storedKey);
+        setName(user.name);
+        setWeight(user.weight || 80);
+        setHeight(user.height || 180);
+        setApiKey(localStorage.getItem('USER_GEMINI_API_KEY') || '');
     }
-  }, [isOpen]);
-
-  // Scroll Lock Effect
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [isOpen]);
-
-  // Calculate Stats based on Unique Days
-  const stats = useMemo(() => {
-    // Get unique dates (Set removes duplicates)
-    const uniqueDates = Array.from(new Set(workouts.map(w => w.date)));
-    
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth(); // 0-indexed
-
-    let total = uniqueDates.length; // THIS IS THE "POINTS" / XP
-    let year = 0;
-    let month = 0;
-
-    uniqueDates.forEach((dateStr) => {
-        // Assume dateStr is YYYY-MM-DD
-        const [y, m, d] = (dateStr as string).split('-').map(Number);
-        
-        if (y === currentYear) {
-            year++;
-            // Note: m from split is 1-12, currentMonth is 0-11
-            if (m - 1 === currentMonth) {
-                month++;
-            }
-        }
-    });
-
-    return { total, year, month };
-  }, [workouts]);
-
-  // Calculate Aggregated Totals (Volume Only)
-  const grandTotalVolume = useMemo(() => {
-    let volumeKg = 0;
-
-    workouts.forEach(w => {
-        w.structured_data.exercises.forEach(ex => {
-            // Determine type strictly
-            const id = getCanonicalId(ex.name);
-            const def = EXERCISE_DB.find(d => d.id === id);
-            const type = def?.type || 'strength'; 
-
-            ex.sets.forEach(s => {
-                // 1. Strength Volume (Weight * Reps)
-                // STRICT CHECK: Must be strength type AND have valid weight/reps AND unit must not be distance/time based
-                if (type === 'strength' && s.weight && s.reps && (s.unit === 'kg' || s.unit === 'lbs')) {
-                     let weight = s.weight;
-                     if (s.unit === 'lbs') {
-                         weight = weight * 0.453592;
-                     }
-                     volumeKg += (weight * s.reps);
-                }
-            });
-        });
-    });
-
-    return Math.round(volumeKg).toLocaleString('en-US') + " kg";
-  }, [workouts]);
-
-  if (!isOpen) return null;
-
-  const handleAvatarClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (!event.target.files || event.target.files.length === 0) {
-      return;
-    }
-    setIsUploading(true);
-    setMessage(null);
-    try {
-      const file = event.target.files[0];
-      const publicUrl = await uploadAvatar(file, user.id);
-      
-      if (publicUrl) {
-        await updateUserProfile(user.id, { avatar_url: publicUrl });
-        onUpdateUser({ avatar_url: publicUrl });
-        setMessage({ type: 'success', text: 'Profile picture updated!' });
-      } else {
-        throw new Error("Upload failed");
-      }
-    } catch (error) {
-      console.error(error);
-      setMessage({ type: 'error', text: 'Failed to upload image.' });
-    } finally {
-      setIsUploading(false);
-    }
-  };
+  }, [isOpen, user]);
 
   const handleSaveProfile = async () => {
     setIsSaving(true);
     setMessage(null);
     try {
-      // 1. Save API Key locally
-      const trimmedKey = userApiKey.trim().replace(/\s/g, ''); // Remove spaces
-      if (trimmedKey) {
-          localStorage.setItem('USER_GEMINI_KEY', trimmedKey);
+      // Guardar clave API localmente
+      if (apiKey.trim()) {
+        localStorage.setItem('USER_GEMINI_API_KEY', apiKey.trim());
       } else {
-          localStorage.removeItem('USER_GEMINI_KEY');
+        localStorage.removeItem('USER_GEMINI_API_KEY');
       }
 
-      // 2. Update Name if changed
-      if (name !== user.name) {
-        const cleanName = name.trim();
-        if (cleanName.length < 3) throw new Error("Username too short.");
+      const updates: any = {};
+      if (name !== user.name) updates.name = name.trim();
+      if (weight !== user.weight) updates.weight = Number(weight);
+      if (height !== user.height) updates.height = Number(height);
 
-        // Check Uniqueness
-        const { data: conflict } = await supabase
-            .from('profiles')
-            .select('id')
-            .ilike('name', cleanName)
-            .neq('id', user.id) // Exclude current user
-            .maybeSingle();
-        
-        if (conflict) {
-            throw new Error(t('username_taken'));
-        }
-
-        await updateUserProfile(user.id, { name: cleanName });
-        onUpdateUser({ name: cleanName });
+      if (Object.keys(updates).length > 0) {
+        await updateUserProfile(user.id, updates);
+        onUpdateUser(updates);
       }
 
-      // 3. Update Password if provided
       if (password) {
-        if (password !== confirmPassword) {
-            throw new Error("Passwords do not match.");
-        }
-        if (password.length < 6) {
-            throw new Error("Password must be at least 6 characters.");
-        }
+        if (password !== confirmPassword) throw new Error("Las contraseñas no coinciden.");
+        if (password.length < 6) throw new Error("Mínimo 6 caracteres.");
         await updateUserPassword(password);
-        setPassword('');        // Clear after save
-        setConfirmPassword(''); // Clear confirm field
+        setPassword('');
+        setConfirmPassword('');
       }
-
-      setMessage({ type: 'success', text: 'Profile updated successfully.' });
       
-      // Auto close after success if only name changed or password updated
-      if (!password) {
-          setTimeout(() => {
-              setMessage(null);
-          }, 3000);
-      }
+      setMessage({ type: 'success', text: '¡Perfil y Nexo actualizados!' });
+      setTimeout(() => setMessage(null), 3000);
     } catch (error: any) {
-      setMessage({ type: 'error', text: error.message || 'Failed to update profile.' });
+      setMessage({ type: 'error', text: error.message || 'Error al guardar.' });
     } finally {
       setIsSaving(false);
     }
   };
 
+  if (!isOpen) return null;
+
+  const hasApiKey = apiKey.trim().length > 0;
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <div 
-        className="absolute inset-0 bg-black/90 backdrop-blur-md transition-opacity"
-        onClick={onClose}
-      />
-
-      <div className="relative w-full max-w-md bg-surface border border-white/10 rounded-2xl shadow-[0_0_40px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-300">
-        
-        {/* Header Decoration */}
-        <div className="h-32 bg-gradient-to-br from-primary/20 via-black to-black relative">
-            <div className="absolute top-4 right-4 z-10">
-                <button onClick={onClose} className="p-2 bg-black/50 hover:bg-white/10 rounded-full text-white transition-colors backdrop-blur-sm">
-                    <X className="w-5 h-5" />
-                </button>
-            </div>
-            <div className="absolute inset-0 bg-[radial-gradient(#FACC15_1px,transparent_1px)] [background-size:16px_16px] opacity-10"></div>
+      <div className="absolute inset-0 bg-black/95 backdrop-blur-md" onClick={onClose} />
+      <div className="relative w-full max-w-md bg-surface border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-300">
+        <div className="h-24 bg-gradient-to-br from-primary/20 via-black to-black relative">
+            <button onClick={onClose} className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-white/10 rounded-full text-white backdrop-blur-sm z-10"><X className="w-5 h-5" /></button>
         </div>
-
-        {/* Profile Content */}
-        <div className="px-6 pb-6 -mt-16 flex-1 overflow-y-auto custom-scrollbar">
-            
-            {/* Avatar Section */}
+        
+        <div className="px-6 pb-6 -mt-12 flex-1 overflow-y-auto custom-scrollbar">
             <div className="flex flex-col items-center mb-6">
-                <div className="relative group cursor-pointer" onClick={handleAvatarClick}>
-                    <div className="w-32 h-32 rounded-full border-4 border-black bg-zinc-900 shadow-xl overflow-hidden relative">
-                        {user.avatar_url ? (
-                            <img src={user.avatar_url} alt="Profile" className="w-full h-full object-cover" />
-                        ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-zinc-800 text-zinc-500">
-                                <User className="w-12 h-12" />
-                            </div>
-                        )}
+                <div className="w-24 h-24 rounded-full border-4 border-black bg-zinc-900 shadow-xl overflow-hidden relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+                    {user.avatar_url ? <img src={user.avatar_url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-zinc-500"><User className="w-10 h-10" /></div>}
+                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Camera className="w-6 h-6 text-white" /></div>
+                    {isUploading && <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-10"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>}
+                </div>
+                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={async (e) => {
+                    if (!e.target.files?.[0]) return;
+                    setIsUploading(true);
+                    const url = await uploadAvatar(e.target.files[0], user.id);
+                    if (url) { onUpdateUser({ avatar_url: url }); }
+                    setIsUploading(false);
+                }} />
+                <h2 className="mt-3 text-xl font-bold text-white tracking-tight uppercase italic">{user.name}</h2>
+            </div>
+
+            <div className="space-y-8">
+                {/* SECCIÓN API KEY - NEXO DE INTELIGENCIA */}
+                <div className="bg-zinc-900/80 border border-primary/20 rounded-2xl p-5 relative overflow-hidden group shadow-glow">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                            <Zap className="w-3 h-3 text-primary" /> Nexo de Inteligencia
+                        </div>
+                        <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${hasApiKey ? 'bg-green-500/10 border-green-500/30 text-green-500' : 'bg-red-500/10 border-red-500/30 text-red-500 animate-pulse'}`}>
+                            <div className={`w-1.5 h-1.5 rounded-full ${hasApiKey ? 'bg-green-500 shadow-[0_0_8px_green]' : 'bg-red-500 shadow-[0_0_8px_red]'}`}></div>
+                            <span className="text-[8px] font-black uppercase tracking-wider">{hasApiKey ? 'VINCULADO' : 'DESCONECTADO'}</span>
+                        </div>
+                    </div>
+
+                    <p className="text-[11px] text-zinc-400 mb-4 italic leading-relaxed">
+                        Pega tu clave personal para activar la Voz, la Arena y los Reportes Mensuales.
+                    </p>
+
+                    <div className="space-y-4">
+                        <div className="relative group/input">
+                            <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 group-focus-within/input:text-primary transition-colors" />
+                            <input 
+                                type={showApiKey ? "text" : "password"} 
+                                value={apiKey} 
+                                onChange={(e) => setApiKey(e.target.value)} 
+                                placeholder="Pega tu Gemini API Key..." 
+                                className="w-full bg-black border border-white/10 rounded-xl py-3 pl-10 pr-10 text-xs text-white focus:border-primary/50 font-mono shadow-inner" 
+                            />
+                            <button 
+                                type="button" 
+                                onClick={() => setShowApiKey(!showApiKey)}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"
+                            >
+                                {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                        </div>
                         
-                        {/* Hover Overlay */}
-                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Camera className="w-8 h-8 text-white" />
-                        </div>
-
-                        {isUploading && (
-                            <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-10">
-                                <Loader2 className="w-8 h-8 text-primary animate-spin" />
-                            </div>
-                        )}
-                    </div>
-                    <div className="absolute bottom-1 right-1 bg-primary text-black p-2 rounded-full border-4 border-black shadow-lg">
-                        <Camera className="w-4 h-4" />
-                    </div>
-                </div>
-                <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    className="hidden" 
-                    accept="image/*"
-                    onChange={handleFileChange}
-                />
-                
-                <h2 className="mt-3 text-xl font-bold text-white tracking-wide">{user.name}</h2>
-                <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs font-mono text-zinc-400 bg-white/5 px-2 py-0.5 rounded border border-white/5">
-                        {user.role === 'admin' ? t('admin') : t('member')}
-                    </span>
-                    <span className="text-xs font-mono text-zinc-500">
-                        {t('joined')} {format(new Date(user.created_at), 'MMM yyyy')}
-                    </span>
-                </div>
-                
-                {/* Level / Points Badge */}
-                <div className="mt-4 flex items-center gap-2 bg-gradient-to-r from-yellow-500/10 to-orange-500/10 px-4 py-1.5 rounded-full border border-yellow-500/20">
-                     <Star className="w-4 h-4 text-yellow-500 fill-current" />
-                     <span className="text-sm font-bold text-yellow-500">{stats.total} Points (XP)</span>
-                </div>
-            </div>
-
-            {/* Session Stats Cards */}
-            <div className="grid grid-cols-3 gap-2 mb-4">
-                <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-3 flex flex-col items-center justify-center text-center">
-                    <div className="text-zinc-500 text-[9px] uppercase font-mono tracking-widest mb-1">{t('stats_month')}</div>
-                    <div className="flex items-center gap-1.5 text-primary font-bold text-xl">
-                        <Flame className="w-4 h-4" />
-                        {stats.month}
-                    </div>
-                </div>
-                <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-3 flex flex-col items-center justify-center text-center">
-                    <div className="text-zinc-500 text-[9px] uppercase font-mono tracking-widest mb-1">{t('stats_year')}</div>
-                    <div className="flex items-center gap-1.5 text-blue-400 font-bold text-xl">
-                        <Calendar className="w-4 h-4" />
-                        {stats.year}
-                    </div>
-                </div>
-                <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-3 flex flex-col items-center justify-center text-center">
-                    <div className="text-zinc-500 text-[9px] uppercase font-mono tracking-widest mb-1">{t('stats_total')}</div>
-                    <div className="flex items-center gap-1.5 text-white font-bold text-xl">
-                        <Trophy className="w-4 h-4 text-yellow-500" />
-                        {stats.total}
-                    </div>
-                </div>
-            </div>
-
-            {/* LIFETIME TOTALS */}
-            <div className="mb-6 bg-black/40 border border-white/10 rounded-xl p-4">
-                <h3 className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mb-3 border-b border-white/5 pb-2">
-                    {t('lifetime_aggregates')}
-                </h3>
-                <div className="w-full">
-                    <div className="flex flex-col bg-zinc-900/30 p-3 rounded-lg border border-white/5 items-center text-center">
-                        <div className="flex items-center gap-2 text-zinc-400 text-xs mb-2 uppercase tracking-wider">
-                            <Dumbbell className="w-4 h-4 text-primary" /> {t('total_load')}
-                        </div>
-                        <div className="text-white font-black text-2xl font-mono tracking-tight text-shadow-glow">
-                            {grandTotalVolume}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Form Section */}
-            <div className="space-y-4">
-                
-                {/* Email (Read Only) */}
-                <div className="space-y-1">
-                    <label className="text-xs font-mono text-zinc-400 uppercase ml-1">{t('email')}</label>
-                    <div className="flex items-center gap-3 bg-black/40 border border-white/10 rounded-xl p-3 text-zinc-400 cursor-not-allowed">
-                        <Mail className="w-5 h-5 text-zinc-500" />
-                        <span className="text-sm truncate flex-1">{user.email}</span>
-                        <Lock className="w-3.5 h-3.5 text-zinc-600" />
-                    </div>
-                </div>
-
-                {/* Name */}
-                <div className="space-y-1">
-                    <label className="text-xs font-mono text-zinc-400 uppercase ml-1">{t('display_name')}</label>
-                    <div className="relative group">
-                        <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500 group-focus-within:text-primary transition-colors" />
-                        <input 
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            className="w-full bg-black border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-primary/50 focus:bg-zinc-900/50 transition-all"
-                            placeholder="Your Name"
-                        />
-                    </div>
-                </div>
-                
-                {/* API KEY SECTION */}
-                <div className="space-y-1 pt-2">
-                    <div className="flex justify-between items-center">
-                        <label className="text-xs font-mono text-primary uppercase ml-1 font-bold">{t('api_key_label')}</label>
                         <a 
                             href="https://aistudio.google.com/app/apikey" 
                             target="_blank" 
                             rel="noopener noreferrer"
-                            className="text-[10px] text-zinc-500 hover:text-white flex items-center gap-1 transition-colors"
+                            className="w-full bg-zinc-800 border border-white/5 hover:bg-zinc-700 text-white font-bold py-3 rounded-xl text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
                         >
-                            {t('get_api_key')} <ExternalLink className="w-3 h-3" />
+                            1. Obtener mi API Key <ExternalLink className="w-3 h-3" />
                         </a>
                     </div>
-                    <div className="relative group">
-                        <Key className={`absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors ${userApiKey ? 'text-primary' : 'text-zinc-500'}`} />
-                        <input 
-                            type="password"
-                            value={userApiKey}
-                            onChange={(e) => setUserApiKey(e.target.value)}
-                            className={`w-full bg-black border rounded-xl py-3 pl-10 pr-4 text-sm text-white font-mono placeholder:text-zinc-700 focus:outline-none focus:bg-zinc-900/50 transition-all ${userApiKey ? 'border-primary/50' : 'border-white/10'}`}
-                            placeholder={t('api_key_placeholder')}
-                        />
-                    </div>
-                    <p className="text-[10px] text-zinc-500 ml-1">{t('api_key_help')}</p>
                 </div>
 
-                {/* Password Change */}
-                <div className="pt-2 border-t border-white/5 mt-2">
-                    <div className="space-y-4">
+                <div className="space-y-4">
+                    <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-2"><Scale className="w-3 h-3" /> Biometría</div>
+                    <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1">
-                            <label className="text-xs font-mono text-zinc-400 uppercase ml-1">{t('new_password')}</label>
-                            <div className="relative group">
-                                <Shield className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500 group-focus-within:text-primary transition-colors" />
-                                <input 
-                                    type="password"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full bg-black border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-primary/50 focus:bg-zinc-900/50 transition-all"
-                                    placeholder="••••••••"
-                                />
-                            </div>
+                            <label className="text-[10px] text-zinc-500 uppercase ml-1">Peso (kg)</label>
+                            <input type="number" value={weight} onChange={(e) => setWeight(Number(e.target.value))} className="w-full bg-black border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:border-primary/50" />
                         </div>
-
-                        {/* Confirm Password - Only shown if user starts typing a password */}
-                        <div className={`space-y-1 transition-all duration-300 ${password ? 'opacity-100 max-h-20' : 'opacity-50 max-h-20 grayscale'}`}>
-                            <label className="text-xs font-mono text-zinc-400 uppercase ml-1">{t('confirm_password')}</label>
-                            <div className="relative group">
-                                <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500 group-focus-within:text-primary transition-colors" />
-                                <input 
-                                    type="password"
-                                    value={confirmPassword}
-                                    onChange={(e) => setConfirmPassword(e.target.value)}
-                                    disabled={!password}
-                                    className="w-full bg-black border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-primary/50 focus:bg-zinc-900/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                    placeholder={t('confirm_password')}
-                                />
-                            </div>
+                        <div className="space-y-1">
+                            <label className="text-[10px] text-zinc-500 uppercase ml-1">Altura (cm)</label>
+                            <input type="number" value={height} onChange={(e) => setHeight(Number(e.target.value))} className="w-full bg-black border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:border-primary/50" />
                         </div>
                     </div>
                 </div>
 
-                {/* Feedback Message */}
-                {message && (
-                    <div className={`p-3 rounded-lg text-xs font-mono flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 ${
-                        message.type === 'success' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
-                    }`}>
-                        {message.type === 'success' ? <Check className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
-                        {message.text}
+                <div className="space-y-4">
+                    <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-2"><Lock className="w-3 h-3" /> Seguridad</div>
+                    <div className="space-y-3">
+                        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Nueva Contraseña" className="w-full bg-black border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:border-primary/50" />
+                        <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirmar Contraseña" className="w-full bg-black border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:border-primary/50" />
                     </div>
-                )}
+                </div>
 
-                {/* Action Buttons */}
-                <div className="pt-4 flex flex-col gap-3">
-                    <button 
-                        onClick={handleSaveProfile}
-                        disabled={isSaving}
-                        className="w-full bg-primary hover:bg-primaryHover text-black font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-glow active:scale-95"
-                    >
+                {message && <div className={`p-4 rounded-xl text-[10px] font-black text-center border animate-in slide-in-from-top-2 ${message.type === 'success' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>{message.text.toUpperCase()}</div>}
+
+                <div className="flex flex-col gap-3 pt-4">
+                    <button onClick={handleSaveProfile} disabled={isSaving} className="w-full bg-primary hover:bg-primaryHover text-black font-black py-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 shadow-glow">
                         {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                        {t('save_changes')}
+                        ACTUALIZAR PERFIL
                     </button>
-
-                    <button 
-                        onClick={onLogout}
-                        className="w-full bg-zinc-900 hover:bg-red-900/20 border border-white/5 hover:border-red-500/30 text-zinc-400 hover:text-red-500 py-3 rounded-xl flex items-center justify-center gap-2 transition-all text-sm font-bold"
-                    >
-                        <LogOut className="w-4 h-4" /> {t('sign_out')}
-                    </button>
+                    <button onClick={onLogout} className="w-full bg-zinc-900 text-zinc-500 py-3 rounded-xl text-[10px] font-black uppercase hover:text-red-500 transition-colors flex items-center justify-center gap-2 tracking-[0.2em]"><LogOut className="w-4 h-4" /> CERRAR SESIÓN</button>
                 </div>
-
             </div>
         </div>
       </div>

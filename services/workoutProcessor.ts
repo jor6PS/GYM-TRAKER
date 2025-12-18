@@ -1,20 +1,19 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { WorkoutData, Workout, User, GroupAnalysisData, ComparisonRow, UserStatsProfile, Highlight, GlobalReportData, MonthlyMaxEntry } from "../types";
-import { format, isSameMonth, addMonths } from "date-fns";
+import { WorkoutData, Workout, User, GlobalReportData, MaxComparisonEntry, GroupAnalysisData } from "../types";
+import { format, isSameMonth, subMonths, isAfter } from "date-fns";
 import { es, enUS } from 'date-fns/locale';
 import { getCanonicalId, getLocalizedName } from "../utils";
 import { EXERCISE_DB } from "../data/exerciseDb";
 
-const MODEL_NAME = 'gemini-2.5-flash'; 
+const MODEL_NAME = 'gemini-3-pro-preview'; 
 
 const getAIClient = () => {
-  const userKey = typeof window !== 'undefined' ? localStorage.getItem('USER_GEMINI_KEY') : null;
-  if (!userKey || userKey.trim().length === 0) {
-     throw new Error("MISSING_USER_KEY");
+  const userKey = localStorage.getItem('USER_GEMINI_API_KEY');
+  if (!userKey || userKey.trim() === "" || userKey === "undefined") {
+    throw new Error("NEXO DESCONECTADO: Para activar la inteligencia (Voz, Arena o Crónicas), debes configurar tu Gemini API Key personal en el Perfil.");
   }
-  const apiKey = userKey.replace(/["']/g, '').trim();
-  return new GoogleGenAI({ apiKey });
+  return new GoogleGenAI({ apiKey: userKey.trim() });
 };
 
 const cleanJson = (text: string): string => {
@@ -30,22 +29,150 @@ const cleanJson = (text: string): string => {
 
 const handleAIError = (error: any) => {
     console.error("AI Error:", error);
-    const msg = (error.message || error.toString()).toLowerCase();
-    if (msg.includes("missing_user_key")) throw new Error("🔑 FALTA TU LLAVE MAESTRA\n\nVe a tu Perfil y pega tu API Key.");
-    throw new Error(`Error de IA: ${error.message || "Inténtalo de nuevo."}`);
+    if (error.message?.includes("NEXO DESCONECTADO")) throw error;
+    throw new Error(`ERROR DE COMUNICACIÓN: ${error.message || "Error desconocido"}`);
+};
+
+const isCalisthenic = (id: string): boolean => {
+    return ['pull_up', 'chin_up', 'dips_chest', 'push_ups', 'handstand_pushup', 'muscle_up', 'dips_triceps'].includes(id);
+};
+
+export const generateGlobalReport = async (
+    allWorkouts: Workout[],
+    language: 'es' | 'en' = 'es',
+    currentWeight: number = 80,
+    userHeight: number = 180
+): Promise<GlobalReportData> => {
+    try {
+        const ai = getAIClient();
+        const now = new Date();
+        const startOfMonthDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        
+        let totalVolume = 0;
+        let monthlyVolume = 0;
+        
+        const globalMaxMap = new Map<string, { val: number, unit: string, isBW: boolean }>();
+        const monthlyMaxMap = new Map<string, { val: number, unit: string, isBW: boolean }>();
+
+        // Pre-procesamiento de datos para la IA
+        const workoutSummary = allWorkouts.map(w => ({
+            date: w.date,
+            exercises: w.structured_data.exercises.map(ex => ({
+                name: ex.name,
+                id: getCanonicalId(ex.name, EXERCISE_DB),
+                sets: ex.sets
+            }))
+        }));
+
+        allWorkouts.forEach(w => {
+            const isThisMonth = isSameMonth(new Date(w.date), now);
+            const historicWeight = w.user_weight || currentWeight;
+
+            w.structured_data.exercises.forEach(ex => {
+                const id = getCanonicalId(ex.name, EXERCISE_DB);
+                const displayName = getLocalizedName(id, EXERCISE_DB, language);
+
+                ex.sets.forEach(s => {
+                    const isBW = !s.weight || s.weight <= 0;
+                    const val = isBW ? (s.reps || 0) : (s.weight || 0);
+                    const unit = isBW ? 'reps' : (s.unit || 'kg');
+                    
+                    let baseW = (s.weight && s.weight > 0) ? (s.unit === 'lbs' ? s.weight * 0.453592 : s.weight) : 0;
+                    const setVol = (isCalisthenic(id) ? (historicWeight + baseW) : (baseW || historicWeight)) * (s.reps || 0);
+                    
+                    totalVolume += setVol;
+                    if (isThisMonth) {
+                        monthlyVolume += setVol;
+                        const currentM = monthlyMaxMap.get(displayName);
+                        if (!currentM || val > currentM.val) monthlyMaxMap.set(displayName, { val, unit, isBW });
+                    }
+
+                    const currentG = globalMaxMap.get(displayName);
+                    if (!currentG || val > currentG.val) globalMaxMap.set(displayName, { val, unit, isBW });
+                });
+            });
+        });
+
+        const maxComparison: MaxComparisonEntry[] = Array.from(globalMaxMap.keys()).map(name => {
+            const g = globalMaxMap.get(name)!;
+            const m = monthlyMaxMap.get(name) || { val: 0, unit: g.unit, isBW: g.isBW };
+            return {
+                exercise: name,
+                globalMax: g.val,
+                monthlyMax: m.val,
+                unit: g.unit,
+                isBodyweight: g.isBW
+            };
+        }).filter(item => item.monthlyMax > 0);
+
+        const systemInstruction = `Eres un Entrenador de Alto Rendimiento y Analista de Datos Deportivos.
+ROL: Técnico, crítico, directo y constructivo. Tono de "gym-bro" experto. Cero cumplidos vacíos.
+OBJETIVO: Optimización pura.
+DATOS PROPORCIONADOS: Historial de entrenamientos con Ejercicios, Series, Reps y KG.
+RESTRICCIÓN: No des consejos de nutrición ni descanso. Céntrate en métricas y programación.
+
+ESTRUCTURA DE RESPUESTA (JSON):
+{
+  "equiv_global": "Cantidad + elemento absurdo/ingenioso para el peso total acumulado",
+  "equiv_monthly": "Cantidad + elemento absurdo/ingenioso para el peso de este mes",
+  "analysis": "Markdown detallado siguiendo la estructura:
+    ## 3 - AUDITORÍA FORENSE DEL MES
+    ### 3.1 - Mapeo de Volumen Efectivo
+    (Tabla de series semanales por grupo muscular y Veredicto: Mantenimiento/MAV/Sobreentrenamiento)
+    ### 3.2 - Ratios de Equilibrio Estructural
+    (Análisis Push/Pull y Anterior/Posterior. Si hay desequilibrio >20%, usar **ALERTA ROJA: [Descripción]** en negrita y mayúsculas)
+    ### 3.3 - Secuenciación y Sandbagging
+    (Criticar orden de ejercicios y detectar series con reps idénticas indicando falta de intensidad real)
+    ### 3.4 - Estímulo vs Fatiga
+    (Análisis sistémico de ejercicios pesados)
+    ## 4 - ANÁLISIS DE EVOLUCIÓN
+    (Comparativa técnica con meses pasados sobre sobrecarga progresiva)
+    ## 5 - VEREDICTO Y MEJORAS
+    (3 cambios concretos para el mes que viene)",
+  "score": número 1-10
+}`;
+
+        const prompt = `Analiza mi legado de hierro. 
+        Peso Total: ${totalVolume}kg. Peso este mes: ${monthlyVolume}kg. 
+        Comparativa Máximos: ${JSON.stringify(maxComparison)}.
+        Historial detallado del mes: ${JSON.stringify(workoutSummary.filter(w => isAfter(new Date(w.date), subMonths(now, 1))))}.
+        Biometría: ${currentWeight}kg.
+        Genera el informe forense estricto.`;
+
+        const response = await ai.models.generateContent({
+            model: MODEL_NAME,
+            contents: { parts: [{ text: prompt }] },
+            config: { 
+                responseMimeType: "application/json", 
+                temperature: 0.7,
+                systemInstruction: systemInstruction
+            }
+        });
+
+        const aiRes = JSON.parse(cleanJson(response.text || '{}'));
+
+        return {
+            totalVolumeKg: totalVolume,
+            volumeEquivalentGlobal: aiRes.equiv_global,
+            monthlyVolumeKg: monthlyVolume,
+            volumeEquivalentMonthly: aiRes.equiv_monthly,
+            monthName: format(now, 'MMMM', { locale: language === 'es' ? es : enUS }),
+            monthlyAnalysisText: aiRes.analysis,
+            efficiencyScore: aiRes.score || 5,
+            maxComparison: maxComparison.sort((a, b) => b.monthlyMax - a.monthlyMax)
+        };
+    } catch (error) { handleAIError(error); throw error; }
 };
 
 export const processWorkoutAudio = async (audioBase64: string, mimeType: string): Promise<WorkoutData> => {
   try {
     const ai = getAIClient();
     const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: {
-        parts: [{ inlineData: { mimeType, data: audioBase64 } }, { text: `Fitness transcriber.` }]
-      },
+      model: 'gemini-3-flash-preview',
+      contents: { parts: [{ inlineData: { mimeType, data: audioBase64 } }, { text: "Transcribe audio to structured JSON workout data." }] },
       config: { responseMimeType: "application/json", temperature: 0.1 }
     });
-    return JSON.parse(cleanJson(response.text));
+    return JSON.parse(cleanJson(response.text || ''));
   } catch (error: any) { handleAIError(error); throw error; }
 };
 
@@ -53,130 +180,12 @@ export const processWorkoutText = async (text: string): Promise<WorkoutData> => 
   try {
     const ai = getAIClient();
     const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: { parts: [{ text: `Parse workout text: "${text}"` }] },
+      model: 'gemini-3-flash-preview',
+      contents: { parts: [{ text: `Parse text to structured JSON workout data: "${text}"` }] },
       config: { responseMimeType: "application/json", temperature: 0.1 }
     });
-    return JSON.parse(cleanJson(response.text));
+    return JSON.parse(cleanJson(response.text || ''));
   } catch (error: any) { handleAIError(error); throw error; }
-};
-
-export const generateGlobalReport = async (
-    allWorkouts: Workout[],
-    language: 'es' | 'en' = 'es' 
-): Promise<GlobalReportData> => {
-    try {
-        const ai = getAIClient();
-        let totalVolume = 0; let monthlyVolume = 0;
-        const now = new Date();
-        const currentMonthWorkouts = allWorkouts.filter(w => isSameMonth(new Date(w.date), now));
-        
-        // Mapa exhaustivo de máximos
-        const monthlyMaxesMap = new Map<string, MonthlyMaxEntry>();
-
-        currentMonthWorkouts.forEach(w => {
-            w.structured_data.exercises.forEach(ex => {
-                const id = getCanonicalId(ex.name);
-                const def = EXERCISE_DB.find(d => d.id === id);
-                const displayName = getLocalizedName(id, language);
-                
-                ex.sets.forEach(s => {
-                    // Cálculo de volumen
-                    if (def?.type !== 'cardio' && s.weight && s.reps) {
-                        let wVol = s.unit === 'lbs' ? s.weight * 0.453592 : s.weight;
-                        monthlyVolume += (wVol * s.reps);
-                    }
-
-                    // Lógica exhaustiva de máximos
-                    const isBodyweight = !s.weight || s.weight <= 0;
-                    const val = isBodyweight ? (s.reps || 0) : (s.weight || 0);
-                    const unit = isBodyweight ? 'reps' : (s.unit || 'kg');
-
-                    const existing = monthlyMaxesMap.get(displayName);
-                    if (!existing) {
-                        monthlyMaxesMap.set(displayName, { 
-                            exercise: displayName, 
-                            value: val, 
-                            unit: unit, 
-                            isBodyweight 
-                        });
-                    } else {
-                        // Si el ejercicio tiene peso en alguna sesión del mes, priorizamos el récord de peso
-                        if (!isBodyweight && (existing.isBodyweight || val > existing.value)) {
-                            existing.value = val;
-                            existing.unit = unit;
-                            existing.isBodyweight = false;
-                        } else if (isBodyweight && existing.isBodyweight && val > existing.value) {
-                            // Si solo es corporal, comparamos repeticiones
-                            existing.value = val;
-                        }
-                    }
-                });
-            });
-        });
-
-        allWorkouts.forEach(w => w.structured_data.exercises.forEach(ex => ex.sets.forEach(s => {
-            if (s.weight && s.reps) totalVolume += ((s.unit === 'lbs' ? s.weight * 0.453592 : s.weight) * s.reps);
-        })));
-
-        const detailedMonthLog = currentMonthWorkouts.map(w => {
-             const exercisesText = w.structured_data.exercises.map(e => `- ${e.name}: [${e.sets.map(s => s.distance ? `${s.distance}km` : `${s.weight || 0}kg x ${s.reps || 0}`).join(", ")}]`).join("\n");
-             return `FECHA ${w.date}:\n${exercisesText}`;
-        }).join("\n\n");
-
-        const prompt = `
-            ROL: Entrenador de Élite y Analista de Guerra Deportiva.
-            TONO: Directo, crudo, biomecánico pero con lenguaje de calle. No uses relleno.
-            
-            DATOS:
-            - VOLUMEN TOTAL HISTÓRICO: ${Math.round(totalVolume)} kg
-            - VOLUMEN ESTE MES: ${Math.round(monthlyVolume)} kg
-            - LOGS DEL MES:
-            ${detailedMonthLog}
-
-            INSTRUCCIONES DE RESPUESTA:
-            1. COMPARATIVA MASIVA: Compara los pesos con objetos. Devuelve SOLO "Cantidad + Elemento". Ej: "3 Tanques Abrams", "12 Elefantes". NO digas frases, NO repitas el peso.
-            2. AUDITORÍA FORENSE:
-               - Mapeo de volumen (MAV/Mantenimiento).
-               - Ratios estructurales (Push/Pull). ALERTA ROJA si hay descompensación.
-               - Detecta Sandbagging (series con mismas reps y peso sin caída de rendimiento).
-            3. EVOLUCIÓN: Comenta tendencia de sobrecarga progresiva.
-            4. VEREDICTO: Nota 1-10 y 3 cambios concretos.
-
-            REGLA DE ORO: Si escribes la nota de puntuación al principio, asegúrate de que esté en una línea independiente para que el render la pille bien.
-
-            RESPONDE SOLO EN JSON:
-            {
-               "vol_global_comp": "Cantidad + Elemento",
-               "vol_month_comp": "Cantidad + Elemento",
-               "analysis": "Texto Markdown estructurado",
-               "score": 0-10
-            }
-        `;
-
-        const response = await ai.models.generateContent({
-            model: MODEL_NAME,
-            contents: { parts: [{ text: prompt }] },
-            config: { responseMimeType: "application/json" }
-        });
-
-        const aiResult = JSON.parse(cleanJson(response.text));
-        const dateLocale = language === 'es' ? es : enUS;
-        const displayMonth = format(now, 'MMMM', { locale: dateLocale });
-
-        return {
-            totalVolumeKg: totalVolume,
-            volumeComparison: aiResult.vol_global_comp,
-            volumeType: 'ship',
-            monthlyVolumeKg: monthlyVolume,
-            monthlyVolumeComparison: aiResult.vol_month_comp,
-            monthlyVolumeType: 'rocket',
-            monthName: displayMonth.charAt(0).toUpperCase() + displayMonth.slice(1),
-            monthlyAnalysisText: aiResult.analysis,
-            efficiencyScore: aiResult.score || 5,
-            monthlyMaxes: Array.from(monthlyMaxesMap.values()).sort((a, b) => b.value - a.value)
-        };
-    } catch (error) { handleAIError(error); throw error; }
 };
 
 export const generateGroupAnalysis = async (
@@ -184,33 +193,13 @@ export const generateGroupAnalysis = async (
     language: 'es' | 'en' = 'es'
 ): Promise<GroupAnalysisData> => {
     try {
-        const pointsTable = usersData.map(u => ({ name: u.name, points: new Set(u.workouts.map(w => w.date)).size })).sort((a, b) => b.points - a.points);
-        const volumeTable = usersData.map(u => {
-            let v = 0;
-            u.workouts.forEach(w => w.structured_data.exercises.forEach(ex => {
-                const dbMatch = EXERCISE_DB.find(d => d.id === getCanonicalId(ex.name));
-                if (dbMatch?.type !== 'cardio') ex.sets.forEach(s => {
-                    if (s.weight && s.reps) v += ((s.unit === 'lbs' ? s.weight * 0.453592 : s.weight) * s.reps);
-                });
-            }));
-            return { name: u.name, total_volume_kg: Math.round(v) };
-        }).sort((a, b) => b.total_volume_kg - a.total_volume_kg);
-
         const ai = getAIClient();
-        const prompt = `Role: Fitness Judge. Data: ${JSON.stringify({ pointsTable, volumeTable })}. Output JSON: { rankings, roast, volume_verdict }.`;
+        const prompt = `Analiza competitivamente este grupo: ${JSON.stringify(usersData)}. Determina Alpha/Beta y haz un Roast técnico. Responde en JSON según esquema GroupAnalysisData.`;
         const response = await ai.models.generateContent({
             model: MODEL_NAME,
             contents: { parts: [{ text: prompt }] },
-            config: { responseMimeType: "application/json" }
+            config: { responseMimeType: "application/json", temperature: 0.3 }
         });
-        const aiResult = JSON.parse(cleanJson(response.text));
-        return {
-            winner: aiResult.rankings[0]?.name || "N/A",
-            loser: aiResult.rankings[aiResult.rankings.length - 1]?.name || "N/A",
-            rankings: aiResult.rankings,
-            roast: aiResult.roast,
-            volume_verdict: aiResult.volume_verdict,
-            comparison_table: [], points_table: pointsTable, volume_table: volumeTable, individual_records: []
-        };
+        return JSON.parse(cleanJson(response.text || '{}'));
     } catch (error) { handleAIError(error); throw error; }
 };

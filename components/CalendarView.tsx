@@ -1,3 +1,4 @@
+
 import React, { useMemo } from 'react';
 import { 
   format, 
@@ -27,8 +28,7 @@ interface CalendarViewProps {
   onSummaryClick: () => void;
 }
 
-// Static constant to avoid recreation
-const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; 
+const WEEKDAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']; 
 
 export const CalendarView: React.FC<CalendarViewProps> = ({ 
   viewDate,
@@ -41,19 +41,21 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const { language } = useLanguage();
   const dateLocale = language === 'es' ? es : enUS;
 
-  // Memoize date calculations to prevent expensive re-runs on every render
-  const { calendarDays, monthStart } = useMemo(() => {
+  const { calendarDays, monthStart, trainingDaysInMonth } = useMemo(() => {
     const monthStart = startOfMonth(viewDate);
     const monthEnd = endOfMonth(monthStart);
-    // Force week to start on Monday (1)
     const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
     const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
     
+    const daysInMonth = workouts.filter(w => isSameMonth(parseLocalDate(w.date), monthStart));
+    const uniqueTrainingDays = new Set(daysInMonth.map(w => w.date)).size;
+
     return {
       calendarDays: eachDayOfInterval({ start: startDate, end: endDate }),
-      monthStart
+      monthStart,
+      trainingDaysInMonth: uniqueTrainingDays
     };
-  }, [viewDate]); // Only recalculate if viewDate changes
+  }, [viewDate, workouts]);
 
   const handlePrevMonth = () => onViewDateChange(addMonths(viewDate, -1));
   const handleNextMonth = () => onViewDateChange(addMonths(viewDate, 1));
@@ -61,20 +63,25 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const isCurrentMonth = isSameMonth(viewDate, new Date());
   
   return (
-    <div className="w-full bg-surface border border-border rounded-3xl overflow-hidden shadow-2xl relative transition-colors duration-300">
-      {/* Glossy Header */}
-      <div className="p-4 flex items-center justify-between border-b border-border bg-surfaceHighlight/30">
-        <button onClick={handlePrevMonth} className="p-2 hover:bg-surfaceHighlight rounded-full transition-colors text-subtext hover:text-text">
+    <div className="w-full bg-surface border border-border rounded-[2rem] overflow-hidden shadow-2xl relative transition-colors duration-300">
+      <div className="p-5 flex items-center justify-between border-b border-border bg-surfaceHighlight/30">
+        <button onClick={handlePrevMonth} className="p-2 bg-white/5 hover:bg-white/10 rounded-full transition-colors text-white">
           <ChevronLeft className="w-5 h-5" />
         </button>
 
-        <div className="flex items-center gap-2">
-            <h2 className="text-sm font-bold text-text tracking-wide uppercase">
+        <div className="flex flex-col items-center">
+            <h2 className="text-sm font-black text-text tracking-widest uppercase italic leading-none">
                 {format(viewDate, 'MMMM yyyy', { locale: dateLocale })}
             </h2>
+            <div className="flex items-center gap-2 mt-1.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></div>
+                <span className="text-[9px] font-black text-zinc-500 uppercase tracking-[0.2em]">
+                    {trainingDaysInMonth} Días Registrados
+                </span>
+            </div>
         </div>
 
-        <button onClick={handleNextMonth} className="p-2 hover:bg-surfaceHighlight rounded-full transition-colors text-subtext hover:text-text">
+        <button onClick={handleNextMonth} className="p-2 bg-white/5 hover:bg-white/10 rounded-full transition-colors text-white">
           <ChevronRight className="w-5 h-5" />
         </button>
       </div>
@@ -82,34 +89,26 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       {!isCurrentMonth && (
          <button 
            onClick={() => { const now = new Date(); onViewDateChange(now); onSelectDate(now); }}
-           className="absolute top-4 right-16 p-2 text-primary hover:bg-primary/10 rounded-full transition-colors"
+           className="absolute top-5 right-16 p-2 text-primary hover:bg-primary/10 rounded-full transition-colors"
            title="Today"
          >
            <RotateCcw className="w-4 h-4" />
          </button>
       )}
 
-      <div className="p-4">
-        <div className="grid grid-cols-7 mb-2">
+      <div className="p-5">
+        <div className="grid grid-cols-7 mb-4">
           {WEEKDAYS.map((day, i) => (
-            <div key={i} className="text-center text-[10px] font-bold text-subtext opacity-70">
+            <div key={i} className="text-center text-[10px] font-black text-subtext opacity-50 uppercase">
               {day}
             </div>
           ))}
         </div>
 
-        <div className="grid grid-cols-7 gap-y-2 gap-x-1">
+        <div className="grid grid-cols-7 gap-y-3 gap-x-2">
           {calendarDays.map((day) => {
-            // Optimizing the loop: check existence directly
             const parsedDay = day.getTime();
-            
-            // Check own workouts
-            const hasMyWorkout = workouts.some(w => {
-                const wDate = parseLocalDate(w.date);
-                return isSameDay(wDate, day);
-            });
-
-            // Check friends workouts (Memoized visually below)
+            const hasMyWorkout = workouts.some(w => isSameDay(parseLocalDate(w.date), day));
             const friendDots = selectedFriendsWorkouts
                 .filter(fw => fw.workouts.some(w => isSameDay(parseLocalDate(w.date), day)))
                 .map(fw => fw.color);
@@ -126,29 +125,29 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   if (!isMonthDay) onViewDateChange(day);
                 }}
                 className={clsx(
-                  'relative h-11 w-full flex flex-col items-center justify-start pt-1 rounded-xl transition-all duration-300 border box-border',
-                  !isMonthDay ? 'opacity-20 border-transparent' : '',
+                  'relative h-12 w-full flex flex-col items-center justify-center rounded-2xl transition-all duration-300 border-2',
+                  !isMonthDay ? 'opacity-10 border-transparent' : '',
                   isSelected 
-                    ? 'bg-surfaceHighlight border-primary/50 scale-105 shadow-glow z-10' 
+                    ? 'border-primary bg-primary/10 scale-105 z-10 shadow-[0_0_15px_rgba(212,255,0,0.2)]' 
                     : isToday 
-                        ? 'border-text/30 border-solid' 
-                        : 'border-transparent',
-                  !isSelected && 'hover:bg-surfaceHighlight'
+                        ? 'border-text/40' 
+                        : 'border-transparent bg-white/5',
+                  !isSelected && isMonthDay && 'hover:bg-white/10'
                 )}
               >
                 <span className={clsx(
-                    "text-xs font-bold mb-1 transition-colors", 
-                    isSelected ? "text-primary" : "text-subtext"
+                    "text-xs font-black transition-colors", 
+                    isSelected ? "text-primary" : "text-text"
                 )}>
                     {format(day, 'd')}
                 </span>
                 
-                <div className="flex gap-0.5 justify-center flex-wrap px-0.5 w-full absolute bottom-1 max-w-[90%]">
+                <div className="flex gap-0.5 justify-center flex-wrap px-0.5 w-full absolute bottom-1.5">
                     {hasMyWorkout && (
-                        <div className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_5px_#D4FF00]"></div>
+                        <div className="w-1.5 h-1.5 rounded-full bg-primary shadow-glow"></div>
                     )}
                     {friendDots.map((color, i) => (
-                        <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color, boxShadow: `0 0 4px ${color}` }}></div>
+                        <div key={i} className="w-1 h-1 rounded-full" style={{ backgroundColor: color }}></div>
                     ))}
                 </div>
               </button>

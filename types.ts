@@ -1,17 +1,20 @@
 
+
 export type MetricType = 'strength' | 'cardio';
 
 export interface Set {
   reps?: number;
   weight?: number;
-  unit: string; // 'kg', 'lbs', 'km', 'm', 'mins'
+  unit: string; 
   distance?: number;
-  time?: string; // Format "MM:SS" or raw minutes string
-  rpe?: number; // Rate of Perceived Exertion (1-10)
+  time?: string; 
+  rpe?: number; 
 }
 
 export interface Exercise {
   name: string;
+  category?: string; // Nuevo: Músculo objetivo (Chest, Back, etc.)
+  type?: MetricType; // Nuevo: Tipo de carga (Strength, Cardio)
   sets: Set[];
 }
 
@@ -27,6 +30,7 @@ export interface Workout {
   structured_data: WorkoutData;
   source: 'web' | 'audio' | 'manual';
   created_at: string;
+  user_weight?: number; 
 }
 
 export interface WorkoutPlan {
@@ -45,6 +49,17 @@ export interface User {
   role: UserRole;
   created_at: string;
   avatar_url?: string;
+  weight?: number;
+  height?: number;
+}
+
+export interface Friend {
+  id: string;
+  friendship_id: string;
+  name: string;
+  avatar_url?: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  is_sender: boolean;
 }
 
 export interface PersonalRecord {
@@ -58,76 +73,72 @@ export interface PersonalRecord {
   displayValue: string; 
 }
 
-export type FriendshipStatus = 'pending' | 'accepted' | 'rejected';
-
-export interface Friend {
-  id: string; 
-  friendship_id: string;
-  name: string;
-  avatar_url?: string;
-  status: FriendshipStatus;
-  is_sender: boolean; 
-  color?: string; 
-}
-
-export interface ComparisonRow {
-  exercise: string;
-  results: { userName: string; value: number; display: string }[];
-  winnerName: string;
-  metric: string; 
-}
-
-export interface RankingEntry {
-  name: string;
-  rank: number;
-  reason: string; 
-}
-
-export interface UserStatsProfile {
-    name: string;
-    stats: {
-        exercise: string;
-        display: string;
-        metric: string; 
-        value: number;
-    }[];
-}
-
-export interface Highlight {
-    title: string;
-    value: string;
-    description: string;
-    type: 'strength' | 'consistency';
-}
-
-export interface MonthlyMaxEntry {
+export interface MaxComparisonEntry {
     exercise: string;
-    value: number;
-    unit: string; 
+    monthlyMax: number;
+    globalMax: number;
+    unit: string;
     isBodyweight: boolean;
 }
 
 export interface GlobalReportData {
   totalVolumeKg: number;
-  volumeComparison: string; 
-  volumeType: string;
+  volumeEquivalentGlobal: string; 
   monthlyVolumeKg: number;
-  monthlyVolumeComparison: string;
-  monthlyVolumeType: string;
+  volumeEquivalentMonthly: string;
   monthName: string;
   monthlyAnalysisText: string;
   efficiencyScore: number;
-  monthlyMaxes: MonthlyMaxEntry[];
+  maxComparison: MaxComparisonEntry[];
+}
+
+// Added GroupAnalysisData and supporting interfaces for Arena mode
+export interface RankingEntry {
+  rank: number;
+  name: string;
+  reason: string;
+}
+
+export interface VolumeEntry {
+  name: string;
+  total_volume_kg: number;
+}
+
+export interface PointsEntry {
+  name: string;
+  points: number;
+}
+
+export interface ComparisonResult {
+  userName: string;
+  display: string;
+}
+
+export interface ComparisonEntry {
+  exercise: string;
+  winnerName: string;
+  results: ComparisonResult[];
+}
+
+export interface IndividualStat {
+  exercise: string;
+  display: string;
+  metric: string;
+}
+
+export interface IndividualRecord {
+  name: string;
+  stats: IndividualStat[];
 }
 
 export interface GroupAnalysisData {
-  winner: string; 
-  loser: string; 
-  rankings: RankingEntry[]; 
-  roast: string; 
-  comparison_table: ComparisonRow[]; 
-  points_table: { name: string; points: number }[]; 
-  volume_table: { name: string; total_volume_kg: number }[]; 
-  volume_verdict: string; 
-  individual_records: UserStatsProfile[]; 
+  winner: string | 'DRAW';
+  loser?: string;
+  rankings: RankingEntry[];
+  volume_table: VolumeEntry[];
+  volume_verdict: string;
+  points_table: PointsEntry[];
+  comparison_table: ComparisonEntry[];
+  individual_records: IndividualRecord[];
+  roast: string;
 }

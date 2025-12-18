@@ -18,12 +18,11 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onWorkoutProcessed
   const audioChunksRef = useRef<Blob[]>([]);
   const mimeTypeRef = useRef<string>("");
 
-  // Auto-dismiss error after 7 seconds (Guidance needs more time to read)
   useEffect(() => {
     if (error) {
         const timer = setTimeout(() => {
             setError(null);
-        }, 7000); // Increased time for user guidance
+        }, error.includes("NEXO") ? 10000 : 7000); 
         return () => clearTimeout(timer);
     }
   }, [error]);
@@ -111,38 +110,40 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onWorkoutProcessed
 
   return (
     <div className="flex flex-col items-center gap-2 relative">
-      {/* Status Messages - Floating above the dock */}
-      <div className="absolute bottom-full mb-4 flex flex-col items-center pointer-events-none w-screen max-w-sm px-4 left-1/2 -translate-x-1/2">
+      <div className="absolute bottom-full mb-4 flex flex-col items-center pointer-events-none w-screen max-w-sm px-4 left-1/2 -translate-x-1/2 z-50">
         {error && (
-            <div className="bg-surface border border-red-500 rounded-2xl p-4 shadow-[0_10px_40px_rgba(0,0,0,0.5)] flex flex-col items-center gap-2 animate-in slide-in-from-bottom-2 fade-in zoom-in-95 mb-3 w-full max-w-[280px] text-center pointer-events-auto z-50">
+            <div className="bg-surface border border-red-500 rounded-2xl p-4 shadow-[0_10px_40px_rgba(0,0,0,0.5)] flex flex-col items-center gap-2 animate-in slide-in-from-bottom-2 fade-in zoom-in-95 mb-3 w-full max-w-[280px] text-center pointer-events-auto">
                 <div className="w-10 h-10 bg-red-500/10 rounded-full flex items-center justify-center shrink-0">
                     <AlertCircle className="w-6 h-6 text-red-500" />
                 </div>
-                <p className="text-red-500 font-bold text-xs whitespace-pre-wrap leading-relaxed">
-                    {error}
-                </p>
+                <div className="space-y-1">
+                    <p className="text-red-500 font-bold text-[10px] uppercase tracking-wider">Fallo de Nexo</p>
+                    <p className="text-zinc-500 text-xs font-medium leading-relaxed">
+                        {error}
+                    </p>
+                </div>
+                <button onClick={() => setError(null)} className="mt-2 text-[10px] font-black text-zinc-600 hover:text-white uppercase tracking-widest underline transition-colors">Cerrar</button>
             </div>
         )}
 
-        {(isRecording || isProcessing) && (
-            <div className="bg-black/80 border border-primary/50 text-primary font-mono text-xs px-4 py-2 rounded-full shadow-glow flex items-center gap-2 backdrop-blur-md">
+        {(isRecording || isProcessing) && !error && (
+            <div className="bg-black/90 border border-primary/50 text-primary font-mono text-xs px-5 py-3 rounded-full shadow-glow flex items-center gap-3 backdrop-blur-md animate-in slide-in-from-bottom-2">
             {isRecording && (
                 <>
-                <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse shadow-[0_0_10px_red]" />
-                ESCUCHANDO...
+                <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_10px_red]" />
+                <span className="font-black italic">ESCUCHANDO...</span>
                 </>
             )}
             {isProcessing && (
                 <>
-                <Loader2 className="w-3 h-3 animate-spin text-primary" />
-                PROCESANDO...
+                <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                <span className="font-black italic">ANALIZANDO...</span>
                 </>
             )}
             </div>
         )}
       </div>
 
-      {/* Main Mic Button */}
       <button
         onClick={isRecording ? stopRecording : startRecording}
         disabled={isProcessing}

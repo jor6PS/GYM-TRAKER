@@ -58,11 +58,17 @@
             },
             animation: {
               'float': 'float 6s ease-in-out infinite',
+              'spin-slow': 'spin 3s linear infinite',
+              'progress-loop': 'progress-loop 2s infinite linear',
             },
             keyframes: {
               float: {
                 '0%, 100%': { transform: 'translateY(0)' },
                 '50%': { transform: 'translateY(-10px)' },
+              },
+              'progress-loop': {
+                '0%': { transform: 'translateX(-100%)' },
+                '100%': { transform: 'translateX(300%)' }
               }
             }
           }
@@ -141,7 +147,8 @@
     "date-fns": "https://esm.sh/date-fns@^4.1.0",
     "vite-plugin-pwa": "https://esm.sh/vite-plugin-pwa@^1.2.0",
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.87.1",
-    "clsx": "https://esm.sh/clsx@^2.1.1"
+    "clsx": "https://esm.sh/clsx@^2.1.1",
+    "none": "https://esm.sh/none@^1.0.0"
   }
 }
 </script>

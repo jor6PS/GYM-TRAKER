@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { X, Save, Clock, History, Edit3, ArrowRight, Search, Plus, Dumbbell, ChevronRight, Trash2, Layers, Activity, Pencil, Sparkles, Zap, AlertTriangle } from 'lucide-react';
 import type { WorkoutData, Exercise, Workout, Set, MetricType, WorkoutPlan } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
-import { EXERCISE_DB } from '../data/exerciseDb';
+import { useExercises } from '../contexts/ExerciseContext';
 import { format } from 'date-fns';
 import { parseLocalDate, getCanonicalId, normalizeText } from '../utils';
 import { EditExerciseModal } from './EditExerciseModal';
@@ -30,6 +30,7 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
   const [activeTab, setActiveTab] = useState<Tab>('library');
   const [sessionExercises, setSessionExercises] = useState<Exercise[]>([]);
   const { t } = useLanguage();
+  const { catalog } = useExercises();
 
   const [libSearch, setLibSearch] = useState('');
   const [selectedLibExercise, setSelectedLibExercise] = useState<string | null>(null);
@@ -49,14 +50,14 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
 
   const filteredLibrary = useMemo(() => {
       const term = normalizeText(libSearch);
-      if (!term) return EXERCISE_DB.slice(0, 20);
-      return EXERCISE_DB.filter(ex => normalizeText(ex.es).includes(term)).slice(0, 20);
-  }, [libSearch]);
+      if (!term) return catalog.slice(0, 20);
+      return catalog.filter(ex => normalizeText(ex.es).includes(term) || normalizeText(ex.en).includes(term)).slice(0, 20);
+  }, [libSearch, catalog]);
 
   const handleSelectExercise = (name: string) => {
       setSelectedLibExercise(name);
-      const targetId = getCanonicalId(name);
-      const dbMatch = EXERCISE_DB.find(ex => ex.es === name || ex.en === name);
+      const targetId = getCanonicalId(name, catalog);
+      const dbMatch = catalog.find(ex => ex.es === name || ex.en === name || ex.id === targetId);
       const type = dbMatch?.type || 'strength';
       setSelectedMetricType(type);
 
@@ -64,7 +65,7 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
       const sortedHistory = [...pastWorkouts].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
       for (const workout of sortedHistory) {
-          const match = workout.structured_data.exercises.find(ex => getCanonicalId(ex.name) === targetId);
+          const match = workout.structured_data.exercises.find(ex => getCanonicalId(ex.name, catalog) === targetId);
           if (match && match.sets.length > 0) {
               const historySets = match.sets.map(s => ({
                   ...s,
@@ -182,7 +183,6 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
         </div>
 
         <div className="flex-1 overflow-y-auto bg-zinc-900 p-4 custom-scrollbar">
-            
             {activeTab === 'library' && (
                 <div className="space-y-4 h-full flex flex-col">
                     {!selectedLibExercise ? (
@@ -213,9 +213,6 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                             </div>
                             
                             <div className="bg-black border border-white/10 rounded-2xl p-4 flex-1 overflow-y-auto custom-scrollbar">
-                                {selectedMetricType === 'strength' && <div className="grid grid-cols-12 gap-2 text-[10px] text-zinc-500 font-mono uppercase text-center mb-2 sticky top-0 bg-black z-10 py-2"><div className="col-span-2">SET</div><div className="col-span-4">KG</div><div className="col-span-4">REPS</div><div className="col-span-2"></div></div>}
-                                {selectedMetricType === 'cardio' && <div className="grid grid-cols-12 gap-2 text-[10px] text-zinc-500 font-mono uppercase text-center mb-2 sticky top-0 bg-black z-10 py-2"><div className="col-span-2">INT</div><div className="col-span-4">DIST (KM)</div><div className="col-span-4">TIME</div><div className="col-span-2"></div></div>}
-
                                 <div className="space-y-2">
                                     {setsConfig.map((set, idx) => (
                                         <div key={idx} className="grid grid-cols-12 gap-2 items-center">
