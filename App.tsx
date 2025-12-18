@@ -305,38 +305,42 @@ function App() {
                           </div>
                         )}
 
-                        <div className="space-y-1">
+                        <div className="space-y-3">
                           {workout.structured_data.exercises.map((ex, idx) => (
-                            <div key={idx} className={`flex items-center justify-between p-2 rounded-xl border transition-all ${group.isMe ? 'bg-zinc-900/30 border-white/5 hover:border-primary/20' : 'bg-surfaceHighlight/5 border-dashed border-border/30'}`}>
-                                <div className="flex items-center gap-2 flex-1 min-w-0 mr-2" onClick={() => { if(group.isMe) { setSelectedHistoryExercise(ex.name); setShowPRModal(true); } }}>
-                                    <div className="w-6 h-6 rounded-md bg-black border border-white/5 text-zinc-600 flex items-center justify-center shrink-0">
-                                        {getExerciseIcon(ex.name, catalog, "w-3 h-3")}
+                            <div key={idx} className={`flex flex-col gap-2.5 p-3.5 rounded-2xl border transition-all ${group.isMe ? 'bg-zinc-900/40 border-white/5 hover:border-primary/20 shadow-md ring-1 ring-white/5' : 'bg-surfaceHighlight/5 border-dashed border-border/30'}`}>
+                                {/* Fila 1: Icono, Nombre y Edición */}
+                                <div className="flex items-center justify-between w-full">
+                                    <div className="flex items-center gap-3 flex-1 min-w-0" onClick={() => { if(group.isMe) { setSelectedHistoryExercise(ex.name); setShowPRModal(true); } }}>
+                                        <div className="w-8 h-8 rounded-xl bg-black border border-white/10 text-zinc-500 flex items-center justify-center shrink-0 shadow-inner">
+                                            {getExerciseIcon(ex.name, catalog, "w-4 h-4")}
+                                        </div>
+                                        <h4 className="font-black text-xs text-white uppercase tracking-tight italic truncate leading-none">{ex.name}</h4>
                                     </div>
-                                    <h4 className="font-bold text-[11px] text-white truncate uppercase tracking-tight italic">{ex.name}</h4>
+                                    {group.isMe && canEdit && (
+                                        <button onClick={(e) => { e.stopPropagation(); setEditingExercise({ workoutId: workout.id, exerciseIndex: idx, data: ex }); }} className="p-2 bg-white/5 rounded-xl text-zinc-500 hover:text-primary transition-all">
+                                            <Pencil className="w-3.5 h-3.5" />
+                                        </button>
+                                    )}
                                 </div>
                                 
-                                <div className="flex items-center gap-1.5 flex-nowrap overflow-x-auto no-scrollbar pr-1">
+                                {/* Fila 2: Series y Repeticiones (Debajo del nombre) */}
+                                <div className="flex flex-wrap items-center gap-2 pl-11">
                                     {ex.sets.map((set, sIdx) => (
-                                        <div key={sIdx} className="bg-black/60 border border-white/5 rounded-md px-1.5 py-0.5 flex items-center gap-1 shrink-0">
+                                        <div key={sIdx} className="bg-black/60 border border-white/10 rounded-lg px-2.5 py-1 flex items-center gap-1.5 shrink-0 shadow-sm ring-1 ring-white/5">
                                             {set.weight ? (
                                                 <>
-                                                    <span className={`font-mono text-[10px] font-black ${group.isMe ? 'text-primary' : 'text-zinc-400'}`}>{set.weight}</span>
-                                                    <span className="text-[8px] text-zinc-600 font-black">×</span>
-                                                    <span className="text-white font-mono text-[10px] font-bold">{set.reps}</span>
+                                                    <span className={`font-mono text-[11px] font-black ${group.isMe ? 'text-primary' : 'text-zinc-400'}`}>{set.weight}</span>
+                                                    <span className="text-[9px] text-zinc-700 font-black">×</span>
+                                                    <span className="text-white font-mono text-[11px] font-black">{set.reps}</span>
                                                 </>
                                             ) : (
                                                 <>
-                                                    <span className="text-white font-mono text-[10px] font-bold">{set.reps || set.distance}</span>
-                                                    <span className="text-[8px] text-zinc-600 font-black uppercase">{set.unit === 'reps' ? 'R' : set.unit}</span>
+                                                    <span className="text-white font-mono text-[11px] font-black">{set.reps || set.distance}</span>
+                                                    <span className="text-[9px] text-zinc-700 font-black uppercase">{set.unit === 'reps' ? 'R' : set.unit}</span>
                                                 </>
                                             )}
                                         </div>
                                     ))}
-                                    {group.isMe && canEdit && (
-                                        <button onClick={(e) => { e.stopPropagation(); setEditingExercise({ workoutId: workout.id, exerciseIndex: idx, data: ex }); }} className="ml-1 p-1 text-zinc-700 hover:text-primary transition-colors">
-                                            <Pencil className="w-3 h-3" />
-                                        </button>
-                                    )}
                                 </div>
                             </div>
                           ))}
