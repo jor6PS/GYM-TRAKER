@@ -22,7 +22,7 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onWorkoutProcessed
     if (error) {
         const timer = setTimeout(() => {
             setError(null);
-        }, error.includes("NEXO") ? 10000 : 7000); 
+        }, 7000); 
         return () => clearTimeout(timer);
     }
   }, [error]);
@@ -117,7 +117,7 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onWorkoutProcessed
                     <AlertCircle className="w-6 h-6 text-red-500" />
                 </div>
                 <div className="space-y-1">
-                    <p className="text-red-500 font-bold text-[10px] uppercase tracking-wider">Fallo de Nexo</p>
+                    <p className="text-red-500 font-bold text-[10px] uppercase tracking-wider">Fallo de Sistema</p>
                     <p className="text-zinc-500 text-xs font-medium leading-relaxed">
                         {error}
                     </p>
