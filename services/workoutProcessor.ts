@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { WorkoutData, Workout, GlobalReportData, MaxComparisonEntry, GroupAnalysisData } from "../types";
 import { format, isSameMonth, subMonths, isAfter, startOfMonth } from "date-fns";
@@ -9,15 +8,15 @@ import { EXERCISE_DB } from "../data/exerciseDb";
 // --- CONSTANTS & CONFIG ---
 
 const MODELS_PRIORITY = [
-    'gemini-2.5-flash', // El más nuevo y rápido
-    'gemini-2.0-flash', // El 2 más nuevo y rápido
-    'gemini-1.5-pro',   // El más inteligente (backup robusto)
-    'gemini-1.5-flash'  // El más estable y económico (último recurso)
+    'gemini-2.5-flash', 
+    'gemini-2.0-flash', 
+    'gemini-1.5-pro',   
+    'gemini-1.5-flash'  
 ];
 
 const CALISTHENIC_IDS = new Set([
   'pull_up', 'chin_up', 'dips_chest', 'push_ups', 
-  'handstand_pushup', 'muscle_up', 'dips_triceps', 'dominadas' // Añadido 'dominadas' por si acaso
+  'handstand_pushup', 'muscle_up', 'dips_triceps', 'dominadas'
 ]);
 
 // Interfaces internas
@@ -62,35 +61,24 @@ const getAIClient = (): GoogleGenAI => {
 const cleanJson = (text: string): string => {
   if (!text) return "{}";
   
-  // 1. Eliminar bloques de código Markdown y espacios externos
   let clean = text.replace(/```json/gi, '').replace(/```/g, '').trim();
   
-  // 2. Extraer solo el objeto JSON (desde el primer { hasta el último })
   const firstOpen = clean.indexOf('{');
   const lastClose = clean.lastIndexOf('}');
   if (firstOpen !== -1 && lastClose !== -1 && lastClose > firstOpen) {
     clean = clean.substring(firstOpen, lastClose + 1);
   }
 
-  // 3. SANITIZACIÓN CRÍTICA (Fix para errores de parseo):
-  // Reemplaza saltos de línea reales dentro de la cadena por espacios para evitar rotura de strings JSON
   clean = clean.replace(/\n/g, " ");
-  // Reemplaza tabuladores por espacios
   clean = clean.replace(/\t/g, " ");
-  // Escapa backslashes sueltos que no sean parte de un escape válido (como \n o \")
   clean = clean.replace(/\\(?![/\\bfnrtu"']|u[0-9a-fA-F]{4})/g, "\\\\");
 
   return clean;
 };
 
-// HELPER CRÍTICO: Parsea el string de la DB a Objeto JS
 const safeParseWorkout = (structuredData: any): WorkoutData => {
     if (!structuredData) return { exercises: [] };
-    
-    // Si ya es objeto, devolverlo
     if (typeof structuredData === 'object') return structuredData;
-    
-    // Si es string (como en tu DB), parsearlo
     if (typeof structuredData === 'string') {
         try {
             return JSON.parse(structuredData);
@@ -99,7 +87,6 @@ const safeParseWorkout = (structuredData: any): WorkoutData => {
             return { exercises: [] };
         }
     }
-    
     return { exercises: [] };
 };
 
@@ -136,7 +123,6 @@ const generateWithFallback = async (contents: any, config: any, systemInstructio
 const isCalisthenic = (id: string): boolean => CALISTHENIC_IDS.has(id);
 
 const getMuscleGroup = (id: string): string => {
-    // Normalización básica para coincidir con tus IDs
     const lowerId = id.toLowerCase();
     if (lowerId.includes('bench') || lowerId.includes('push_up') || lowerId.includes('dips') || lowerId.includes('chest') || lowerId.includes('tricep') || lowerId.includes('press_banca')) return 'PUSH (Pecho/Tríceps)';
     if (lowerId.includes('pull') || lowerId.includes('row') || lowerId.includes('deadlift') || lowerId.includes('bicep') || lowerId.includes('curl') || lowerId.includes('dominadas')) return 'PULL (Espalda/Bíceps)';
@@ -144,8 +130,6 @@ const getMuscleGroup = (id: string): string => {
     if (lowerId.includes('shoulder') || lowerId.includes('press') || lowerId.includes('raise') || lowerId.includes('hombro')) return 'SHOULDERS (Hombro)';
     return 'OTROS';
 };
-
-const calculate1RM = (weight: number, reps: number) => weight * (1 + (reps / 30));
 
 const calculateSetVolume = (
     reps: number, 
@@ -162,7 +146,6 @@ const calculateSetVolume = (
     }
 
     if (isCalisthenicExercise) {
-        // En tu DB 'Dominadas' tiene weight: 0, así que sumamos userWeight
         return (userWeight + weightInKg) * safeReps;
     } else {
         return weightInKg * safeReps; 
@@ -186,13 +169,12 @@ export const generateGlobalReport = async (
         const globalMaxMap = new Map<string, { val: number, unit: string, isBW: boolean }>();
         const monthlyMaxMap = new Map<string, { val: number, unit: string, isBW: boolean }>();
 
-        // 1. Procesamiento (TypeScript)
+        // 1. Procesamiento
         for (const w of allWorkouts) {
             const wDate = new Date(w.date);
             const isThisMonth = isSameMonth(wDate, now);
             const historicWeight = w.user_weight || currentWeight;
 
-            // PARSEO SEGURO DE LA DB
             const workoutData = safeParseWorkout(w.structured_data);
             if (!workoutData.exercises || !Array.isArray(workoutData.exercises)) continue;
 
@@ -251,12 +233,12 @@ export const generateGlobalReport = async (
             .filter(item => item.monthlyMax > 0)
             .sort((a, b) => b.monthlyMax - a.monthlyMax);
 
-        // 3. Prompt
-        const systemInstruction = `Eres un Entrenador de Alto Rendimiento y Analista de Datos Deportivos.
-        ROL: Técnico, crítico, directo y constructivo. Tono de "gym-bro" experto. Cero cumplidos vacíos.
-        OBJETIVO: Optimización pura.
-        DATOS PROPORCIONADOS: Historial de entrenamientos con Ejercicios, Series, Reps y KG.
-        RESTRICCIÓN: No des consejos de nutrición ni descanso. Céntrate en métricas y programación.
+        // 3. Prompt (ACTUALIZADO: Tono Constructivo + Plan 3 Días)
+        const systemInstruction = `Eres un Entrenador de Alto Rendimiento experto en biomecánica y programación.
+        
+        ROL: Tu tono es **constructivo, profesional, técnico y alentador**. Evita el lenguaje agresivo o de "gym-bro" burlón. Tu objetivo es educar y guiar hacia la mejora continua.
+
+        DATOS PROPORCIONADOS: Historial de entrenamientos, 1RMs y volúmenes.
 
         ESTRUCTURA DE RESPUESTA (JSON):
         {
@@ -275,17 +257,27 @@ export const generateGlobalReport = async (
             ## 4 - ANÁLISIS DE EVOLUCIÓN
             (Comparativa técnica con meses pasados sobre sobrecarga progresiva)
             ## 5 - VEREDICTO Y MEJORAS
-            (3 cambios concretos para el mes que viene)",
+            (3 cambios concretos para el mes que viene).
+            ## 6 - PLAN DE ACCIÓN (PRÓXIMOS 3 DÍAS)
+            Diseña una micro-rutina de 3 días (Día A, Día B, Día C) basada en los datos analizados para corregir debilidades o potenciar fortalezas.
+            
+            IMPORTANTE: Para cada ejercicio, SUGIERE PESOS REALISTAS basados en la 'Comparativa Máximos' provista. Si el usuario levanta 100kg, no sugieras 20kg.
+            
+            Formato requerido:
+            **DÍA 1: [Enfoque]**
+            * [Ejercicio] | [Sets]x[Reps] | [Peso Sugerido / RPE]
+            * ...
+            (Repetir para Día 2 y 3)",
           "score": número 1-10
         }`;
 
-        const prompt = `Analiza mi legado de hierro. 
+        const prompt = `Analiza mi rendimiento para optimizar mi progreso. 
         Biometría: ${currentWeight}kg.
         Peso Total Histórico: ${Math.round(totalVolume)}kg. 
         Peso este mes: ${Math.round(monthlyVolume)}kg. 
-        Comparativa Máximos: ${JSON.stringify(maxComparison.slice(0, 20))}.
+        Comparativa Máximos (Usa esto para calcular los pesos del plan): ${JSON.stringify(maxComparison.slice(0, 20))}.
         Historial detallado del mes: ${JSON.stringify(recentHistory)}.
-        Genera el informe forense estricto.`;
+        Genera el informe profesional y el plan de acción.`;
 
         const response = await generateWithFallback(
             { parts: [{ text: prompt }] },
@@ -360,12 +352,16 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
   } catch (error: any) { handleAIError(error); throw error; }
 };
 
+// ------------------------------------------------------------------
+// GENERATE GROUP ANALYSIS (ARENA MODE)
+// ------------------------------------------------------------------
+
 export const generateGroupAnalysis = async (
     usersData: { name: string; workouts: Workout[] }[],
     language: 'es' | 'en' = 'es'
 ): Promise<GroupAnalysisData> => {
     try {
-        // --- FASE 1: PROCESAMIENTO MATEMÁTICO (TypeScript) ---
+        // --- FASE 1: PROCESAMIENTO MATEMÁTICO ---
         const stats: UserStats[] = usersData.map(user => {
             const s: UserStats = {
                 userId: user.name,
@@ -373,13 +369,11 @@ export const generateGroupAnalysis = async (
                 totalVolume: 0,
                 workoutCount: new Set(user.workouts.map(w => w.date.split('T')[0])).size,
                 muscleVol: {},
-                maxLifts: {} // Aquí guardaremos weight, reps, unit y 1RM estimado
+                maxLifts: {} 
             };
 
             user.workouts.forEach(w => {
                 const historicWeight = w.user_weight || 80; 
-                
-                // 1. PARSEO SEGURO: Evita el crash si structured_data es string
                 const workoutData = safeParseWorkout(w.structured_data);
                 
                 if (workoutData.exercises) {
@@ -387,7 +381,6 @@ export const generateGroupAnalysis = async (
                         const id = getCanonicalId(ex.name, EXERCISE_DB);
                         const muscle = getMuscleGroup(id);
                         
-                        // Inicializar volumen muscular si no existe
                         if (!s.muscleVol[muscle]) s.muscleVol[muscle] = 0;
 
                         ex.sets.forEach(set => {
@@ -395,26 +388,22 @@ export const generateGroupAnalysis = async (
                             const weightVal = (set.weight || 0);
                             const repsVal = (set.reps || 0);
                             
-                            // 2. NORMALIZACIÓN DE CARGA (Todo a KG para cálculos internos)
+                            // Normalización a KG
                             let loadInKg = (set.unit === 'lbs' ? weightVal * 0.453592 : weightVal); 
-                            
-                            // Si es calistenia, la carga real es Peso Corporal + Lastre
                             if (isCalis) loadInKg += historicWeight;
                             
-                            // 3. CÁLCULO DE VOLUMEN
+                            // Volumen
                             const vol = loadInKg * repsVal;
                             s.totalVolume += vol;
                             s.muscleVol[muscle] += vol;
 
-                            // 4. CÁLCULO DE MÁXIMOS (Estimated 1RM)
-                            // Fórmula Epley: Peso * (1 + Reps/30). Si es BW puro, usamos Reps como métrica.
+                            // Cálculo de 1RM Estimado (Epley Formula)
                             const isBW = weightVal === 0 && isCalis;
                             const currentMetric = isBW ? repsVal : (loadInKg * (1 + repsVal / 30));
 
                             const currentBest = s.maxLifts[ex.name];
-                            
-                            // Comparamos métricas normalizadas para ver si este set es el mejor histórico
                             let isNewRecord = false;
+                            
                             if (!currentBest) {
                                 isNewRecord = true;
                             } else {
@@ -430,7 +419,7 @@ export const generateGroupAnalysis = async (
                                     weight: weightVal,
                                     reps: repsVal,
                                     isBodyweight: isBW,
-                                    unit: set.unit || 'kg' // IMPORTANTE: Guardar la unidad original
+                                    unit: set.unit || 'kg'
                                 };
                             }
                         });
@@ -440,100 +429,134 @@ export const generateGroupAnalysis = async (
             return s;
         });
 
-        // --- FASE 2: CROSS-ANALYSIS (Comparativa Directa / Head-to-Head) ---
-        const allExercises = new Set<string>();
-        stats.forEach(s => Object.keys(s.maxLifts).forEach(k => allExercises.add(k)));
+        // --- FASE 2: CROSS-ANALYSIS (Head-to-Head + Empates) ---
+        const allExercisesSet = new Set<string>();
+        stats.forEach(s => Object.keys(s.maxLifts).forEach(k => allExercisesSet.add(k)));
+        const allExercisesList = Array.from(allExercisesSet).sort();
 
         const headToHead: CommonExerciseComparison[] = [];
 
-        allExercises.forEach(exName => {
-            // Filtramos quiénes han hecho este ejercicio
+        allExercisesList.forEach(exName => {
             const participants = stats.filter(s => s.maxLifts[exName]);
             
-            // Solo comparamos si hay 2 o más "gladiadores" en este ejercicio
             if (participants.length > 1) {
                 const entries = participants.map(p => {
                     const lift = p.maxLifts[exName];
-                    
-                    // Normalizar a KG para ordenar correctamente
                     const weightInKg = lift.unit === 'lbs' ? lift.weight * 0.453 : lift.weight;
+                    const powerScore = lift.isBodyweight ? lift.reps : weightInKg * (1 + lift.reps / 30);
                     
-                    // Calcular "Power Score" (1RM o Reps) para decidir ganador
-                    const powerScore = lift.isBodyweight 
-                        ? lift.reps 
-                        : weightInKg * (1 + lift.reps / 30);
-
                     return {
                         userName: p.name,
                         weight: lift.weight,
                         reps: lift.reps,
-                        oneRM: powerScore // Usamos esto para ordenar
+                        unit: lift.unit,
+                        oneRM: powerScore
                     };
-                }).sort((a, b) => b.oneRM - a.oneRM); // Orden descendente (Ganador primero)
+                }).sort((a, b) => b.oneRM - a.oneRM);
+
+                // Lógica de empate
+                let winnerName = entries[0].userName;
+                if (entries.length > 1) {
+                    const diff = Math.abs(entries[0].oneRM - entries[1].oneRM);
+                    if (diff < 0.1) winnerName = 'EMPATE';
+                }
 
                 headToHead.push({
                     exerciseId: exName,
                     exerciseName: exName,
                     entries: entries,
-                    winner: entries[0].userName
+                    winner: winnerName
                 });
             }
         });
 
+        // --- PREPARACIÓN DE DATOS (TABLAS 2 y 3) ---
+
+        // A) DATOS PARA LA MATRIZ (TABLA 3)
+        const matrixData = allExercisesList.map(exName => {
+            const row: any = { exercise: exName };
+            stats.forEach(user => {
+                const lift = user.maxLifts[exName];
+                if (lift) {
+                    row[user.name] = lift.isBodyweight 
+                        ? `${lift.reps} reps` 
+                        : `${lift.weight}${lift.unit} x ${lift.reps}`;
+                } else {
+                    row[user.name] = ""; 
+                }
+            });
+            return row;
+        });
+
+        // B) DATOS PARA ENFOQUE (TABLA 2)
+        const focusComparison = stats.map(user => {
+            const total = user.totalVolume || 1;
+            const breakdown = Object.entries(user.muscleVol)
+                .sort(([, a], [, b]) => b - a)
+                .map(([muscle, vol]) => {
+                    const pct = Math.round((vol / total) * 100);
+                    return `${muscle} (${pct}%)`;
+                }).slice(0, 3);
+            
+            return {
+                name: user.name,
+                top_muscles: breakdown.join(', ')
+            };
+        });
+
         // --- FASE 3: GENERACIÓN IA ---
-        const systemInstruction = `Eres el Juez Supremo de una Competición de Powerlifting y Bodybuilding de Élite.
-        TU ROL: Analista de datos deportivo, despiadado, técnico y con un humor "gym-bro" inteligente.
-        OBJETIVO: Humillar la mediocridad y glorificar la fuerza basándote E STRICTAMENTE en los datos provistos.
+        const systemInstruction = `Eres el Juez Supremo de una Arena de Entrenamiento.
+        TU ROL: Analista de datos brutalmente honesto.
+        
+        INSTRUCCIONES DE FORMATO (CRÍTICO):
+        1. Respuesta JSON válido. "markdown_report" en UNA SOLA LÍNEA (usa \\n).
+        
+        ESTRUCTURA DEL REPORTE MARKDOWN:
+        
+        **SECCIÓN 1: DUELOS (Head-to-Head)**
+        ¡IMPORTANTE! NO HAGAS UNA TABLA AQUÍ.
+        Genera una lista visual de tarjetas para los ejercicios comunes más relevantes (máximo 5-6).
+        Formato obligatorio por ejercicio:
+        
+        ### [NOMBRE EJERCICIO MAYÚSCULAS]
+        🏆 **[Ganador]**: [Carga] [Reps]
+        ⚔️ vs [Segundo]: [Carga] [Reps]
+        (Deja espacio entre ejercicios)
+        
+        *Si 'winner' es 'EMPATE', usa este formato:*
+        ⚖️ **EMPATE TÉCNICO**: [Carga] [Reps]
+        ⚔️ [Usuario A] vs [Usuario B]
 
-        INSTRUCCIONES DE SEGURIDAD JSON (CRÍTICO):
-        1. Tu respuesta debe ser un JSON válido (RFC 8259).
-        2. El campo "markdown_report" debe ser UNA SOLA LÍNEA de texto. Usa '\\n' para los saltos de línea visuales. NUNCA uses saltos de línea reales.
-        3. NO uses comillas dobles (") dentro del texto del reporte a menos que las escapes correctamente (\\"). Prefiere comillas simples (').
-
-        ESTRUCTURA DE SALIDA (JSON):
-        {
-            "alpha_user": "Nombre del ganador indiscutible (Volumen + Constancia)",
-            "beta_user": "Nombre del que necesita espabilar (Bajo rendimiento)",
-            "markdown_report": "Informe completo en Markdown enriquecido (ver contenido abajo)"
-        }
-
-        CONTENIDO DEL REPORTE (Markdown):
-        1. Usa Emojis para dar vida (🏆, 💀, 🧬, 🛡️).
-        2. **TABLA 1: BATALLA REAL (Head-to-Head)**. Usa 'head_to_head_results'. Compara quién levantó más en ejercicios comunes. Sé descriptivo (ej: 'Juan aplastó a Pedro en Banca').
-        3. **TABLA 2: ANATOMÍA DEL DOMINIO**. Usa 'muscle_focus'. ¿Quién domina qué grupo muscular? Muestra una tabla y realiza comparaciones (ej: 'Carlos es el rey del Push, pero Ana domina Legs').
-        4. **TABLA 3: HALL OF FAME**. Lista todos los levantamientos (PRs) de cada usuario ordenados por impacto.
-        5. **VEREDICTO FINAL (ROAST TÉCNICO)**: Un párrafo final ácido. Critica desequilibrios (ej: "Mucho pecho y patas de pollo"), falta de constancia o pesos bajos ("levantando pesos de calentamiento"). Sé gracioso pero técnico.
+        **TABLA 2: DISTRIBUCIÓN DE ENTRENAMIENTO (Focus Analysis)**
+        (Aquí SÍ usa una Tabla normal).
+        Columnas: Atleta | Top 3 Grupos Musculares (% del volumen).
+        
+        **TABLA 3: MATRIZ DE RENDIMIENTO COMPLETA (The Matrix)**
+        (Aquí SÍ usa una Tabla normal).
+        Columnas: Ejercicio | [Nombre Usuario 1] | [Nombre Usuario 2] ...
+        Filas: Todos los ejercicios provistos en 'full_matrix_data'.
+        Celdas: Copia el valor exacto (ej: "100kg x 5"). Si está vacío, deja la celda vacía.
+        
+        **VEREDICTO FINAL**
+        Párrafo final ácido resumiendo quién es el Alpha.
         `;
 
-        // Preparamos el resumen para la IA (Solo datos digeridos para ahorrar tokens y mejorar precisión)
         const promptData = {
-            summary: stats.map(s => ({
-                name: s.name,
-                total_tonnage: Math.round(s.totalVolume / 1000) + " tons",
-                consistency: `${s.workoutCount} sessions`,
-                muscle_dominance: Object.entries(s.muscleVol)
-                    .sort(([,a], [,b]) => b - a)
-                    .slice(0, 2) // Top 2 músculos
-                    .map(([k, v]) => `${k} (${Math.round(v)}kg vol)`),
-                top_lifts: Object.entries(s.maxLifts)
-                    .sort(([,a], [,b]) => {
-                        // Ordenar lifts por estimación de carga para enviar los más impresionantes
-                        const valA = a.isBodyweight ? 0 : a.weight;
-                        const valB = b.isBodyweight ? 0 : b.weight;
-                        return valB - valA;
-                    })
-                    .slice(0, 5) // Top 5 ejercicios
-            })),
-            head_to_head_results: headToHead.slice(0, 10).map(h => ({ // Top 10 batallas
+            head_to_head_results: headToHead.slice(0, 10).map(h => ({
                 exercise: h.exerciseName,
                 winner: h.winner,
-                details: h.entries.map(e => `${e.userName}: ${e.weight > 0 ? e.weight + 'kg' : 'BW'} x ${e.reps}`).join(' vs ')
-            }))
+                details: h.entries.map(e => ({
+                    user: e.userName,
+                    display: e.weight > 0 ? `${e.weight}${e.unit} x ${e.reps}` : `${e.reps} reps`
+                }))
+            })),
+            focus_comparison: focusComparison,
+            full_matrix_data: matrixData
         };
 
         const response = await generateWithFallback(
-            { parts: [{ text: `Genera el veredicto final de la Arena: ${JSON.stringify(promptData)}` }] },
-            { responseMimeType: "application/json", temperature: 0.6 },
+            { parts: [{ text: `Genera el análisis completo: ${JSON.stringify(promptData)}` }] },
+            { responseMimeType: "application/json", temperature: 0.5 },
             systemInstruction
         );
 
@@ -541,11 +564,12 @@ export const generateGroupAnalysis = async (
 
         return {
             ...aiRes, 
-            // Pasamos los datos crudos calculados para que el Frontend (ArenaModal) pueda dibujar las gráficas
             rawStats: stats,
             headToHeadData: headToHead
         };
 
-    } catch (error) { handleAIError(error); throw error; }
+    } catch (error) { 
+        console.error("Error en generateGroupAnalysis:", error);
+        throw error; 
+    }
 };
-

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, ShieldAlert, AlertTriangle, Radar, Zap, Scale, Trophy, ArrowUpRight, Target, Activity, FileText } from 'lucide-react';
+import { X, ShieldAlert, AlertTriangle, Radar, Zap, Scale, Trophy, ArrowUpRight, Target, Activity, FileText, Dumbbell } from 'lucide-react';
 import { Workout, GlobalReportData, User } from '../types';
 import { generateGlobalReport } from '../services/workoutProcessor';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -13,13 +13,14 @@ interface MonthlySummaryModalProps {
   currentUser: User;
 }
 
-// --- RENDERIZADOR ROBUSTO (Estilo Terminal/Dossier) ---
+// --- RENDERIZADOR DE TEXTO & MARKDOWN (Mejorado para tablas y planes) ---
 const DossierRenderer = ({ text }: { text: string }) => {
   if (!text) return null;
   
   const lines = text.split('\n').map(l => l.trim());
   const elements: React.ReactNode[] = [];
   
+  // Función para procesar negritas y palabras clave
   const renderFormattedText = (content: string) => {
     const parts = content.split(/(\*\*.*?\*\*)/g);
     return (
@@ -28,22 +29,30 @@ const DossierRenderer = ({ text }: { text: string }) => {
             const boldText = part.slice(2, -2).trim();
             const upper = boldText.toUpperCase();
             
-            // Detección de palabras clave del Prompt
-            const isCritical = upper.includes('ALERTA ROJA') || upper.includes('CRÍTICO') || upper.includes('ERROR');
-            const isHighlight = upper.includes('SANDBAGGING') || upper.includes('VEREDICTO') || upper.includes('MAV') || upper.includes('MRV');
+            // Detección de palabras clave para colorear
+            const isCritical = upper.includes('ALERTA');
+            const isPlanDay = upper.includes('DÍA 1') || upper.includes('DÍA 2') || upper.includes('DÍA 3');
+            const isPositive = upper.includes('ÓPTIMO') || upper.includes('MAV') || upper.includes('PR');
 
             if (isCritical) {
                 return (
-                    <span key={i} className="text-red-500 font-black bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/30 shadow-[0_0_10px_rgba(239,68,68,0.2)] inline-flex items-center gap-1 mx-1 animate-pulse">
+                    <span key={i} className="text-red-400 font-black bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/30 inline-flex items-center gap-1 mx-1">
                         <AlertTriangle className="w-3 h-3" /> {boldText}
                     </span>
                 );
             }
-            return (
-              <strong key={i} className={isHighlight ? "text-primary font-black underline decoration-primary/30 decoration-2 underline-offset-2" : "text-white font-bold"}>
-                {boldText}
-              </strong>
-            );
+            if (isPlanDay) {
+                return (
+                    <span key={i} className="text-primary font-black bg-primary/10 px-2 py-0.5 rounded border border-primary/30 inline-block mt-2 mb-1 shadow-[0_0_10px_rgba(212,255,0,0.1)]">
+                         {boldText}
+                    </span>
+                );
+            }
+            if (isPositive) {
+                return <span key={i} className="text-green-400 font-black underline decoration-green-500/30">{boldText}</span>;
+            }
+
+            return <strong key={i} className="text-white font-bold">{boldText}</strong>;
           }
           return part;
         })}</>
@@ -59,12 +68,12 @@ const DossierRenderer = ({ text }: { text: string }) => {
       continue;
     }
 
-    // 1. TABLAS (Lógica mejorada para saltar separadores |---|)
+    // 1. TABLAS (Lógica Responsive: Ajuste de texto automático)
     if (line.startsWith('|')) {
       const tableRows: string[][] = [];
       while (i < lines.length && lines[i].startsWith('|')) {
         const rowContent = lines[i];
-        // Regex para ignorar filas de alineación markdown (ej: |---| o |:---:|)
+        // Ignorar líneas de separación markdown (ej: |---|)
         const isSeparator = /^\|[\s-:|]+\|$/.test(rowContent);
         
         if (!isSeparator) {
@@ -79,15 +88,17 @@ const DossierRenderer = ({ text }: { text: string }) => {
 
       if (tableRows.length > 0) {
         elements.push(
-          <div key={`table-${i}`} className="my-6 overflow-hidden rounded-xl border border-white/10 bg-black/40 shadow-lg relative group">
-             {/* Decoración de tabla */}
-            <div className="absolute top-0 right-0 p-1 opacity-20"><Activity className="w-4 h-4 text-primary" /></div>
-            <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs whitespace-nowrap">
+          <div key={`table-${i}`} className="my-6 w-full overflow-hidden rounded-xl border border-white/10 bg-black/40 shadow-lg relative group">
+             <div className="absolute top-0 right-0 p-1 opacity-20"><Activity className="w-4 h-4 text-primary" /></div>
+             {/* Wrapper con overflow-x por seguridad, pero intentamos que no se use */}
+             <div className="overflow-x-auto custom-scrollbar">
+                <table className="w-full text-left text-xs table-auto">
                 <thead>
                     <tr className="bg-white/5 border-b border-white/10">
                     {tableRows[0].map((cell, idx) => (
-                        <th key={idx} className="px-4 py-3 font-black text-primary uppercase tracking-widest bg-zinc-900/50">{cell}</th>
+                        <th key={idx} className="px-3 py-3 font-black text-primary uppercase tracking-wider bg-zinc-900/50 whitespace-normal min-w-[80px]">
+                            {cell}
+                        </th>
                     ))}
                     </tr>
                 </thead>
@@ -95,7 +106,8 @@ const DossierRenderer = ({ text }: { text: string }) => {
                     {tableRows.slice(1).map((row, rowIdx) => (
                     <tr key={rowIdx} className="hover:bg-white/5 transition-colors">
                         {row.map((cell, cellIdx) => (
-                        <td key={cellIdx} className="px-4 py-3 font-mono text-zinc-300 group-hover:text-white transition-colors border-r border-white/5 last:border-0">
+                        <td key={cellIdx} className="px-3 py-3 font-mono text-zinc-300 group-hover:text-white transition-colors border-r border-white/5 last:border-0 whitespace-normal min-w-[80px] leading-relaxed">
+                            {/* whitespace-normal permite el salto de línea. min-w evita columnas colapsadas */}
                             {renderFormattedText(cell)}
                         </td>
                         ))}
@@ -110,11 +122,11 @@ const DossierRenderer = ({ text }: { text: string }) => {
       continue;
     }
 
-    // 2. TÍTULOS (##)
+    // 2. TÍTULOS PRINCIPALES (##)
     if (line.startsWith('## ')) {
       const title = line.replace('## ', '').trim();
       elements.push(
-        <div key={i} className="flex items-center gap-3 pt-8 border-b border-white/10 pb-2 mb-4 first:pt-0 mt-2">
+        <div key={i} className="flex items-center gap-3 pt-8 border-b border-white/10 pb-2 mb-4 first:pt-0 mt-4">
            <div className="bg-primary/20 p-1.5 rounded text-primary border border-primary/20"><Target className="w-4 h-4" /></div>
            <h4 className="text-sm font-black uppercase tracking-[0.2em] text-white italic">{title}</h4>
         </div>
@@ -136,31 +148,34 @@ const DossierRenderer = ({ text }: { text: string }) => {
       continue;
     }
 
-    // 4. LISTAS DESTACADAS
-    if (/^[A-G]\)\s/.test(line) || /^\d\.\s/.test(line)) {
-      elements.push(
-        <div key={i} className="bg-zinc-900/50 border-l-2 border-primary/50 p-3 rounded-r-xl mt-2 mb-2 hover:bg-zinc-900/80 transition-colors border-y border-r border-white/5">
-            <p className="text-sm font-medium text-zinc-200 leading-relaxed">{renderFormattedText(line)}</p>
-        </div>
-      );
-      i++;
-      continue;
-    }
-
-    // 5. BULLETS
+    // 4. LISTAS / EJERCICIOS DEL PLAN (Detecta "* Ejercicio | Sets | Peso")
     if (/^(\*\s|\-\s|\•\s)/.test(line)) {
       const content = line.replace(/^(\*\s|\-\s|\•\s)/, '').trim();
-      elements.push(
-        <div key={i} className="flex gap-3 pl-2 py-1 group items-start">
-          <div className="mt-2 w-1.5 h-1.5 rounded-full bg-zinc-600 group-hover:bg-primary shrink-0 transition-colors shadow-[0_0_5px_rgba(212,255,0,0)] group-hover:shadow-[0_0_8px_rgba(212,255,0,0.5)]" />
-          <p className="text-sm text-zinc-400 leading-relaxed group-hover:text-zinc-300 transition-colors">{renderFormattedText(content)}</p>
-        </div>
-      );
+      
+      // Si parece una línea del Plan de Acción (contiene separadores | )
+      if (content.includes('|')) {
+         elements.push(
+            <div key={i} className="flex gap-3 pl-2 py-2 group items-center border-b border-white/5 last:border-0">
+                <Dumbbell className="w-3 h-3 text-zinc-600 group-hover:text-primary transition-colors shrink-0" />
+                <p className="text-sm text-zinc-300 font-mono leading-relaxed group-hover:text-white transition-colors w-full">
+                    {renderFormattedText(content)}
+                </p>
+            </div>
+         );
+      } else {
+        // Bullet normal
+        elements.push(
+            <div key={i} className="flex gap-3 pl-2 py-1 group items-start">
+            <div className="mt-2 w-1.5 h-1.5 rounded-full bg-zinc-600 group-hover:bg-primary shrink-0 transition-colors shadow-[0_0_5px_rgba(212,255,0,0)]" />
+            <p className="text-sm text-zinc-400 leading-relaxed group-hover:text-zinc-300 transition-colors">{renderFormattedText(content)}</p>
+            </div>
+        );
+      }
       i++;
       continue;
     }
 
-    // 6. TEXTO GENERAL
+    // 5. TEXTO GENERAL
     elements.push(
       <div key={i} className="flex gap-3 mb-2">
          <p className="text-sm text-zinc-500 leading-relaxed italic">{renderFormattedText(line)}</p>
@@ -171,6 +186,8 @@ const DossierRenderer = ({ text }: { text: string }) => {
 
   return <div className="space-y-1 font-sans selection:bg-primary selection:text-black pb-10">{elements}</div>;
 };
+
+// --- COMPONENTE PRINCIPAL ---
 
 export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen, onClose, workouts, currentUser }) => {
   const [data, setData] = useState<GlobalReportData | null>(null);
@@ -213,8 +230,10 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      {/* Backdrop con Blur */}
       <div className="absolute inset-0 bg-black/95 backdrop-blur-xl" onClick={onClose} />
       
+      {/* Contenedor Modal */}
       <div className="relative w-full max-w-lg bg-[#0a0a0a] border border-white/10 rounded-[2rem] shadow-[0_0_100px_rgba(0,0,0,0.8)] flex flex-col h-[92vh] animate-in zoom-in-95 duration-300 text-text overflow-hidden ring-1 ring-white/5">
         
         {/* --- HEADER --- */}
@@ -237,9 +256,10 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
           <button onClick={onClose} className="p-2 text-zinc-600 hover:text-white transition-colors hover:rotate-90 duration-300 bg-white/5 rounded-full"><X className="w-5 h-5" /></button>
         </div>
 
+        {/* --- BODY SCROLLABLE --- */}
         <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#050505] relative">
             
-            {/* NOISE TEXTURE BACKGROUND */}
+            {/* Background Texture */}
             <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] pointer-events-none fixed"></div>
 
             {loading ? (
@@ -252,14 +272,14 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
                             <Radar className="w-12 h-12 text-primary animate-pulse" />
                         </div>
                         <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap">
-                            <span className="text-[10px] font-mono text-primary blink bg-primary/10 px-3 py-1 rounded border border-primary/20">ANALIZANDO BIOMETRÍA...</span>
+                            <span className="text-[10px] font-mono text-primary blink bg-primary/10 px-3 py-1 rounded border border-primary/20">CALCULANDO PLAN 3 DÍAS...</span>
                         </div>
                     </div>
                 </div>
             ) : error ? (
                 <div className="flex flex-col items-center justify-center h-full p-10 text-center space-y-4">
                     <div className="bg-red-500/10 p-5 rounded-full border border-red-500/20 shadow-[0_0_30px_rgba(239,68,68,0.2)]"><AlertTriangle className="w-12 h-12 text-red-500" /></div>
-                    <p className="text-red-500 font-black uppercase font-mono tracking-widest text-lg">Fallo de Auditoría</p>
+                    <p className="text-red-500 font-black uppercase font-mono tracking-widest text-lg">Fallo de Sistema</p>
                     <p className="text-zinc-500 text-sm max-w-xs mx-auto">{error}</p>
                 </div>
             ) : data ? (
@@ -272,7 +292,7 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
                             <div className="flex items-center justify-between mb-4">
                                 <div className="flex items-center gap-2">
                                     <Scale className="w-4 h-4 text-zinc-500" />
-                                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Acumulado Histórico</span>
+                                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Total Histórico</span>
                                 </div>
                                 <Activity className="w-4 h-4 text-zinc-700 group-hover:text-primary transition-colors" />
                             </div>
@@ -292,7 +312,7 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
                             <div className="flex items-center justify-between mb-4 relative z-10">
                                 <div className="flex items-center gap-2">
                                     <Zap className="w-4 h-4 text-primary" />
-                                    <span className="text-[10px] font-black text-primary uppercase tracking-widest">Carga Mes: {data.monthName}</span>
+                                    <span className="text-[10px] font-black text-primary uppercase tracking-widest">Carga {data.monthName}</span>
                                 </div>
                             </div>
                             <div className="flex items-baseline gap-2 relative z-10">
@@ -306,7 +326,7 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
                         </div>
                     </div>
 
-                    {/* 2. MAX COMPARISON TABLE */}
+                    {/* 2. MAX COMPARISON TABLE (RÉCORDS) */}
                     <div className="px-6 mb-8">
                          <div className="flex items-center gap-2 mb-3 px-1">
                             <Trophy className="w-3.5 h-3.5 text-yellow-500" />
@@ -326,7 +346,10 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
                                         const isNewRecord = max.monthlyMax >= max.globalMax && max.monthlyMax > 0;
                                         return (
                                             <tr key={idx} className="hover:bg-white/5 transition-colors">
-                                                <td className="px-4 py-3 font-bold text-zinc-300 truncate max-w-[120px]">{max.exercise}</td>
+                                                {/* truncate y max-w para evitar desbordes en nombres largos */}
+                                                <td className="px-4 py-3 font-bold text-zinc-300 truncate max-w-[120px]" title={max.exercise}>
+                                                    {max.exercise}
+                                                </td>
                                                 <td className="px-4 py-3 text-right font-mono font-black text-white">
                                                     {max.monthlyMax}<span className="text-[8px] text-zinc-600 ml-0.5">{max.unit}</span>
                                                 </td>
@@ -352,7 +375,7 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
                          </div>
                     </div>
 
-                    {/* 3. AI REPORT SECTION */}
+                    {/* 3. AI REPORT & PLAN SECTION */}
                     <div className="px-6">
                         <div className="bg-zinc-900/20 border border-white/5 rounded-[2rem] p-6 md:p-8 relative min-h-[400px] shadow-2xl">
                             {/* Score Badge */}
@@ -363,7 +386,7 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
 
                             <div className="flex items-center gap-2 mb-6 opacity-50 border-b border-white/5 pb-4">
                                 <FileText className="w-4 h-4 text-zinc-400" />
-                                <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Análisis Táctico</span>
+                                <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Informe Técnico</span>
                             </div>
 
                             <DossierRenderer text={data.monthlyAnalysisText} />
@@ -375,7 +398,7 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
                     </div>
 
                     <div className="mt-8 text-center pb-20 px-10">
-                        <p className="text-[9px] text-zinc-800 font-mono uppercase tracking-[0.2em]">Generated by Gym-AI Neural Core</p>
+                        <p className="text-[9px] text-zinc-800 font-mono uppercase tracking-[0.2em]">Powered by Gemini AI Neural Core</p>
                     </div>
                 </div>
             ) : null}

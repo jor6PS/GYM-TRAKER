@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Swords, Crown, Sparkles, Loader2, Trophy, Flame, Medal, Scale, Dumbbell, Activity, Zap, AlertTriangle, BicepsFlexed, FileText, Target } from 'lucide-react';
+import { X, Swords, Crown, Loader2, Scale, Activity, Zap, AlertTriangle, FileText, Target } from 'lucide-react';
 import { generateGroupAnalysis } from '../services/workoutProcessor';
 import { Workout, User } from '../types';
-import { clsx } from 'clsx';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useScrollLock } from '../hooks/useScrollLock';
 
@@ -13,26 +12,21 @@ interface ArenaModalProps {
   friendsData: { userId: string; name: string; workouts: Workout[]; color: string }[];
 }
 
-// --- RENDERIZADOR DE TEXTO (CORREGIDO) ---
+// --- RENDERIZADOR DE TEXTO MEJORADO (Cards para Duelos + Tablas Matrix) ---
 const DossierRenderer = ({ text }: { text: string }) => {
   if (!text) return null;
   
-  // Normalización agresiva de saltos de línea
   let normalizedText = text.replace(/\\n/g, '\n').replace(/\\n/g, '\n');
   const lines = normalizedText.split('\n').map(l => l.trim());
   
   const elements: React.ReactNode[] = [];
   
-  // Función para procesar negritas dentro de una línea
   const renderFormattedText = (content: string) => {
-    // Regex para capturar **texto**
     const parts = content.split(/(\*\*.*?\*\*)/g);
     return (
       <>{parts.map((part, i) => {
           if (part.startsWith('**') && part.endsWith('**')) {
-            const boldText = part.slice(2, -2).trim();
-            // Renderizamos con un color blanco brillante y sombra
-            return <strong key={i} className="text-white font-bold drop-shadow-sm">{boldText}</strong>;
+            return <strong key={i} className="text-white font-bold drop-shadow-sm">{part.slice(2, -2).trim()}</strong>;
           }
           return part;
         })}</>
@@ -42,15 +36,13 @@ const DossierRenderer = ({ text }: { text: string }) => {
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
-    
     if (!line) { i++; continue; }
 
-    // 1. TABLAS (Detecta formato Markdown)
+    // 1. TABLAS (Matrix y Focus)
     if (line.startsWith('|')) {
       const tableRows: string[][] = [];
       while (i < lines.length && lines[i].startsWith('|')) {
         const rowContent = lines[i];
-        // Ignorar separadores tipo |---| o | :--- |
         if (!/^\|[\s-:|]+\|$/.test(rowContent)) { 
             const cells = rowContent.split('|').filter((_, idx, arr) => idx > 0 && idx < arr.length - 1).map(c => c.trim());
             tableRows.push(cells);
@@ -58,23 +50,26 @@ const DossierRenderer = ({ text }: { text: string }) => {
         i++;
       }
       if (tableRows.length > 0) {
+        const isMatrix = tableRows[0].length > 3; 
         elements.push(
-          <div key={`table-${i}`} className="my-4 overflow-hidden rounded-xl border border-white/10 bg-black/40 shadow-lg">
-            <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs whitespace-nowrap">
+          <div key={`table-${i}`} className="my-4 w-full overflow-hidden rounded-xl border border-white/10 bg-black/40 shadow-lg flex flex-col">
+            <div className={isMatrix ? "overflow-x-auto custom-scrollbar" : "w-full"}>
+                <table className={`w-full text-left border-collapse ${isMatrix ? 'min-w-[400px]' : 'table-fixed'}`}>
                 <thead>
                     <tr className="bg-white/5 border-b border-white/10">
                     {tableRows[0].map((cell, idx) => (
-                        <th key={idx} className="px-4 py-3 font-black text-primary uppercase tracking-widest bg-zinc-900/50 text-[10px]">{cell}</th>
+                        <th key={idx} className="px-3 py-2.5 font-black text-primary uppercase tracking-widest bg-zinc-900/50 text-[10px] whitespace-nowrap border-r border-white/5 last:border-0 sticky left-0 z-10">
+                            {cell}
+                        </th>
                     ))}
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
                     {tableRows.slice(1).map((row, rowIdx) => (
-                    <tr key={rowIdx} className="hover:bg-white/5 transition-colors">
+                    <tr key={rowIdx} className="hover:bg-white/5 transition-colors group">
                         {row.map((cell, cellIdx) => (
-                        <td key={cellIdx} className="px-4 py-2 font-mono text-zinc-300 border-r border-white/5 last:border-0 text-[11px]">
-                            {renderFormattedText(cell)}
+                        <td key={cellIdx} className={`px-3 py-2 font-mono text-zinc-300 border-r border-white/5 last:border-0 text-[10px] align-middle ${cellIdx === 0 ? 'font-bold text-white whitespace-nowrap bg-zinc-900/20' : 'whitespace-normal text-center min-w-[80px]'}`}>
+                            {cell === '---' || cell === '' ? <span className="opacity-10">-</span> : renderFormattedText(cell)}
                         </td>
                         ))}
                     </tr>
@@ -88,33 +83,76 @@ const DossierRenderer = ({ text }: { text: string }) => {
       continue;
     }
 
-    // 2. TÍTULOS (## o ###) -> CORRECCIÓN DE ASTERISCOS AQUÍ
-    if (line.startsWith('#')) {
-      // 1. Quitar las almohadillas
-      let cleanTitle = line.replace(/^#+\s*/, '').trim();
-      
-      // 2. CORRECCIÓN: Si el título entero está envuelto en **, quitarlos
-      // (Porque el h4 ya aplica negrita, no necesitamos los asteriscos visibles)
-      cleanTitle = cleanTitle.replace(/^\*\*(.*)\*\*$/, '$1'); 
-      cleanTitle = cleanTitle.replace(/^__(.*)__$/, '$1');
-
-      elements.push(
-        <div key={i} className="flex items-center gap-3 pt-6 border-b border-white/10 pb-2 mb-3 mt-4">
-           <Target className="w-4 h-4 text-primary" />
-           {/* Pasamos por renderFormattedText por si queda alguna negrita parcial dentro */}
-           <h4 className="text-sm font-black uppercase tracking-[0.2em] text-white italic">{renderFormattedText(cleanTitle)}</h4>
-        </div>
-      );
-      i++; continue;
+    // 2. TÍTULOS DE SECCIÓN (Headers grandes)
+    if (line.startsWith('## ')) { // Solo h2 o h3 principales
+         // No hacemos nada especial, dejamos que caiga en el parser de headers normal o lo ignoramos si es redundante
     }
-
-    // 3. TEXTO NORMAL
-    if (line.length > 0) {
+    
+    // 3. LOGICA VISUAL PARA DUELOS (HEAD-TO-HEAD)
+    // Detectamos el header del ejercicio (###)
+    if (line.startsWith('###')) {
+        let cleanTitle = line.replace(/^#+\s*/, '').trim().replace(/^\*\*(.*)\*\*$/, '$1');
         elements.push(
-            <div key={i} className="mb-2 text-xs text-zinc-400 leading-relaxed font-mono">
-                {renderFormattedText(line)}
+            <div key={`h-${i}`} className="mt-4 mb-2 flex items-center gap-2 px-1">
+                <Target className="w-3 h-3 text-zinc-500" />
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-400">{cleanTitle}</span>
             </div>
         );
+        i++; continue;
+    }
+
+    // Detectamos al GANADOR (🏆)
+    if (line.includes('🏆') || line.includes('⚖️')) {
+        const isDraw = line.includes('⚖️');
+        // Limpiamos el icono del texto para pintarlo nosotros
+        const content = line.replace(/🏆|⚖️/, '').trim();
+        
+        elements.push(
+            <div key={`win-${i}`} className={`relative p-3 rounded-lg border flex items-center gap-3 mb-1 shadow-md overflow-hidden ${isDraw ? 'bg-zinc-800/50 border-zinc-600/30' : 'bg-primary/10 border-primary/30'}`}>
+                <div className={`shrink-0 p-1.5 rounded-full ${isDraw ? 'bg-zinc-700' : 'bg-primary/20'}`}>
+                    {isDraw ? <Scale className="w-4 h-4 text-zinc-300" /> : <Crown className="w-4 h-4 text-primary fill-primary" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                    <div className={`text-xs font-mono truncate ${isDraw ? 'text-zinc-200' : 'text-primary-foreground font-bold'}`}>
+                        {renderFormattedText(content)}
+                    </div>
+                </div>
+                {!isDraw && <div className="absolute right-0 top-0 bottom-0 w-1 bg-primary/50"></div>}
+            </div>
+        );
+        i++; continue;
+    }
+
+    // Detectamos al PERDEDOR (⚔️)
+    if (line.includes('⚔️') || line.trim().startsWith('vs')) {
+        const content = line.replace(/⚔️|vs/i, '').trim();
+        elements.push(
+            <div key={`vs-${i}`} className="ml-11 mb-3 text-[10px] text-zinc-500 font-mono flex items-center gap-1">
+                <span className="opacity-50 text-[9px]">vs</span> {renderFormattedText(content)}
+            </div>
+        );
+        i++; continue;
+    }
+
+
+    // 4. TEXTO NORMAL (Para veredicto o intros)
+    if (line.length > 0) {
+        // Headers normales que no son de ejercicios
+        if (line.startsWith('#')) {
+             let cleanTitle = line.replace(/^#+\s*/, '').trim().replace(/^\*\*(.*)\*\*$/, '$1');
+             elements.push(
+                <div key={i} className="flex items-center gap-2 pt-6 border-b border-white/10 pb-2 mb-3 mt-2">
+                   <FileText className="w-3 h-3 text-primary shrink-0" />
+                   <h4 className="text-xs font-black uppercase tracking-[0.2em] text-white italic">{renderFormattedText(cleanTitle)}</h4>
+                </div>
+             );
+        } else {
+             elements.push(
+                <div key={i} className="mb-2 text-[11px] text-zinc-400 leading-relaxed font-mono whitespace-normal break-words">
+                    {renderFormattedText(line)}
+                </div>
+            );
+        }
     }
     i++;
   }
@@ -149,118 +187,23 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
 
         const rawResult: any = await generateGroupAnalysis(usersPayload, language);
 
-        // --- ADAPTER LOGIC ---
         const maxVol = Math.max(...rawResult.rawStats.map((s: any) => s.totalVolume));
-        const maxDays = Math.max(...rawResult.rawStats.map((s: any) => s.workoutCount));
-        
-        const scoredUsers = rawResult.rawStats.map((s: any) => {
-            const volScore = maxVol > 0 ? (s.totalVolume / maxVol) * 60 : 0;
-            const dayScore = maxDays > 0 ? (s.workoutCount / maxDays) * 40 : 0;
-            
-            let topMuscle = "General";
-            let maxMuscleVol = 0;
-            if (s.muscleVol) {
-                Object.entries(s.muscleVol).forEach(([m, v]: [string, any]) => {
-                    if (v > maxMuscleVol) {
-                        maxMuscleVol = v;
-                        topMuscle = m.split(' ')[0];
-                    }
-                });
-            }
+        const rankings = rawResult.rawStats
+            .map((s: any) => ({
+                name: s.name,
+                score: maxVol > 0 ? (s.totalVolume / maxVol) * 100 : 0
+            }))
+            .sort((a: any, b: any) => b.score - a.score)
+            .map((u: any, index: number) => ({ ...u, rank: index + 1 }));
 
-            return { 
-                ...s, 
-                score: volScore + dayScore,
-                topMuscleName: topMuscle
-            };
-        }).sort((a: any, b: any) => b.score - a.score);
-
-        const rankings = scoredUsers.map((u: any, index: number) => ({
-            rank: index + 1,
-            name: u.name,
-            reason: `${Math.round(u.totalVolume / 1000)}t / ${u.workoutCount}d`,
-            score: u.score,
-            topMuscle: u.topMuscleName
-        }));
-
-        // --- LÓGICA DE LIMPIEZA DE REPORTE ---
-        const fullReport = rawResult.markdown_report || "";
-        
-        let roastText = "Análisis completado.";
-        if (fullReport.toUpperCase().includes('ROAST TÉCNICO')) {
-            roastText = fullReport.split(/ROAST TÉCNICO/i)[1]?.replace(/^[:*#\s]+/, '').trim() || roastText;
-        } else if (fullReport.toUpperCase().includes('VEREDICTO')) {
-             roastText = fullReport.split(/VEREDICTO/i)[1]?.replace(/^[:*#\s]+/, '').trim() || roastText;
-        }
-
-        const cutOffMarkers = ["TABLA 3", "HALL OF FAME", "ROAST TÉCNICO", "VEREDICTO FINAL"];
-        let reportBody = fullReport;
-        
-        let earliestIndex = -1;
-        for (const marker of cutOffMarkers) {
-            const idx = reportBody.toUpperCase().indexOf(marker);
-            if (idx !== -1) {
-                if (earliestIndex === -1 || idx < earliestIndex) {
-                    earliestIndex = idx;
-                }
-            }
-        }
-
-        if (earliestIndex !== -1) {
-            reportBody = reportBody.substring(0, earliestIndex).trim();
-        }
-        
-        reportBody = reportBody.replace(/[#*]+\s*$/, '').trim();
-
-        const processedData = {
+        setAnalysis({
             winner: rawResult.alpha_user || rankings[0].name,
-            loser: rawResult.beta_user || rankings[rankings.length - 1].name,
             rankings: rankings,
-            markdown_body: reportBody, 
-            
+            markdown_body: rawResult.markdown_report || "",
             volume_table: rawResult.rawStats
                 .sort((a: any, b: any) => b.totalVolume - a.totalVolume)
                 .map((s: any) => ({ name: s.name, total_volume_kg: Math.round(s.totalVolume) })),
-            
-            points_table: rawResult.rawStats
-                .sort((a: any, b: any) => b.workoutCount - a.workoutCount)
-                .map((s: any) => ({ name: s.name, points: s.workoutCount * 100 })),
-            
-            comparison_table: rawResult.headToHeadData.map((h: any) => ({
-                exercise: h.exerciseName,
-                winnerName: h.winner,
-                results: h.entries.map((e: any) => ({
-                    userName: e.userName,
-                    display: e.weight > 0 ? `${e.weight}${e.unit || 'kg'}` : `${e.reps} reps`,
-                    subDisplay: e.weight > 0 ? `x${e.reps}` : '',
-                    isWinner: e.userName === h.winner
-                }))
-            })),
-
-            individual_records: rawResult.rawStats.map((s: any) => {
-                const userData = scoredUsers.find((u: any) => u.name === s.name);
-                return {
-                    name: s.name,
-                    topMuscle: userData?.topMuscleName || 'FLEX',
-                    stats: Object.entries(s.maxLifts)
-                        .sort(([, a]: any, [, b]: any) => {
-                             const wA = a.isBodyweight ? 0 : a.weight;
-                             const wB = b.isBodyweight ? 0 : b.weight;
-                             return wB - wA;
-                        })
-                        .slice(0, 4)
-                        .map(([k, v]: [string, any]) => ({
-                            exercise: k,
-                            display: v.weight > 0 ? `${v.weight}${v.unit === 'lbs' ? 'lbs' : 'kg'}` : `${v.reps} reps`,
-                            metric: v.weight > 0 ? 'load' : 'reps'
-                        }))
-                };
-            }),
-
-            roast: roastText
-        };
-
-        setAnalysis(processedData);
+        });
 
     } catch (e: any) {
         console.error("Arena Error:", e);
@@ -299,11 +242,8 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar relative">
-            
-            {/* BACKGROUND TEXTURE */}
             <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.04] pointer-events-none fixed"></div>
 
-            {/* ERROR NOTIFICATION */}
             {error && (
                 <div className="absolute top-6 left-6 right-6 z-50 animate-in slide-in-from-top-4">
                     <div className="bg-red-500/10 border border-red-500/50 rounded-2xl p-4 shadow-2xl flex flex-col items-center text-center backdrop-blur-md">
@@ -316,7 +256,8 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
             {!analysis ? (
                 // --- INITIAL STATE ---
                 <div className="flex flex-col items-center justify-center py-20 min-h-[400px]">
-                    <div className="flex flex-wrap gap-3 mb-12 justify-center max-w-md">
+                     {/* ... (Avatar groups igual que antes) */}
+                     <div className="flex flex-wrap gap-3 mb-12 justify-center max-w-md">
                         {friendsData.map(f => (
                             <div key={f.userId} className="pl-1 pr-4 py-1 rounded-full text-xs font-bold border border-white/10 flex items-center gap-3 bg-zinc-900/50">
                                 <div className="w-6 h-6 rounded-full flex items-center justify-center font-black text-[10px] text-black shadow-[0_0_10px_rgba(255,255,255,0.2)]" style={{ backgroundColor: f.color }}>
@@ -340,14 +281,14 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                         )}
                      </button>
                      <p className="mt-8 text-[10px] text-zinc-500 font-mono uppercase tracking-[0.2em] text-center opacity-60">
-                        AI-Powered Analysis • Volume • Consistency • 1RM Est
+                        AI-Powered Analysis • Volume • Matrix
                      </p>
                 </div>
             ) : (
                 // --- RESULTS STATE ---
-                <div className="space-y-12 animate-in slide-in-from-bottom-10 fade-in duration-700 relative z-10">
+                <div className="space-y-8 animate-in slide-in-from-bottom-10 fade-in duration-700 relative z-10">
                     
-                    {/* 1. PODIUM SECTION */}
+                    {/* PODIUM SECTION */}
                     {isDraw ? (
                         <div className="flex flex-col items-center justify-center py-10 text-center border border-dashed border-zinc-800 rounded-3xl bg-zinc-900/20">
                             <Scale className="w-16 h-16 text-zinc-600 mb-4" />
@@ -361,7 +302,7 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                                     <div className="text-[9px] font-black text-zinc-500 mb-2 font-mono tracking-widest opacity-0 animate-in fade-in slide-in-from-bottom-2 delay-300 fill-mode-forwards">SILVER</div>
                                     <div className="w-full max-w-[100px] bg-gradient-to-b from-zinc-700 to-zinc-900 rounded-t-lg h-28 flex flex-col items-center justify-end pb-3 border-t border-x border-white/10 relative shadow-2xl group-hover:-translate-y-1 transition-transform duration-300">
                                         <div className="absolute -top-4 p-2 bg-zinc-800 rounded-full border border-zinc-600 shadow-xl">
-                                            <Medal className="w-5 h-5 text-zinc-400" />
+                                            <Crown className="w-5 h-5 text-zinc-400" />
                                         </div>
                                         <span className="font-bold text-zinc-200 text-xs truncate w-full px-2 text-center mb-1">{analysis.rankings[1].name}</span>
                                         <span className="text-[8px] font-mono text-zinc-400 bg-black/40 px-2 py-0.5 rounded">{Math.round(analysis.rankings[1].score)} PTS</span>
@@ -389,7 +330,7 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                                     <div className="text-[9px] font-black text-orange-900 mb-2 font-mono tracking-widest opacity-0 animate-in fade-in slide-in-from-bottom-2 delay-300 fill-mode-forwards">BRONZE</div>
                                     <div className="w-full max-w-[100px] bg-gradient-to-b from-[#4d331f] to-zinc-900 rounded-t-lg h-24 flex flex-col items-center justify-end pb-3 border-t border-x border-orange-900/40 relative shadow-2xl group-hover:-translate-y-1 transition-transform duration-300">
                                         <div className="absolute -top-4 p-2 bg-zinc-900 rounded-full border border-orange-900/60 shadow-xl">
-                                            <Medal className="w-5 h-5 text-orange-700" />
+                                            <Crown className="w-5 h-5 text-orange-700" />
                                         </div>
                                         <span className="font-bold text-orange-200/80 text-xs truncate w-full px-2 text-center mb-1">{analysis.rankings[2].name}</span>
                                         <span className="text-[8px] font-mono text-zinc-500 bg-black/40 px-2 py-0.5 rounded">{Math.round(analysis.rankings[2].score)} PTS</span>
@@ -399,9 +340,9 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                         </div>
                     )}
 
-                    {/* --- AI TACTICAL REPORT (Solo Intro + Tabla 1 + Tabla 2) --- */}
+                    {/* --- AI TACTICAL REPORT --- */}
                     {analysis.markdown_body && (
-                        <div className="bg-zinc-900/30 border border-white/5 rounded-3xl p-6 relative overflow-hidden backdrop-blur-sm">
+                        <div className="bg-zinc-900/30 border border-white/5 rounded-3xl p-5 relative overflow-hidden backdrop-blur-sm">
                             <div className="flex items-center gap-2 mb-4 border-b border-white/5 pb-2">
                                 <FileText className="w-4 h-4 text-primary" />
                                 <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Tactical Analysis</h3>
@@ -410,7 +351,7 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                         </div>
                     )}
                     
-                    {/* 2. VOLUME GRAPH */}
+                    {/* VOLUME GRAPH */}
                     <div className="bg-zinc-900/30 border border-white/5 rounded-3xl p-6 relative overflow-hidden backdrop-blur-sm">
                         <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-6 flex items-center gap-2">
                             <Activity className="w-3 h-3 text-purple-400" /> Volume Dominance
@@ -438,115 +379,8 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* 3. CONSISTENCY */}
-                        <div className="bg-zinc-900/30 border border-white/5 rounded-3xl p-6 flex flex-col backdrop-blur-sm">
-                             <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-4 flex items-center gap-2"><Trophy className="w-3 h-3 text-yellow-500" /> Consistency (XP)</h3>
-                             <div className="flex-1 space-y-2">
-                                {analysis.points_table.map((p: any, i: number) => (
-                                    <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-black/40 border border-white/5 hover:border-white/10 transition-colors">
-                                        <div className="flex items-center gap-3">
-                                            <span className={`text-[10px] font-mono w-5 h-5 flex items-center justify-center rounded ${i === 0 ? 'bg-yellow-500/20 text-yellow-500 font-bold' : 'text-zinc-600'}`}>#{i+1}</span>
-                                            <span className="text-xs font-bold text-white">{p.name}</span>
-                                        </div>
-                                        <div className="flex items-center gap-1.5 px-2 py-0.5"><Flame className="w-3 h-3 text-orange-500" /><span className="text-xs font-mono font-bold text-zinc-300">{p.points} XP</span></div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* 4. KEY MATCHUPS */}
-                        <div className="bg-zinc-900/30 border border-white/5 rounded-3xl p-6 flex flex-col backdrop-blur-sm">
-                            <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-4 flex items-center gap-2"><Swords className="w-3 h-3 text-primary" /> Head-to-Head</h3>
-                            {analysis.comparison_table.length === 0 ? <div className="text-center py-10 text-xs text-zinc-600 border border-dashed border-white/5 rounded-xl flex-1 flex items-center justify-center">Sin ejercicios comunes</div> : (
-                                <div className="space-y-3 h-48 overflow-y-auto custom-scrollbar pr-2">
-                                    {analysis.comparison_table.map((row: any, i: number) => (
-                                        <div key={i} className="bg-black/60 p-3 rounded-2xl border border-white/5 flex flex-col gap-2 group hover:border-white/10 transition-colors">
-                                            <div className="text-[10px] font-black text-white/50 border-b border-white/5 pb-1 uppercase tracking-wider">{row.exercise}</div>
-                                            <div className="space-y-1">
-                                                {row.results.map((res: any, j: number) => (
-                                                    <div key={j} className={clsx("flex justify-between items-center text-[10px] px-2 py-1.5 rounded-lg", res.isWinner ? "bg-primary/10 border border-primary/20" : "")}>
-                                                        <span className={res.isWinner ? "text-white font-bold" : "text-zinc-500"}>{res.userName}</span>
-                                                        <div className="flex items-center gap-2">
-                                                            <span className={clsx("font-mono", res.isWinner ? "text-primary font-bold" : "text-zinc-600")}>
-                                                                {res.display} <span className="text-[9px] opacity-60 ml-0.5">{res.subDisplay}</span>
-                                                            </span>
-                                                            {res.isWinner && <Crown className="w-3 h-3 text-primary fill-primary" />}
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* 5. HALL OF FAME (CARDS) */}
-                    {analysis.individual_records && (
-                        <div className="space-y-4">
-                            <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-2 px-2"><Sparkles className="w-3 h-3 text-cyan-400" /> Hall of Fame</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {analysis.individual_records.map((profile: any, idx: number) => {
-                                    const friendData = friendsData.find(f => f.name === profile.name);
-                                    const color = friendData?.color || '#ffffff';
-                                    return (
-                                        <div key={idx} className="bg-zinc-900/40 border border-white/5 rounded-[1.5rem] p-5 relative overflow-hidden hover:bg-zinc-900/60 transition-colors group">
-                                            {/* Accent Line */}
-                                            <div className="absolute top-0 left-0 w-1 h-full opacity-70" style={{ backgroundColor: color }}></div>
-                                            
-                                            <div className="flex justify-between items-start mb-4 pl-3">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-8 h-8 rounded-full flex items-center justify-center font-black text-black text-xs shadow-lg" style={{ backgroundColor: color }}>{profile.name.charAt(0)}</div>
-                                                    <div>
-                                                        <h4 className="font-bold text-white text-sm">{profile.name}</h4>
-                                                        <span className="text-[9px] text-zinc-500 uppercase tracking-wider">Top Lifts</span>
-                                                    </div>
-                                                </div>
-                                                {/* MUSCLE FOCUS BADGE */}
-                                                <div className="flex items-center gap-1.5 bg-black/60 px-2 py-1 rounded-md border border-white/10">
-                                                    <BicepsFlexed className="w-3 h-3 text-zinc-400" />
-                                                    <span className="text-[9px] font-bold text-zinc-300 uppercase">{profile.topMuscle}</span>
-                                                </div>
-                                            </div>
-
-                                            <div className="grid grid-cols-2 gap-2 pl-3">
-                                                {profile.stats.map((stat: any, sIdx: number) => (
-                                                    <div key={sIdx} className="bg-black/30 rounded-lg p-2 border border-white/5 flex flex-col group-hover:border-white/10 transition-colors">
-                                                        <div className="text-[9px] text-zinc-500 truncate mb-1 uppercase tracking-wide">{stat.exercise}</div>
-                                                        <div className="text-xs font-mono font-bold text-white tracking-tight flex items-baseline gap-1">
-                                                            {stat.display} 
-                                                            {stat.metric === 'reps' ? '' : <span className="text-[9px] text-zinc-500 font-normal">{stat.subDisplay}</span>}
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )
-                                })}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* 6. AI ROAST */}
-                    {analysis.roast && (
-                        <div className="bg-gradient-to-br from-zinc-900 to-black p-8 rounded-3xl border border-white/10 relative mt-6 text-center shadow-2xl overflow-hidden group">
-                             <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10"></div>
-                             <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-white text-black px-4 py-1 text-[10px] font-black uppercase tracking-widest border border-white rounded-full shadow-glow z-10">
-                                AI Verdict
-                             </div>
-                            <p className="text-sm md:text-base text-zinc-300 leading-relaxed italic font-serif opacity-90 relative z-10">
-                                "{analysis.roast}"
-                            </p>
-                            <div className="mt-4 flex justify-center opacity-30 group-hover:opacity-100 transition-opacity">
-                                <Activity className="w-5 h-5 text-primary" />
-                            </div>
-                        </div>
-                    )}
-
                     <div className="pb-8 text-center">
-                        <p className="text-[9px] text-zinc-700 font-mono uppercase tracking-[0.3em]">Arena Engine v2.0</p>
+                        <p className="text-[9px] text-zinc-700 font-mono uppercase tracking-[0.3em]">Arena Engine v2.1 (Matrix)</p>
                     </div>
 
                 </div>
