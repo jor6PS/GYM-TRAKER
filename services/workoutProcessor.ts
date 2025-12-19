@@ -32,7 +32,7 @@ interface UserStats {
 interface CommonExerciseComparison {
     exerciseId: string;
     exerciseName: string;
-    entries: { userName: string; weight: number; reps: number; oneRM: number }[];
+    entries: { userName: string; weight: number; reps: number; oneRM: number; unit: string }[];
     winner: string;
 }
 
