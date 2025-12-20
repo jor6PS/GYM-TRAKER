@@ -1,11 +1,22 @@
 import React, { useEffect, useState } from 'react';
 import { X, ShieldAlert, AlertTriangle, Target, FileText, Dumbbell, Save, Check, Activity } from 'lucide-react';
-import { Workout, GlobalReportData, User, WorkoutPlan, Exercise, ExerciseDef } from '../types';
+// IMPORTANTE: Quitamos ExerciseDef de aquí para evitar el error de "no exported member"
+import { Workout, GlobalReportData, User, WorkoutPlan, Exercise } from '../types';
 import { generateGlobalReport } from '../services/workoutProcessor';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useExercises } from '../contexts/ExerciseContext';
 import { getCanonicalId, getLocalizedName } from '../utils';
 import { useScrollLock } from '../hooks/useScrollLock';
+
+// --- DEFINICIÓN DE TIPOS LOCAL (Para evitar errores de importación) ---
+// Definimos esto aquí para asegurar que el componente sabe qué forma tiene el catálogo
+export interface ExerciseDef {
+  id: string;
+  name?: string;
+  muscle?: string;
+  // Permitimos otras propiedades dinámicas
+  [key: string]: any;
+}
 
 // --- COMPONENTES AUXILIARES ---
 
@@ -21,7 +32,7 @@ interface MonthlySummaryModalProps {
   onSavePlan?: (plan: WorkoutPlan) => Promise<void>;
 }
 
-// --- RENDERIZADOR BLINDADO V7 (Reordenado para Prioridad de Días) ---
+// --- RENDERIZADOR BLINDADO V8 (Con tipos locales) ---
 const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: ExerciseDef[], onSaveDay: (dayName: string, exercises: Exercise[]) => void }) => {
   if (!text) return null;
   
@@ -196,7 +207,6 @@ const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: 
     }
 
     // 3. TABLAS (Detección flexible y formato fixed)
-    // Detectamos si empieza por | O si tiene múltiples | internas (para cuando la IA olvida la primera barra)
     const isTableStart = line.trim().startsWith('|') || (line.split('|').length > 2 && !line.includes('ALERTA'));
     
     if (isTableStart) {
