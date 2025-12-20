@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { X, ShieldAlert, AlertTriangle, Target, FileText, Dumbbell, Save, Check, Activity } from 'lucide-react';
-// IMPORTANTE: Quitamos ExerciseDef de aquí para evitar el error de "no exported member"
 import { Workout, GlobalReportData, User, WorkoutPlan, Exercise } from '../types';
 import { generateGlobalReport } from '../services/workoutProcessor';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -8,13 +7,14 @@ import { useExercises } from '../contexts/ExerciseContext';
 import { getCanonicalId, getLocalizedName } from '../utils';
 import { useScrollLock } from '../hooks/useScrollLock';
 
-// --- DEFINICIÓN DE TIPOS LOCAL (Para evitar errores de importación) ---
-// Definimos esto aquí para asegurar que el componente sabe qué forma tiene el catálogo
+// --- DEFINICIÓN DE TIPOS LOCAL (CORREGIDA) ---
+// Añadimos 'en' y 'es' para satisfacer a las funciones de utilidad
 export interface ExerciseDef {
   id: string;
   name?: string;
   muscle?: string;
-  // Permitimos otras propiedades dinámicas
+  es?: string; // Nombre español
+  en?: string; // Nombre inglés
   [key: string]: any;
 }
 
@@ -32,7 +32,7 @@ interface MonthlySummaryModalProps {
   onSavePlan?: (plan: WorkoutPlan) => Promise<void>;
 }
 
-// --- RENDERIZADOR BLINDADO V8 (Con tipos locales) ---
+// --- RENDERIZADOR BLINDADO V9 (Con tipos compatibles) ---
 const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: ExerciseDef[], onSaveDay: (dayName: string, exercises: Exercise[]) => void }) => {
   if (!text) return null;
   
@@ -48,7 +48,6 @@ const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: 
   };
 
   const renderFormattedText = (content: string) => {
-    // Limpieza visual de viñetas
     let cleanContent = content;
     if ((content.startsWith('*') || content.startsWith('-')) && !content.startsWith('**')) {
         cleanContent = content.substring(1).trim();
@@ -80,7 +79,6 @@ const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: 
 
   const extractExercises = (linesChunk: string[]): Exercise[] => {
       return linesChunk.map(l => {
-          // Limpieza agresiva para sacar el nombre
           const cleanLine = l.replace(/^[\*\-\d\.\s]+/, '').trim();
           let name = cleanLine;
           let sets = 3; 
@@ -110,8 +108,9 @@ const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: 
              }
           }
           
-          const canonicalId = getCanonicalId(name, catalog);
-          const normalizedName = getLocalizedName(canonicalId, catalog, 'es');
+          // USO DE 'as any' PARA EVITAR CONFLICTOS DE TIPOS TS2345
+          const canonicalId = getCanonicalId(name, catalog as any[]); 
+          const normalizedName = getLocalizedName(canonicalId, catalog as any[], 'es');
 
           return { name: normalizedName, sets: Array(sets).fill({ reps, weight: weightVal, unit }) };
       });
@@ -121,7 +120,7 @@ const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: 
   while (i < lines.length) {
     const line = lines[i];
 
-    // 1. ALERTA ROJA (Prioridad Máxima Absoluta)
+    // 1. ALERTA ROJA
     const upperLine = line.toUpperCase();
     if ((upperLine.includes('ALERTA ROJA') || upperLine.includes('ALERTA:')) && !line.includes('|')) {
         const cleanAlertText = line.replace(/^[\*\-\s]+/, '').replace(/\*\*/g, '').replace(/ALERTA ROJA:|ALERTA:/i, '').trim();
@@ -137,8 +136,7 @@ const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: 
         i++; continue;
     }
 
-    // 2. DETECCIÓN DE DÍAS (MOVIDO ARRIBA)
-    // Esto asegura que "## DÍA 1" sea tratado como Día y no como Título genérico
+    // 2. DETECCIÓN DE DÍAS (PRIORIDAD ALTA)
     const cleanLineUpper = line.toUpperCase().replace(/^[\*\#\-\d\.\s]+/, '').trim();
     
     if (cleanLineUpper.startsWith('DÍA') || cleanLineUpper.startsWith('DIA') || cleanLineUpper.startsWith('DAY')) {
@@ -146,12 +144,10 @@ const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: 
       const rawLines: string[] = [];
       let nextIdx = i + 1;
       
-      // Capturamos el bloque entero hasta encontrar otro título o día
       while (nextIdx < lines.length) {
           const nextLine = lines[nextIdx];
           const nextClean = nextLine.toUpperCase().replace(/^[\*\#\-\d\.\s]+/, '').trim();
           
-          // Paramos si encontramos un título ## o el inicio de otro día
           if (nextLine.startsWith('## ')) break; 
           if (nextClean.startsWith('DÍA') || nextClean.startsWith('DIA') || nextClean.startsWith('DAY')) break;
           
@@ -159,7 +155,6 @@ const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: 
           nextIdx++;
       }
 
-      // Filtramos ejercicios válidos para la lógica del botón "Guardar"
       const exercisesForLogic = extractExercises(
           rawLines.filter(l => l.trim().match(/^[\*\-\•\d]/) || l.includes('|') || l.match(/\dx\d/i))
       );
@@ -182,10 +177,8 @@ const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: 
                 )}
             </div>
             
-            {/* PINTAMOS EL TEXTO DEL DÍA LÍNEA A LÍNEA */}
             <div className="space-y-2">
                 {rawLines.map((rawLine, idx) => {
-                    // Si parece un ejercicio
                     if (rawLine.trim().match(/^[\*\-\•]/) || rawLine.includes('|') || rawLine.match(/\dx\d/i)) {
                         return (
                             <div key={idx} className="flex items-start gap-3 pl-2 group">
@@ -196,7 +189,6 @@ const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: 
                             </div>
                         );
                     }
-                    // Si es una nota o texto normal dentro del día
                     return <p key={idx} className="text-xs text-zinc-500 italic pl-6 leading-relaxed break-words">{renderFormattedText(rawLine)}</p>;
                 })}
             </div>
@@ -206,14 +198,12 @@ const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: 
       continue;
     }
 
-    // 3. TABLAS (Detección flexible y formato fixed)
+    // 3. TABLAS (Formato Fixed + W-Full)
     const isTableStart = line.trim().startsWith('|') || (line.split('|').length > 2 && !line.includes('ALERTA'));
     
     if (isTableStart) {
       const tableRows: string[][] = [];
-      // Consumimos el bloque de tabla
       while (i < lines.length && (lines[i].trim().startsWith('|') || lines[i].split('|').length > 2)) {
-        // Ignoramos separadores markdown |---|
         if (!lines[i].includes('---')) {
             const cells = lines[i].split('|').filter((c) => c.trim().length > 0).map(c => c.trim());
             if (cells.length > 0) tableRows.push(cells);
@@ -224,7 +214,6 @@ const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: 
       if (tableRows.length > 0) {
         elements.push(
           <div key={`table-${i}`} className="my-6 w-full rounded-xl border border-white/10 bg-black/40 overflow-hidden shadow-sm">
-            {/* table-fixed para evitar scroll horizontal en móviles */}
             <table className="w-full text-left text-[10px] table-fixed">
               <thead>
                   <tr className="bg-zinc-900/50">
@@ -264,7 +253,7 @@ const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: 
       i++; continue;
     }
 
-    // 5. SUBTÍTULOS TÉCNICOS (###)
+    // 5. SUBTÍTULOS (###)
     if (line.startsWith('###')) {
         elements.push(
             <h5 key={`sub-${i}`} className="text-xs font-bold text-primary/80 mt-4 mb-2 pl-3 border-l-2 border-primary/30 uppercase tracking-wide">
@@ -274,7 +263,7 @@ const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: 
         i++; continue;
     }
 
-    // 6. LISTAS NORMALES
+    // 6. LISTAS
     if (/^[\*\-\•]/.test(line)) {
       elements.push(
         <div key={`list-${i}`} className="flex gap-3 pl-2 py-1 items-start">
@@ -283,7 +272,6 @@ const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: 
         </div>
       );
     } else {
-        // Texto normal
         elements.push(<p key={`p-${i}`} className="text-sm text-zinc-500 leading-relaxed mb-2">{renderFormattedText(line)}</p>);
     }
     i++;
@@ -312,12 +300,15 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
                 return;
             }
             
+            // Casting a any en currentUser para evitar errores si TS es muy estricto con age
+            const userAny = currentUser as any;
+
             generateGlobalReport(
                 workouts, 
                 language, 
                 currentUser.weight || 80, 
                 currentUser.height || 180,
-                currentUser.age || 25 
+                userAny.age || 25 
             )
                 .then(setData)
                 .catch(e => setError(e.message || "Error neuronal al procesar los datos."))
