@@ -102,7 +102,7 @@ const handleAIError = (error: any) => {
     throw new Error(`ERROR DE INTELIGENCIA: ${error.message || "Fallo en el procesamiento neuronal."}`);
 };
 
-// NUEVA FUNCIÓN: Lógica de reintento con múltiples modelos
+// --- LOGICA DE REINTENTO (FALLBACK) ---
 const generateWithFallback = async (
     ai: GoogleGenAI, 
     models: string[], 
@@ -115,52 +115,46 @@ const generateWithFallback = async (
 
     for (const modelName of models) {
         try {
-            // Configuración dinámica
+            // CONFIGURACIÓN DINÁMICA
             const config: any = { 
                 responseMimeType: "application/json", 
-                temperature: 0.5 
+                temperature: 0.5,
+                maxOutputTokens: 8192 // <--- IMPORTANTE: Evita que se corte el plan de acción
             };
             
             if (systemInstruction) config.systemInstruction = systemInstruction;
             if (responseSchema) config.responseSchema = responseSchema;
 
-            // Contenido dinámico (texto o multimodal)
             const parts: any[] = [];
             if (inlineData) parts.push(inlineData);
             parts.push({ text: prompt });
 
             console.log(`🧠 Intentando generar con modelo: ${modelName}...`);
 
+            // Usando la sintaxis de @google/genai
             const response = await ai.models.generateContent({
                 model: modelName,
                 contents: { parts: parts },
                 config: config
             });
 
-            // Si llegamos aquí, tuvo éxito
             return response;
 
         } catch (error: any) {
             console.warn(`⚠️ Fallo en modelo ${modelName}:`, error.message);
             lastError = error;
             
-            // Si el error es 429 (Quota) o 503 (Overloaded), continuamos al siguiente modelo.
-            // Si es otro tipo de error (ej: Invalid API Key), tal vez deberíamos parar, 
-            // pero para seguridad probamos el siguiente por si acaso es un error específico del modelo.
             const isRetryable = error.message?.includes('429') || 
                                 error.message?.includes('503') || 
                                 error.message?.includes('quota') ||
                                 error.message?.includes('resource exhausted');
 
+            // Si no es error de cuota y es el último modelo, fallamos.
             if (!isRetryable && models.indexOf(modelName) === models.length - 1) {
-                 // Si no es error de cuota y es el último, lanzamos
                  throw error;
             }
-            // Si es retryable, el loop continúa automáticamente
         }
     }
-
-    // Si salimos del loop sin retornar, lanzamos el último error
     throw new Error(`Todos los modelos fallaron. Último error: ${lastError?.message}`);
 };
 
@@ -287,8 +281,8 @@ export const generateGlobalReport = async (
 
         ESTRUCTURA DE RESPUESTA (JSON):
         {
-          "equiv_global": "Cantidad + elemento absurdo/ingenioso para el peso total acumulado",
-          "equiv_monthly": "Cantidad + elemento absurdo/ingenioso para el peso de este mes",
+          "equiv_global": "String corto. Comparación VISUAL del peso total histórico con algo masivo (ej: '3 Ballenas Azules').",
+          "equiv_monthly": "String corto. Comparación VISUAL del peso mensual con objetos cotidianos o animales.",
           "analysis": "Markdown detallado siguiendo la estructura:
             ## 3 - AUDITORÍA FORENSE DEL MES
             Analiza patrones. ¿Hubo constancia? ¿Se rompió algún récord histórico
@@ -315,11 +309,16 @@ export const generateGlobalReport = async (
             
             IMPORTANTE: Sugiere pesos realistas basados en los 1RMs del usuario.
             
-            Formato requerido:
+            Formato OBLIGATORIO:
             **DÍA 1: [Enfoque]**
-            * [Nombre del Ejercicio] | [Sets]x[Reps] | [Peso Sugerido / RPE]
-            * ...
-            (Repetir para Día 2 y 3)",
+            * [Nombre Exacto] | [Sets]x[Reps] | [Peso Sugerido]
+            * [Nombre Exacto] | [Sets]x[Reps] | [Peso Sugerido]
+            
+            **DÍA 2: [Enfoque]**
+            ...
+            
+            **DÍA 3: [Enfoque]**
+            ...",
           "score": número 1-10
         }`;
         
@@ -333,7 +332,6 @@ export const generateGlobalReport = async (
 
         const ai = getAIClient();
         
-        // MODIFICACIÓN: Usar generateWithFallback con REPORT_MODELS
         const response = await generateWithFallback(
             ai, 
             REPORT_MODELS, 

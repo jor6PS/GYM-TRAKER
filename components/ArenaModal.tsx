@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Swords, Crown, Loader2, Scale, Activity, Zap, AlertTriangle, FileText, Target } from 'lucide-react';
+// 1. Añadimos el icono 'Info'
+import { X, Swords, Crown, Loader2, Scale, Activity, Zap, AlertTriangle, FileText, Target, Info } from 'lucide-react';
 import { generateGroupAnalysis } from '../services/workoutProcessor';
 import { Workout, User } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -12,7 +13,7 @@ interface ArenaModalProps {
   friendsData: { userId: string; name: string; workouts: Workout[]; color: string }[];
 }
 
-// --- RENDERIZADOR DE TEXTO MEJORADO (Cards para Duelos + Tablas Matrix) ---
+// ... (DossierRenderer se mantiene IGUAL, no es necesario cambiarlo para esto) ...
 const DossierRenderer = ({ text }: { text: string }) => {
   if (!text) return null;
   
@@ -38,7 +39,6 @@ const DossierRenderer = ({ text }: { text: string }) => {
     const line = lines[i];
     if (!line) { i++; continue; }
 
-    // 1. TABLAS (Matrix y Focus)
     if (line.startsWith('|')) {
       const tableRows: string[][] = [];
       while (i < lines.length && lines[i].startsWith('|')) {
@@ -83,13 +83,9 @@ const DossierRenderer = ({ text }: { text: string }) => {
       continue;
     }
 
-    // 2. TÍTULOS DE SECCIÓN (Headers grandes)
-    if (line.startsWith('## ')) { // Solo h2 o h3 principales
-         // No hacemos nada especial, dejamos que caiga en el parser de headers normal o lo ignoramos si es redundante
+    if (line.startsWith('## ')) {
     }
     
-    // 3. LOGICA VISUAL PARA DUELOS (HEAD-TO-HEAD)
-    // Detectamos el header del ejercicio (###)
     if (line.startsWith('###')) {
         let cleanTitle = line.replace(/^#+\s*/, '').trim().replace(/^\*\*(.*)\*\*$/, '$1');
         elements.push(
@@ -101,10 +97,8 @@ const DossierRenderer = ({ text }: { text: string }) => {
         i++; continue;
     }
 
-    // Detectamos al GANADOR (🏆)
     if (line.includes('🏆') || line.includes('⚖️')) {
         const isDraw = line.includes('⚖️');
-        // Limpiamos el icono del texto para pintarlo nosotros
         const content = line.replace(/🏆|⚖️/, '').trim();
         
         elements.push(
@@ -123,7 +117,6 @@ const DossierRenderer = ({ text }: { text: string }) => {
         i++; continue;
     }
 
-    // Detectamos al PERDEDOR (⚔️)
     if (line.includes('⚔️') || line.trim().startsWith('vs')) {
         const content = line.replace(/⚔️|vs/i, '').trim();
         elements.push(
@@ -134,10 +127,7 @@ const DossierRenderer = ({ text }: { text: string }) => {
         i++; continue;
     }
 
-
-    // 4. TEXTO NORMAL (Para veredicto o intros)
     if (line.length > 0) {
-        // Headers normales que no son de ejercicios
         if (line.startsWith('#')) {
              let cleanTitle = line.replace(/^#+\s*/, '').trim().replace(/^\*\*(.*)\*\*$/, '$1');
              elements.push(
@@ -191,6 +181,8 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
         const rankings = rawResult.rawStats
             .map((s: any) => ({
                 name: s.name,
+                // 2. Guardamos el volumen crudo para mostrarlo
+                rawVolume: s.totalVolume, 
                 score: maxVol > 0 ? (s.totalVolume / maxVol) * 100 : 0
             }))
             .sort((a: any, b: any) => b.score - a.score)
@@ -215,6 +207,12 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
 
   const isDraw = analysis?.winner === 'DRAW';
   const getColor = (name: string) => friendsData.find(f => f.name === name)?.color || '#ffffff';
+
+  // Helper para formatear volumen (15000 -> 15k)
+  const formatVolume = (vol: number) => {
+      if (vol >= 1000) return `${(vol / 1000).toFixed(1)}T`;
+      return `${Math.round(vol)}kg`;
+  };
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
@@ -256,7 +254,6 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
             {!analysis ? (
                 // --- INITIAL STATE ---
                 <div className="flex flex-col items-center justify-center py-20 min-h-[400px]">
-                     {/* ... (Avatar groups igual que antes) */}
                      <div className="flex flex-wrap gap-3 mb-12 justify-center max-w-md">
                         {friendsData.map(f => (
                             <div key={f.userId} className="pl-1 pr-4 py-1 rounded-full text-xs font-bold border border-white/10 flex items-center gap-3 bg-zinc-900/50">
@@ -288,6 +285,14 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                 // --- RESULTS STATE ---
                 <div className="space-y-8 animate-in slide-in-from-bottom-10 fade-in duration-700 relative z-10">
                     
+                    {/* 3. EXPLICACIÓN DEL SISTEMA DE PUNTUACIÓN */}
+                    <div className="flex items-center justify-center gap-2 mb-2 text-center bg-white/5 border border-white/5 p-2 rounded-xl mx-auto max-w-sm">
+                        <Info className="w-3 h-3 text-zinc-400" />
+                        <p className="text-[10px] text-zinc-400 font-mono uppercase tracking-wide">
+                            Scoring based on <span className="text-primary font-bold">Total Volume (Tonnage)</span>
+                        </p>
+                    </div>
+
                     {/* PODIUM SECTION */}
                     {isDraw ? (
                         <div className="flex flex-col items-center justify-center py-10 text-center border border-dashed border-zinc-800 rounded-3xl bg-zinc-900/20">
@@ -305,7 +310,9 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                                             <Crown className="w-5 h-5 text-zinc-400" />
                                         </div>
                                         <span className="font-bold text-zinc-200 text-xs truncate w-full px-2 text-center mb-1">{analysis.rankings[1].name}</span>
-                                        <span className="text-[8px] font-mono text-zinc-400 bg-black/40 px-2 py-0.5 rounded">{Math.round(analysis.rankings[1].score)} PTS</span>
+                                        {/* AÑADIDO: VOLUMEN REAL */}
+                                        <span className="text-[10px] font-mono text-zinc-400 mb-1">{formatVolume(analysis.rankings[1].rawVolume)}</span>
+                                        <span className="text-[8px] font-mono text-black font-bold bg-white/50 px-2 py-0.5 rounded">{Math.round(analysis.rankings[1].score)} PTS</span>
                                     </div>
                                 </div>
                             )}
@@ -320,7 +327,9 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                                             <Crown className="w-14 h-14 text-primary drop-shadow-[0_0_15px_rgba(212,255,0,0.6)]" />
                                         </div>
                                         <span className="font-black text-white text-base md:text-xl truncate w-full px-2 text-center mb-1 tracking-tight">{analysis.rankings[0].name}</span>
-                                        <span className="text-[10px] font-mono text-black font-bold bg-primary px-3 py-1 rounded-full shadow-glow">{Math.round(analysis.rankings[0].score)} PTS</span>
+                                        {/* AÑADIDO: VOLUMEN REAL */}
+                                        <span className="text-xs font-mono text-primary/80 mb-2 font-bold">{formatVolume(analysis.rankings[0].rawVolume)}</span>
+                                        <span className="text-[10px] font-mono text-black font-bold bg-primary px-3 py-1 rounded-full shadow-glow">100 PTS</span>
                                     </div>
                                 </div>
                             )}
@@ -333,7 +342,9 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                                             <Crown className="w-5 h-5 text-orange-700" />
                                         </div>
                                         <span className="font-bold text-orange-200/80 text-xs truncate w-full px-2 text-center mb-1">{analysis.rankings[2].name}</span>
-                                        <span className="text-[8px] font-mono text-zinc-500 bg-black/40 px-2 py-0.5 rounded">{Math.round(analysis.rankings[2].score)} PTS</span>
+                                        {/* AÑADIDO: VOLUMEN REAL */}
+                                        <span className="text-[10px] font-mono text-orange-300/60 mb-1">{formatVolume(analysis.rankings[2].rawVolume)}</span>
+                                        <span className="text-[8px] font-mono text-black font-bold bg-orange-500/50 px-2 py-0.5 rounded">{Math.round(analysis.rankings[2].score)} PTS</span>
                                     </div>
                                 </div>
                             )}
