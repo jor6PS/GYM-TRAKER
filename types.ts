@@ -51,6 +51,7 @@ export interface User {
   avatar_url?: string;
   weight?: number;
   height?: number;
+  age?: number;
 }
 
 export interface Friend {

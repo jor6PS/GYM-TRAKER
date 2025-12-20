@@ -196,8 +196,11 @@ const calculateSetVolume = (
 export const generateGlobalReport = async (
     allWorkouts: Workout[],
     language: 'es' | 'en' = 'es',
+    // NOTA: Estos son valores por defecto (fallback) si el usuario NO tiene datos en su perfil.
+    // Si el usuario tiene perfil, estos valores se sobrescriben con los reales.
     currentWeight: number = 80,
-    userHeight: number = 180
+    userHeight: number = 180,
+    userAge: number = 25 // <--- NUEVO: Edad por defecto (fallback)
 ): Promise<GlobalReportData> => {
     try {
         const now = new Date();
@@ -310,22 +313,24 @@ export const generateGlobalReport = async (
             IMPORTANTE: Sugiere pesos realistas basados en los 1RMs del usuario.
             
             Formato OBLIGATORIO:
-            **DÍA 1: [Enfoque]**
+            **DIA 1: [Enfoque]**
             * [Nombre Exacto] | [Sets]x[Reps] | [Peso Sugerido]
             * [Nombre Exacto] | [Sets]x[Reps] | [Peso Sugerido]
             
-            **DÍA 2: [Enfoque]**
+            **DIA 2: [Enfoque]**
             ...
             
-            **DÍA 3: [Enfoque]**
+            **DIA 3: [Enfoque]**
             ...",
           "score": número 1-10
         }`;
         
+        // MODIFICACIÓN: Incluida la EDAD en el Prompt
         const prompt = `Analiza mi rendimiento para optimizar mi progreso. 
-        Biometría: ${currentWeight}kg.
+        Biometría: Edad ${userAge} años, Peso ${currentWeight}kg, Altura ${userHeight}cm.
         Peso Total Histórico: ${Math.round(totalVolume)}kg. 
         Peso este mes: ${Math.round(monthlyVolume)}kg. 
+        IMPORTANTE: Considera mi edad, mi peso y el análisi detallado que has hecho para la elaboracion del informe profesional y ajustar la capacidad de recuperación, el volumen y la intensidad del plan de acción.
         Comparativa Máximos (Usa estos nombres exactos para el Plan de Acción): ${JSON.stringify(maxComparison.slice(0, 20))}.
         Historial detallado del mes: ${JSON.stringify(recentHistory)}.
         Genera el informe profesional y el plan de acción.`;

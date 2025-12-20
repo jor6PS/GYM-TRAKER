@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { X, ShieldAlert, AlertTriangle, Target, FileText, Dumbbell, Save, Check } from 'lucide-react';
-import { Workout, GlobalReportData, User, WorkoutPlan, Exercise } from '../types';
+import { X, ShieldAlert, AlertTriangle, Target, FileText, Dumbbell, Save, Check, Activity } from 'lucide-react';
+import { Workout, GlobalReportData, User, WorkoutPlan, Exercise, ExerciseDef } from '../types';
 import { generateGlobalReport } from '../services/workoutProcessor';
 import { useLanguage } from '../contexts/LanguageContext';
-import { useExercises, ExerciseDef } from '../contexts/ExerciseContext';
+import { useExercises } from '../contexts/ExerciseContext';
 import { getCanonicalId, getLocalizedName } from '../utils';
 import { useScrollLock } from '../hooks/useScrollLock';
 
-// Componente Loader interno
+// --- COMPONENTES AUXILIARES ---
+
 const Loader2 = ({ className }: { className?: string }) => (
     <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
 );
@@ -20,11 +21,11 @@ interface MonthlySummaryModalProps {
   onSavePlan?: (plan: WorkoutPlan) => Promise<void>;
 }
 
-// --- RENDERIZADOR BLINDADO V3 ---
+// --- RENDERIZADOR BLINDADO V7 (Reordenado para Prioridad de Días) ---
 const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: ExerciseDef[], onSaveDay: (dayName: string, exercises: Exercise[]) => void }) => {
   if (!text) return null;
   
-  // Dividir y limpiar líneas vacías
+  // Limpiamos líneas vacías y normalizamos
   const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
   const elements: React.ReactNode[] = [];
   const [savedDays, setSavedDays] = useState<Set<string>>(new Set());
@@ -36,13 +37,29 @@ const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: 
   };
 
   const renderFormattedText = (content: string) => {
-    const parts = content.split(/(\*\*.*?\*\*)/g);
+    // Limpieza visual de viñetas
+    let cleanContent = content;
+    if ((content.startsWith('*') || content.startsWith('-')) && !content.startsWith('**')) {
+        cleanContent = content.substring(1).trim();
+    }
+
+    const parts = cleanContent.split(/(\*\*.*?\*\*)/g);
     return (
       <>{parts.map((part, i) => {
           if (part.startsWith('**') && part.endsWith('**')) {
             const boldText = part.slice(2, -2).trim();
             const upper = boldText.toUpperCase();
-            if (upper.includes('ALERTA')) return <span key={i} className="text-red-400 font-black bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/30 mx-1 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> {boldText}</span>;
+            
+            if (upper.includes('ALERTA')) {
+                return (
+                    <span key={i} className="text-red-400 font-black bg-red-500/10 px-2 py-0.5 rounded border border-red-500/30 mx-1 inline-flex items-center gap-1 text-[10px] tracking-wide break-words whitespace-normal">
+                        <AlertTriangle className="w-3 h-3 shrink-0" /> {boldText.replace(/:/g, '')}
+                    </span>
+                );
+            }
+            if (upper.includes('DÍA') || upper.includes('DAY')) {
+                 return <span key={i} className="text-primary font-black bg-primary/10 px-2 py-0.5 rounded border border-primary/30 inline-block mx-1">{boldText}</span>;
+            }
             return <strong key={i} className="text-white font-bold">{boldText}</strong>;
           }
           return part;
@@ -50,14 +67,12 @@ const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: 
     );
   };
 
-  // Extracción tolerante a fallos
   const extractExercises = (linesChunk: string[]): Exercise[] => {
       return linesChunk.map(l => {
-          // Eliminar viñetas, números, guiones
+          // Limpieza agresiva para sacar el nombre
           const cleanLine = l.replace(/^[\*\-\d\.\s]+/, '').trim();
-          
           let name = cleanLine;
-          let sets = 3;
+          let sets = 3; 
           let reps = 10;
           let weightVal = 0;
           let unit = 'kg';
@@ -67,8 +82,10 @@ const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: 
               name = parts[0];
               const setsStr = parts[1] || '';
               const weightStr = parts[2] || '';
+              
               const match = setsStr.match(/(\d+)\s*x\s*(\d+)/i);
               if (match) { sets = parseInt(match[1]); reps = parseInt(match[2]); }
+              
               const wMatch = weightStr.match(/(\d+(\.\d+)?)/);
               if (wMatch) weightVal = parseFloat(wMatch[0]);
               if (weightStr.toLowerCase().includes('lbs')) unit = 'lbs';
@@ -93,91 +110,84 @@ const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: 
   while (i < lines.length) {
     const line = lines[i];
 
-    // 1. TABLAS
-    if (line.startsWith('|')) {
-      const tableRows: string[][] = [];
-      while (i < lines.length && lines[i].startsWith('|')) {
-        const cells = lines[i].split('|').filter((_, idx, arr) => idx > 0 && idx < arr.length - 1).map(c => c.trim());
-        if (cells.length > 0) tableRows.push(cells);
-        i++;
-      }
-      if (tableRows.length > 0) {
+    // 1. ALERTA ROJA (Prioridad Máxima Absoluta)
+    const upperLine = line.toUpperCase();
+    if ((upperLine.includes('ALERTA ROJA') || upperLine.includes('ALERTA:')) && !line.includes('|')) {
+        const cleanAlertText = line.replace(/^[\*\-\s]+/, '').replace(/\*\*/g, '').replace(/ALERTA ROJA:|ALERTA:/i, '').trim();
         elements.push(
-          <div key={`table-${i}`} className="my-6 w-full rounded-xl border border-white/10 bg-black/40 overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead><tr className="bg-zinc-900/50">{tableRows[0].map((cell, idx) => <th key={idx} className="px-3 py-3 font-black text-primary uppercase">{cell}</th>)}</tr></thead>
-              <tbody className="divide-y divide-white/5">{tableRows.slice(1).map((row, rIdx) => <tr key={rIdx}>{row.map((c, cIdx) => <td key={cIdx} className="px-3 py-3 font-mono text-zinc-300 border-r border-white/5">{renderFormattedText(c)}</td>)}</tr>)}</tbody>
-            </table>
-          </div>
+            <div key={`alert-${i}`} className="my-3 p-3 bg-red-500/10 border border-red-500/30 rounded-xl flex items-start gap-3 shadow-[0_0_15px_rgba(239,68,68,0.1)]">
+                <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                <div>
+                    <h5 className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-1">Atención Requerida</h5>
+                    <p className="text-xs text-red-200/90 leading-relaxed font-medium">{cleanAlertText}</p>
+                </div>
+            </div>
         );
-      }
-      continue;
+        i++; continue;
     }
 
-    // 2. TÍTULOS GRANDES (##)
-    if (line.startsWith('## ')) {
-      elements.push(
-        <div key={`header-${i}`} className="flex items-center gap-3 pt-8 border-b border-white/10 pb-2 mb-4 mt-4">
-            <Target className="w-4 h-4 text-primary" />
-            <h4 className="text-sm font-black uppercase tracking-[0.2em] text-white italic">{line.replace(/#/g, '').trim()}</h4>
-        </div>
-      );
-      i++; continue;
-    }
-
-    // 3. DETECCIÓN DE DÍAS (ULTRA TOLERANTE)
-    // Detecta "DÍA", "DIA", "DAY" en cualquier parte del inicio de la línea
+    // 2. DETECCIÓN DE DÍAS (MOVIDO ARRIBA)
+    // Esto asegura que "## DÍA 1" sea tratado como Día y no como Título genérico
     const cleanLineUpper = line.toUpperCase().replace(/^[\*\#\-\d\.\s]+/, '').trim();
+    
     if (cleanLineUpper.startsWith('DÍA') || cleanLineUpper.startsWith('DIA') || cleanLineUpper.startsWith('DAY')) {
       const dayNameRaw = line.replace(/[*#]/g, '').trim(); 
-      const exerciseLinesRaw: string[] = [];
+      const rawLines: string[] = [];
       let nextIdx = i + 1;
       
-      // Capturamos hasta el siguiente título o día
+      // Capturamos el bloque entero hasta encontrar otro título o día
       while (nextIdx < lines.length) {
           const nextLine = lines[nextIdx];
           const nextClean = nextLine.toUpperCase().replace(/^[\*\#\-\d\.\s]+/, '').trim();
           
+          // Paramos si encontramos un título ## o el inicio de otro día
           if (nextLine.startsWith('## ')) break; 
           if (nextClean.startsWith('DÍA') || nextClean.startsWith('DIA') || nextClean.startsWith('DAY')) break;
           
-          // Capturamos cualquier línea que parezca un ejercicio (con o sin pipe, lista o texto)
-          if (nextLine.length > 3) { 
-              exerciseLinesRaw.push(nextLine);
-          }
+          rawLines.push(nextLine);
           nextIdx++;
       }
 
-      // Filtramos las líneas que realmente parecen ejercicios (empiezan por símbolo o tienen números de series)
-      const validExerciseLines = exerciseLinesRaw.filter(l => 
-          l.trim().match(/^[\*\-\•\d]/) || l.includes('|') || l.match(/\dx\d/i)
+      // Filtramos ejercicios válidos para la lógica del botón "Guardar"
+      const exercisesForLogic = extractExercises(
+          rawLines.filter(l => l.trim().match(/^[\*\-\•\d]/) || l.includes('|') || l.match(/\dx\d/i))
       );
-
-      const exercises = extractExercises(validExerciseLines);
       
       elements.push(
-        <div key={`day-${i}`} className="mb-6 bg-white/5 rounded-xl p-4 border border-white/5">
+        <div key={`day-${i}`} className="mb-6 bg-zinc-900/30 rounded-xl p-4 border border-white/5 shadow-inner">
             <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-2">
                 <div className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 bg-primary rounded-full animate-pulse"></div>
+                    <div className="w-1.5 h-1.5 bg-primary rounded-full animate-pulse shadow-[0_0_8px_rgba(212,255,0,0.8)]"></div>
                     <h5 className="text-sm font-black text-white uppercase tracking-widest">{renderFormattedText(dayNameRaw)}</h5>
                 </div>
-                {exercises.length > 0 && (
-                    <button onClick={() => handleSaveInternal(dayNameRaw, exercises)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase transition-all border ${savedDays.has(dayNameRaw) ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-primary/10 text-primary border-primary/20 hover:bg-primary/20'}`}>
+                {exercisesForLogic.length > 0 && (
+                    <button 
+                        onClick={() => handleSaveInternal(dayNameRaw, exercisesForLogic)} 
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase transition-all border shadow-lg ${savedDays.has(dayNameRaw) ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-primary/10 text-primary border-primary/20 hover:bg-primary/20 hover:scale-105'}`}
+                    >
                         {savedDays.has(dayNameRaw) ? <Check className="w-3 h-3" /> : <Save className="w-3 h-3" />}
-                        {savedDays.has(dayNameRaw) ? 'Guardado' : 'Guardar'}
+                        {savedDays.has(dayNameRaw) ? 'Guardado' : 'Guardar Rutina'}
                     </button>
                 )}
             </div>
+            
+            {/* PINTAMOS EL TEXTO DEL DÍA LÍNEA A LÍNEA */}
             <div className="space-y-2">
-                {validExerciseLines.map((exLine, idx) => (
-                    <div key={idx} className="flex items-start gap-3 pl-2">
-                        <Dumbbell className="w-3.5 h-3.5 text-zinc-600 mt-1 shrink-0" />
-                        <p className="text-xs text-zinc-300 font-mono leading-relaxed">
-                            {renderFormattedText(exLine.replace(/^[\*\-\d\.\s]+/, ''))}
-                        </p>
-                    </div>
-                ))}
+                {rawLines.map((rawLine, idx) => {
+                    // Si parece un ejercicio
+                    if (rawLine.trim().match(/^[\*\-\•]/) || rawLine.includes('|') || rawLine.match(/\dx\d/i)) {
+                        return (
+                            <div key={idx} className="flex items-start gap-3 pl-2 group">
+                                <Dumbbell className="w-3.5 h-3.5 text-zinc-600 mt-1 shrink-0 group-hover:text-primary transition-colors" />
+                                <p className="text-xs text-zinc-300 font-mono leading-relaxed group-hover:text-white transition-colors break-words">
+                                    {renderFormattedText(rawLine.replace(/^[\*\-\d\.\s]+/, ''))}
+                                </p>
+                            </div>
+                        );
+                    }
+                    // Si es una nota o texto normal dentro del día
+                    return <p key={idx} className="text-xs text-zinc-500 italic pl-6 leading-relaxed break-words">{renderFormattedText(rawLine)}</p>;
+                })}
             </div>
         </div>
       );
@@ -185,23 +195,86 @@ const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: 
       continue;
     }
 
-    // 4. SUBTÍTULOS (###)
+    // 3. TABLAS (Detección flexible y formato fixed)
+    // Detectamos si empieza por | O si tiene múltiples | internas (para cuando la IA olvida la primera barra)
+    const isTableStart = line.trim().startsWith('|') || (line.split('|').length > 2 && !line.includes('ALERTA'));
+    
+    if (isTableStart) {
+      const tableRows: string[][] = [];
+      // Consumimos el bloque de tabla
+      while (i < lines.length && (lines[i].trim().startsWith('|') || lines[i].split('|').length > 2)) {
+        // Ignoramos separadores markdown |---|
+        if (!lines[i].includes('---')) {
+            const cells = lines[i].split('|').filter((c) => c.trim().length > 0).map(c => c.trim());
+            if (cells.length > 0) tableRows.push(cells);
+        }
+        i++;
+      }
+      
+      if (tableRows.length > 0) {
+        elements.push(
+          <div key={`table-${i}`} className="my-6 w-full rounded-xl border border-white/10 bg-black/40 overflow-hidden shadow-sm">
+            {/* table-fixed para evitar scroll horizontal en móviles */}
+            <table className="w-full text-left text-[10px] table-fixed">
+              <thead>
+                  <tr className="bg-zinc-900/50">
+                      {tableRows[0].map((cell, idx) => (
+                          <th key={idx} className="px-2 py-3 font-black text-primary uppercase tracking-wider break-words align-top border-b border-white/5">
+                              {cell}
+                          </th>
+                      ))}
+                  </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                  {tableRows.slice(1).map((row, rIdx) => (
+                      <tr key={rIdx} className="hover:bg-white/5 transition-colors">
+                          {row.map((c, cIdx) => (
+                              <td key={cIdx} className={`px-2 py-2 font-mono text-zinc-300 border-r border-white/5 last:border-0 break-words align-top ${cIdx === 0 ? 'font-bold text-white' : ''}`}>
+                                  {renderFormattedText(c)}
+                              </td>
+                          ))}
+                      </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+      continue;
+    }
+
+    // 4. TÍTULOS GRANDES (##)
+    if (line.startsWith('## ')) {
+      elements.push(
+        <div key={`header-${i}`} className="flex items-center gap-3 pt-8 border-b border-white/10 pb-2 mb-4 first:pt-0 mt-4">
+            <Target className="w-4 h-4 text-primary" />
+            <h4 className="text-sm font-black uppercase tracking-[0.2em] text-white italic">{line.replace(/#/g, '').trim()}</h4>
+        </div>
+      );
+      i++; continue;
+    }
+
+    // 5. SUBTÍTULOS TÉCNICOS (###)
     if (line.startsWith('###')) {
-        elements.push(<h5 key={`sub-${i}`} className="text-xs font-bold text-primary/80 mt-4 mb-2 pl-3 border-l-2 border-primary/30 uppercase">{line.replace(/#/g, '').trim()}</h5>);
+        elements.push(
+            <h5 key={`sub-${i}`} className="text-xs font-bold text-primary/80 mt-4 mb-2 pl-3 border-l-2 border-primary/30 uppercase tracking-wide">
+                {line.replace(/#/g, '').trim()}
+            </h5>
+        );
         i++; continue;
     }
 
-    // 5. LISTAS NORMALES
+    // 6. LISTAS NORMALES
     if (/^[\*\-\•]/.test(line)) {
       elements.push(
         <div key={`list-${i}`} className="flex gap-3 pl-2 py-1 items-start">
-            <div className="mt-2 w-1 h-1 rounded-full bg-zinc-600 shrink-0" />
+            <div className="mt-1.5 w-1 h-1 rounded-full bg-zinc-600 shrink-0" />
             <p className="text-sm text-zinc-400 leading-relaxed">{renderFormattedText(line.replace(/^[\*\-\•]\s*/, ''))}</p>
         </div>
       );
     } else {
         // Texto normal
-        elements.push(<p key={`p-${i}`} className="text-sm text-zinc-500 leading-relaxed mb-1">{renderFormattedText(line)}</p>);
+        elements.push(<p key={`p-${i}`} className="text-sm text-zinc-500 leading-relaxed mb-2">{renderFormattedText(line)}</p>);
     }
     i++;
   }
@@ -222,22 +295,29 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
   useEffect(() => {
     if (isOpen) {
         setLoading(true); setError(null);
-        // Pequeño delay para asegurar que la animación de entrada se vea fluida
         const timer = setTimeout(() => {
              if (!workouts || workouts.length === 0) {
-                setError("Sin datos registrados."); setLoading(false);
+                setError("No hay suficientes entrenamientos registrados para generar un informe."); 
+                setLoading(false);
                 return;
             }
-            generateGlobalReport(workouts, language, currentUser.weight || 80, currentUser.height || 180)
+            
+            generateGlobalReport(
+                workouts, 
+                language, 
+                currentUser.weight || 80, 
+                currentUser.height || 180,
+                currentUser.age || 25 
+            )
                 .then(setData)
-                .catch(e => setError(e.message || "Error neuronal."))
+                .catch(e => setError(e.message || "Error neuronal al procesar los datos."))
                 .finally(() => setLoading(false));
         }, 100);
         return () => clearTimeout(timer);
     } else {
         setData(null); setError(null);
     }
-  }, [isOpen]);
+  }, [isOpen, workouts, currentUser, language]);
 
   if (!isOpen) return null;
 
@@ -245,37 +325,42 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/95 backdrop-blur-xl" onClick={onClose} />
       <div className="relative w-full max-w-lg bg-[#0a0a0a] border border-white/10 rounded-[2rem] shadow-2xl flex flex-col h-[92vh] animate-in zoom-in-95 duration-300 text-white overflow-hidden ring-1 ring-white/5">
-        <div className="flex items-center justify-between p-6 border-b border-white/5 shrink-0">
+        <div className="flex items-center justify-between p-6 border-b border-white/5 shrink-0 bg-gradient-to-b from-zinc-900/50 to-transparent">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-zinc-900 border border-white/10 text-primary rounded-2xl"><ShieldAlert className="w-6 h-6" /></div>
-            <div><h3 className="text-xl font-black text-white italic uppercase leading-none">CRÓNICAS DEL HIERRO</h3><span className="text-[10px] text-zinc-500 font-mono uppercase tracking-[0.2em]">{currentUser.name}</span></div>
+            <div className="p-3 bg-zinc-900 border border-white/10 text-primary rounded-2xl shadow-lg"><ShieldAlert className="w-6 h-6" /></div>
+            <div><h3 className="text-xl font-black text-white italic uppercase leading-none tracking-tighter">CRÓNICAS DEL HIERRO</h3><span className="text-[10px] text-zinc-500 font-mono uppercase tracking-[0.2em]">{currentUser.name}</span></div>
           </div>
-          <button onClick={onClose} className="p-2 text-zinc-600 hover:text-white bg-white/5 rounded-full"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="p-2 text-zinc-600 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-colors"><X className="w-5 h-5" /></button>
         </div>
         
         <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#050505] p-6">
             {loading ? (
-                <div className="flex flex-col items-center justify-center h-full space-y-4">
-                    <Loader2 className="w-10 h-10 text-primary animate-spin" />
+                <div className="flex flex-col items-center justify-center h-full space-y-6">
+                    <div className="relative">
+                        <Loader2 className="w-12 h-12 text-primary animate-spin" />
+                        <div className="absolute inset-0 bg-primary/20 blur-xl animate-pulse"></div>
+                    </div>
                     <span className="text-[10px] font-mono text-primary uppercase tracking-widest animate-pulse">Analizando Biomecánica...</span>
                 </div>
             ) : error ? (
-                <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
-                    <AlertTriangle className="w-12 h-12 text-red-500" />
-                    <p className="text-red-500 font-black uppercase font-mono tracking-widest">{error}</p>
+                <div className="flex flex-col items-center justify-center h-full text-center space-y-4 px-8">
+                    <div className="p-4 bg-red-500/10 rounded-full border border-red-500/20">
+                        <AlertTriangle className="w-10 h-10 text-red-500" />
+                    </div>
+                    <p className="text-red-500 font-bold uppercase text-xs tracking-widest leading-relaxed">{error}</p>
                 </div>
             ) : data ? (
-                <div className="animate-in fade-in slide-in-from-bottom-4 space-y-6">
+                <div className="animate-in fade-in slide-in-from-bottom-4 space-y-6 pb-8">
                     <div className="grid grid-cols-1 gap-4">
-                        <div className="bg-zinc-900/40 border border-white/5 rounded-2xl p-5 relative overflow-hidden group">
-                            <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-2">Volumen Histórico</span>
+                        <div className="bg-zinc-900/40 border border-white/5 rounded-2xl p-5 relative overflow-hidden group hover:border-white/10 transition-colors">
+                            <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-2 flex items-center gap-2"><Activity className="w-3 h-3" /> Volumen Histórico</span>
                             <div className="flex items-baseline gap-2 mb-2"><span className="text-4xl font-black text-white font-mono tracking-tighter">{(data.totalVolumeKg / 1000).toFixed(1)}</span><span className="text-xs font-bold text-zinc-500 uppercase">TONS</span></div>
-                            {data.volumeEquivalentGlobal && <div className="text-xs font-medium text-zinc-400 border-t border-white/5 pt-2 flex items-center gap-2"><span className="text-[10px] bg-white/10 px-1.5 rounded text-white">=</span> {data.volumeEquivalentGlobal}</div>}
+                            {data.volumeEquivalentGlobal && <div className="text-xs font-medium text-zinc-400 border-t border-white/5 pt-2 flex items-center gap-2"><span className="text-[10px] bg-white/10 px-1.5 rounded text-white font-mono">=</span> {data.volumeEquivalentGlobal}</div>}
                         </div>
-                        <div className="bg-primary/5 border border-primary/20 rounded-2xl p-5 relative overflow-hidden group">
-                            <span className="text-[10px] font-black text-primary uppercase tracking-widest block mb-2">Volumen {data.monthName}</span>
+                        <div className="bg-primary/5 border border-primary/20 rounded-2xl p-5 relative overflow-hidden group hover:bg-primary/10 transition-colors">
+                            <span className="text-[10px] font-black text-primary uppercase tracking-widest block mb-2 flex items-center gap-2"><Dumbbell className="w-3 h-3" /> Volumen {data.monthName}</span>
                             <div className="flex items-baseline gap-2 mb-2"><span className="text-4xl font-black text-primary font-mono tracking-tighter">{(data.monthlyVolumeKg / 1000).toFixed(1)}</span><span className="text-xs font-bold text-primary/60 uppercase">TONS</span></div>
-                            {data.volumeEquivalentMonthly && <div className="text-xs font-medium text-primary/80 border-t border-primary/10 pt-2 flex items-center gap-2"><span className="text-[10px] bg-primary/20 px-1.5 rounded text-primary">=</span> {data.volumeEquivalentMonthly}</div>}
+                            {data.volumeEquivalentMonthly && <div className="text-xs font-medium text-primary/80 border-t border-primary/10 pt-2 flex items-center gap-2"><span className="text-[10px] bg-primary/20 px-1.5 rounded text-primary font-mono">=</span> {data.volumeEquivalentMonthly}</div>}
                         </div>
                     </div>
 

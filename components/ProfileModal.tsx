@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   X, 
@@ -12,7 +11,8 @@ import {
   Zap,
   Key,
   ExternalLink,
-  User as UserIcon
+  User as UserIcon,
+  Calendar // Added Calendar icon for Age
 } from 'lucide-react';
 import { User as UserType, Workout } from '../types';
 import { uploadAvatar, updateUserProfile, updateUserPassword } from '../services/supabase';
@@ -37,6 +37,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [name, setName] = useState(user.name);
   const [weight, setWeight] = useState(user.weight || 80);
   const [height, setHeight] = useState(user.height || 180);
+  const [age, setAge] = useState(user.age || 25); // NEW STATE FOR AGE (Default 25 or user's age)
   const [apiKey, setApiKey] = useState(localStorage.getItem('USER_GEMINI_API_KEY') || '');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -51,6 +52,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
         setName(user.name);
         setWeight(user.weight || 80);
         setHeight(user.height || 180);
+        setAge(user.age || 25); // Set age on open
         setApiKey(localStorage.getItem('USER_GEMINI_API_KEY') || '');
     }
   }, [isOpen, user]);
@@ -71,6 +73,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
       if (name !== user.name) updates.name = name.trim();
       if (weight !== user.weight) updates.weight = Number(weight);
       if (height !== user.height) updates.height = Number(height);
+      if (age !== user.age) updates.age = Number(age); // Add age to updates
 
       if (Object.keys(updates).length > 0) {
         await updateUserProfile(user.id, updates);
@@ -145,7 +148,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 {/* BIOMETRY */}
                 <div className="space-y-4">
                     <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-2"><Scale className="w-3 h-3" /> Biometría</div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-3 gap-3"> {/* Changed to 3 columns */}
                         <div className="space-y-1">
                             <label className="text-[10px] text-zinc-500 uppercase ml-1">Peso (kg)</label>
                             <input type="number" value={weight} onChange={(e) => setWeight(Number(e.target.value))} className="w-full bg-black border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:border-primary/50" />
@@ -153,6 +156,17 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                         <div className="space-y-1">
                             <label className="text-[10px] text-zinc-500 uppercase ml-1">Altura (cm)</label>
                             <input type="number" value={height} onChange={(e) => setHeight(Number(e.target.value))} className="w-full bg-black border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:border-primary/50" />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[10px] text-zinc-500 uppercase ml-1">Edad</label>
+                            <div className="relative">
+                                <input 
+                                    type="number" 
+                                    value={age} 
+                                    onChange={(e) => setAge(Number(e.target.value))} 
+                                    className="w-full bg-black border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:border-primary/50" 
+                                />
+                            </div>
                         </div>
                     </div>
                 </div>
