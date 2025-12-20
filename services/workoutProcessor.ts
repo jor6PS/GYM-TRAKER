@@ -1,18 +1,22 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { WorkoutData, Workout, GlobalReportData, MaxComparisonEntry, GroupAnalysisData } from "../types";
-import { format, isSameMonth, subMonths, isAfter, startOfMonth } from "date-fns";
-import { es, enUS } from 'date-fns/locale';
+import { format, isSameMonth, isAfter } from "date-fns";
+// Fix: Import subMonths and startOfMonth from their specific paths to avoid missing exported member errors
+import subMonths from "date-fns/subMonths";
+import startOfMonth from "date-fns/startOfMonth";
+// Fix: Import locales from specific paths as the barrel export might be incomplete or missing
+import es from 'date-fns/locale/es';
+import enUS from 'date-fns/locale/en-US';
 import { getCanonicalId, getLocalizedName } from "../utils";
 import { EXERCISE_DB } from "../data/exerciseDb";
 
 // --- CONSTANTS & CONFIG ---
 
-const MODELS_PRIORITY = [
-    'gemini-2.5-flash', 
-    'gemini-2.0-flash', 
-    'gemini-1.5-pro',   
-    'gemini-1.5-flash'  
-];
+// Gemini 3 is the recommended series now
+const COMPLEX_TASK_MODEL = 'gemini-3-pro-preview';
+const BASIC_TASK_MODEL = 'gemini-3-flash-preview';
+const AUDIO_MODEL = 'gemini-2.5-flash-native-audio-preview-09-2025';
 
 const CALISTHENIC_IDS = new Set([
   'pull_up', 'chin_up', 'dips_chest', 'push_ups', 
@@ -36,26 +40,11 @@ interface CommonExerciseComparison {
     winner: string;
 }
 
-// Cache simple
-let cachedClient: GoogleGenAI | null = null;
-let cachedKey: string | null = null;
-
 // --- HELPERS ---
 
 const getAIClient = (): GoogleGenAI => {
-  const userKey = localStorage.getItem('USER_GEMINI_API_KEY');
-  
-  if (!userKey || userKey.trim() === "" || userKey === "undefined") {
-    throw new Error("NEXO DESCONECTADO: Para activar la inteligencia, debes configurar tu Gemini API Key personal en el Perfil.");
-  }
-
-  if (cachedClient && cachedKey === userKey) {
-    return cachedClient;
-  }
-
-  cachedKey = userKey;
-  cachedClient = new GoogleGenAI({ apiKey: userKey.trim() });
-  return cachedClient;
+  // Using process.env.API_KEY exclusively as per developer guidelines
+  return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
 const cleanJson = (text: string): string => {
@@ -92,32 +81,7 @@ const safeParseWorkout = (structuredData: any): WorkoutData => {
 
 const handleAIError = (error: any) => {
     console.error("AI Module Error:", error);
-    if (error.message?.includes("NEXO DESCONECTADO")) throw error;
     throw new Error(`ERROR DE INTELIGENCIA: ${error.message || "Fallo en el procesamiento neuronal."}`);
-};
-
-const generateWithFallback = async (contents: any, config: any, systemInstruction?: string) => {
-    const ai = getAIClient();
-    let lastError = null;
-
-    for (const model of MODELS_PRIORITY) {
-        try {
-            const response = await ai.models.generateContent({
-                model: model,
-                contents: contents,
-                config: { ...config, systemInstruction: systemInstruction }
-            });
-            return response;
-        } catch (error: any) {
-            console.warn(`Fallo en modelo ${model}:`, error.message);
-            lastError = error;
-            if (error.message?.includes("API key") || error.message?.includes("PERMISSION_DENIED")) {
-                throw error;
-            }
-            continue;
-        }
-    }
-    throw lastError || new Error("Todos los modelos de IA están inactivos actualmente.");
 };
 
 const isCalisthenic = (id: string): boolean => CALISTHENIC_IDS.has(id);
@@ -233,7 +197,7 @@ export const generateGlobalReport = async (
             .filter(item => item.monthlyMax > 0)
             .sort((a, b) => b.monthlyMax - a.monthlyMax);
 
-        // 3. Prompt (ACTUALIZADO: Tono Constructivo + Plan 3 Días)
+        // 3. Prompt (STRICT Naming Enforcement)
         const systemInstruction = `Eres un Entrenador de Alto Rendimiento experto en biomecánica y programación.
         
         ROL: Tu tono es **constructivo, profesional, técnico y alentador**. Evita el lenguaje agresivo o de "gym-bro" burlón. Tu objetivo es educar y guiar hacia la mejora continua.
@@ -246,44 +210,56 @@ export const generateGlobalReport = async (
           "equiv_monthly": "Cantidad + elemento absurdo/ingenioso para el peso de este mes",
           "analysis": "Markdown detallado siguiendo la estructura:
             ## 3 - AUDITORÍA FORENSE DEL MES
+            Analiza patrones. ¿Hubo constancia? ¿Se rompió algún récord histórico
             ### 3.1 - Mapeo de Volumen Efectivo
             (Tabla de series semanales por grupo muscular y Veredicto: Mantenimiento/MAV/Sobreentrenamiento)
             ### 3.2 - Ratios de Equilibrio Estructural
+            Observa los ejercicios. ¿Hay mucho 'Push' y poco 'Pull'? ¿Se ignoraron las piernas?
             (Análisis Push/Pull y Anterior/Posterior. Si hay desequilibrio >20%, usar **ALERTA ROJA: [Descripción]** en negrita y mayúsculas)
             ### 3.3 - Secuenciación y Sandbagging
-            (Criticar orden de ejercicios y detectar series con reps idénticas indicando falta de intensidad real)
+            (Criticar orden de ejercicios si procede y detectar series con reps idénticas indicando falta de intensidad real)
             ### 3.4 - Estímulo vs Fatiga
-            (Análisis sistémico de ejercicios pesados)
+            Basado en los RPE o fallos (si existen) y la frecuencia.
             ## 4 - ANÁLISIS DE EVOLUCIÓN
-            (Comparativa técnica con meses pasados sobre sobrecarga progresiva)
+            Compara 'monthlyMax' vs 'globalMax' de la lista proporcionada.
+            - Si monthlyMax >= globalMax: ¡Excelente! Nuevos PRs.
+            - Si monthlyMax < globalMax: Fase de acumulación o posible desentrenamiento.
             ## 5 - VEREDICTO Y MEJORAS
-            (3 cambios concretos para el mes que viene).
+            Resumen ejecutivo de 2 líneas y 3 puntos clave (Bullet points) para mejorar.
             ## 6 - PLAN DE ACCIÓN (PRÓXIMOS 3 DÍAS)
-            Diseña una micro-rutina de 3 días (Día A, Día B, Día C) basada en los datos analizados para corregir debilidades o potenciar fortalezas.
+            Diseña una rutina de 3 días (Día 1, Día 2, Día 3) basada en los datos analizados.
             
-            IMPORTANTE: Para cada ejercicio, SUGIERE PESOS REALISTAS basados en la 'Comparativa Máximos' provista. Si el usuario levanta 100kg, no sugieras 20kg.
+            REGLA DE ORO PARA NOMBRES: 
+            Debes utilizar EXACTAMENTE los mismos nombres de ejercicios que aparecen en la lista de 'Comparativa Máximos' proporcionada abajo. Si un ejercicio no está ahí, búscalo en tu base de conocimientos pero intenta que coincidan con nombres comunes del catálogo.
+            
+            IMPORTANTE: Sugiere pesos realistas basados en los 1RMs del usuario.
             
             Formato requerido:
             **DÍA 1: [Enfoque]**
-            * [Ejercicio] | [Sets]x[Reps] | [Peso Sugerido / RPE]
+            * [Nombre del Ejercicio] | [Sets]x[Reps] | [Peso Sugerido / RPE]
             * ...
             (Repetir para Día 2 y 3)",
           "score": número 1-10
         }`;
-
+        
         const prompt = `Analiza mi rendimiento para optimizar mi progreso. 
         Biometría: ${currentWeight}kg.
         Peso Total Histórico: ${Math.round(totalVolume)}kg. 
         Peso este mes: ${Math.round(monthlyVolume)}kg. 
-        Comparativa Máximos (Usa esto para calcular los pesos del plan): ${JSON.stringify(maxComparison.slice(0, 20))}.
+        Comparativa Máximos (Usa estos nombres exactos para el Plan de Acción): ${JSON.stringify(maxComparison.slice(0, 20))}.
         Historial detallado del mes: ${JSON.stringify(recentHistory)}.
         Genera el informe profesional y el plan de acción.`;
 
-        const response = await generateWithFallback(
-            { parts: [{ text: prompt }] },
-            { responseMimeType: "application/json", temperature: 0.7 },
-            systemInstruction
-        );
+        const ai = getAIClient();
+        const response = await ai.models.generateContent({
+            model: COMPLEX_TASK_MODEL,
+            contents: { parts: [{ text: prompt }] },
+            config: { 
+                responseMimeType: "application/json", 
+                temperature: 0.7,
+                systemInstruction: systemInstruction 
+            }
+        });
 
         const aiRes = JSON.parse(cleanJson(response.text || '{}'));
 
@@ -303,6 +279,7 @@ export const generateGlobalReport = async (
 
 export const processWorkoutAudio = async (audioBase64: string, mimeType: string): Promise<WorkoutData> => {
   try {
+    const ai = getAIClient();
     const schema = {
         type: Type.OBJECT, 
         properties: {
@@ -334,19 +311,20 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
         required: ["exercises"]
     };
 
-    const response = await generateWithFallback(
-        { 
+    const response = await ai.models.generateContent({
+        model: AUDIO_MODEL,
+        contents: { 
             parts: [
                 { inlineData: { mimeType, data: audioBase64 } }, 
                 { text: "Extract workout data strictly following the JSON schema." }
             ] 
         },
-        { 
+        config: { 
             responseMimeType: "application/json", 
             responseSchema: schema,
             temperature: 0.1 
         }
-    );
+    });
 
     return JSON.parse(cleanJson(response.text || ''));
   } catch (error: any) { handleAIError(error); throw error; }
@@ -361,6 +339,7 @@ export const generateGroupAnalysis = async (
     language: 'es' | 'en' = 'es'
 ): Promise<GroupAnalysisData> => {
     try {
+        const ai = getAIClient();
         // --- FASE 1: PROCESAMIENTO MATEMÁTICO ---
         const stats: UserStats[] = usersData.map(user => {
             const s: UserStats = {
@@ -554,11 +533,15 @@ export const generateGroupAnalysis = async (
             full_matrix_data: matrixData
         };
 
-        const response = await generateWithFallback(
-            { parts: [{ text: `Genera el análisis completo: ${JSON.stringify(promptData)}` }] },
-            { responseMimeType: "application/json", temperature: 0.5 },
-            systemInstruction
-        );
+        const response = await ai.models.generateContent({
+            model: COMPLEX_TASK_MODEL,
+            contents: { parts: [{ text: `Genera el análisis completo: ${JSON.stringify(promptData)}` }] },
+            config: { 
+                responseMimeType: "application/json", 
+                temperature: 0.5,
+                systemInstruction: systemInstruction
+            }
+        });
 
         const aiRes = JSON.parse(cleanJson(response.text || '{}'));
 

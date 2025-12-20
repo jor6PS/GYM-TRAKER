@@ -72,10 +72,11 @@ const translations = {
     // Actions
     delete_exercise_title: "¿Borrar Ejercicio?",
     delete_exercise_desc: "Este set será eliminado.",
-    delete_workout_title: "¿Borrar Entrenamiento?",
-    delete_workout_desc: "Se borrará todo el registro.",
-    delete_plan_title: "¿Borrar Rutina?",
-    delete_plan_desc: "La rutina se perderá para siempre.",
+    delete_workout_title: "¿BORRAR REGISTRO?",
+    delete_workout_desc: "Esta acción no se puede deshacer. Se perderán todos los ejercicios de este registro.",
+    delete_plan_title: "¿BORRAR RUTINA?",
+    delete_plan_desc: "La rutina se eliminará permanentemente de tu biblioteca.",
+    confirm_action: "SÍ, ELIMINAR",
     
     // Modals & Builder
     input_log: "Introducir Actividad",
