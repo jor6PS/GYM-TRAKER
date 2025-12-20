@@ -147,8 +147,11 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
       if (!workouts || workouts.length === 0) throw new Error("Sin datos registrados.");
       const reportData = await generateGlobalReport(workouts, language, currentUser.weight || 80, currentUser.height || 180);
       setData(reportData);
-    } catch (e: any) { setError(e.message || "Error neuronal."); }
-    finally { setLoading(false); }
+    } catch (e: any) { 
+        setError(e.message || "Error neuronal."); 
+    } finally { 
+        setLoading(false); 
+    }
   };
 
   if (!isOpen) return null;
@@ -162,7 +165,20 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
           <button onClick={onClose} className="p-2 text-zinc-600 hover:text-white bg-white/5 rounded-full"><X className="w-5 h-5" /></button>
         </div>
         <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#050505] p-6">
-            {loading ? <div className="flex flex-col items-center justify-center h-full space-y-4"><Loader2 className="w-10 h-10 text-primary animate-spin" /><span className="text-[10px] font-mono text-primary uppercase tracking-widest">Generando Inteligencia...</span></div> : error ? <div className="flex flex-col items-center justify-center h-full text-center space-y-4"><AlertTriangle className="w-12 h-12 text-red-500" /><p className="text-red-500 font-black uppercase font-mono tracking-widest">{error}</p></div> : data ? (
+            {loading ? (
+                <div className="flex flex-col items-center justify-center h-full space-y-4">
+                    <Loader2 className="w-10 h-10 text-primary animate-spin" />
+                    <span className="text-[10px] font-mono text-primary uppercase tracking-widest">Generando Inteligencia...</span>
+                </div>
+            ) : error ? (
+                <div className="flex flex-col items-center justify-center h-full text-center space-y-4 px-6">
+                    <AlertTriangle className="w-12 h-12 text-yellow-500" />
+                    <p className="text-white font-black uppercase font-mono tracking-widest text-sm leading-relaxed">{error}</p>
+                    {error.includes("API KEY") && (
+                        <p className="text-zinc-500 text-xs italic">Puedes conseguir una clave gratis en Google AI Studio.</p>
+                    )}
+                </div>
+            ) : data ? (
                 <div className="animate-in fade-in slide-in-from-bottom-4">
                     <div className="grid grid-cols-1 gap-4 mb-6">
                         <div className="bg-zinc-900/40 border border-white/5 rounded-2xl p-5"><span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-2">Carga Total Histórica</span><div className="flex items-baseline gap-2"><span className="text-3xl font-black text-white font-mono">{(data.totalVolumeKg / 1000).toFixed(1)}</span><span className="text-xs font-bold text-zinc-500 uppercase">TONS</span></div></div>

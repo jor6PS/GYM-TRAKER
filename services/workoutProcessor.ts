@@ -43,8 +43,15 @@ interface CommonExerciseComparison {
 // --- HELPERS ---
 
 const getAIClient = (): GoogleGenAI => {
-  // Using process.env.API_KEY exclusively as per developer guidelines
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Priorizamos la clave del perfil del usuario (localStorage)
+  const userKey = localStorage.getItem('USER_GEMINI_API_KEY');
+  const finalKey = (userKey && userKey.trim().length > 10) ? userKey.trim() : process.env.API_KEY;
+  
+  if (!finalKey || finalKey === 'undefined' || finalKey === 'null') {
+    throw new Error("API_KEY_MISSING: Por favor, configura tu API Key en el Perfil para activar la inteligencia.");
+  }
+  
+  return new GoogleGenAI({ apiKey: finalKey });
 };
 
 const cleanJson = (text: string): string => {
