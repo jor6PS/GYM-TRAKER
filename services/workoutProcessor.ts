@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { WorkoutData, Workout, GlobalReportData, MaxComparisonEntry, GroupAnalysisData } from "../types";
 import { format, isSameMonth, isAfter } from "date-fns";
@@ -13,10 +12,22 @@ import { EXERCISE_DB } from "../data/exerciseDb";
 
 // --- CONSTANTS & CONFIG ---
 
-// Gemini 3 is the recommended series now
-const COMPLEX_TASK_MODEL = 'gemini-3-pro-preview';
-const BASIC_TASK_MODEL = 'gemini-3-flash-preview';
-const AUDIO_MODEL = 'gemini-2.5-flash-native-audio-preview-09-2025';
+// MODIFICACIÓN: Listas de prioridad para fallback
+// El sistema intentará usar el primero, si falla por cuota, usará el segundo, etc.
+const REPORT_MODELS = [
+    'gemini-3-pro-preview',
+    'gemini-3-flash-preview',
+    'gemini-2.5-flash',
+    'gemini-2.0-pro-exp-02-05', // 1. Experimental Pro (Mejor razonamiento actual)
+    'gemini-1.5-pro',           // 2. Pro Estable
+    'gemini-2.0-flash',         // 3. Flash Nuevo (Más rápido/barato)
+    'gemini-1.5-flash'          // 4. Flash Estable (Mayor cuota disponible)
+];
+
+const AUDIO_MODELS = [
+    'gemini-2.0-flash-exp',     // Soporta audio nativo y es multimodal
+    'gemini-1.5-flash'          // Fallback robusto para audio
+];
 
 const CALISTHENIC_IDS = new Set([
   'pull_up', 'chin_up', 'dips_chest', 'push_ups', 
@@ -90,6 +101,69 @@ const handleAIError = (error: any) => {
     console.error("AI Module Error:", error);
     throw new Error(`ERROR DE INTELIGENCIA: ${error.message || "Fallo en el procesamiento neuronal."}`);
 };
+
+// NUEVA FUNCIÓN: Lógica de reintento con múltiples modelos
+const generateWithFallback = async (
+    ai: GoogleGenAI, 
+    models: string[], 
+    prompt: string, 
+    systemInstruction?: string,
+    responseSchema?: any,
+    inlineData?: any
+): Promise<any> => {
+    let lastError;
+
+    for (const modelName of models) {
+        try {
+            // Configuración dinámica
+            const config: any = { 
+                responseMimeType: "application/json", 
+                temperature: 0.5 
+            };
+            
+            if (systemInstruction) config.systemInstruction = systemInstruction;
+            if (responseSchema) config.responseSchema = responseSchema;
+
+            // Contenido dinámico (texto o multimodal)
+            const parts: any[] = [];
+            if (inlineData) parts.push(inlineData);
+            parts.push({ text: prompt });
+
+            console.log(`🧠 Intentando generar con modelo: ${modelName}...`);
+
+            const response = await ai.models.generateContent({
+                model: modelName,
+                contents: { parts: parts },
+                config: config
+            });
+
+            // Si llegamos aquí, tuvo éxito
+            return response;
+
+        } catch (error: any) {
+            console.warn(`⚠️ Fallo en modelo ${modelName}:`, error.message);
+            lastError = error;
+            
+            // Si el error es 429 (Quota) o 503 (Overloaded), continuamos al siguiente modelo.
+            // Si es otro tipo de error (ej: Invalid API Key), tal vez deberíamos parar, 
+            // pero para seguridad probamos el siguiente por si acaso es un error específico del modelo.
+            const isRetryable = error.message?.includes('429') || 
+                                error.message?.includes('503') || 
+                                error.message?.includes('quota') ||
+                                error.message?.includes('resource exhausted');
+
+            if (!isRetryable && models.indexOf(modelName) === models.length - 1) {
+                 // Si no es error de cuota y es el último, lanzamos
+                 throw error;
+            }
+            // Si es retryable, el loop continúa automáticamente
+        }
+    }
+
+    // Si salimos del loop sin retornar, lanzamos el último error
+    throw new Error(`Todos los modelos fallaron. Último error: ${lastError?.message}`);
+};
+
 
 const isCalisthenic = (id: string): boolean => CALISTHENIC_IDS.has(id);
 
@@ -234,7 +308,7 @@ export const generateGlobalReport = async (
             ## 5 - VEREDICTO Y MEJORAS
             Resumen ejecutivo de 2 líneas y 3 puntos clave (Bullet points) para mejorar.
             ## 6 - PLAN DE ACCIÓN (PRÓXIMOS 3 DÍAS)
-            Diseña una rutina de 3 días (Día 1, Día 2, Día 3) basada en los datos analizados.
+            Diseña una rutina de 3 días a unos 6 ejercicios por día (Día 1, Día 2, Día 3) basada en los datos analizados para un entrenamiento completo.
             
             REGLA DE ORO PARA NOMBRES: 
             Debes utilizar EXACTAMENTE los mismos nombres de ejercicios que aparecen en la lista de 'Comparativa Máximos' proporcionada abajo. Si un ejercicio no está ahí, búscalo en tu base de conocimientos pero intenta que coincidan con nombres comunes del catálogo.
@@ -258,15 +332,14 @@ export const generateGlobalReport = async (
         Genera el informe profesional y el plan de acción.`;
 
         const ai = getAIClient();
-        const response = await ai.models.generateContent({
-            model: COMPLEX_TASK_MODEL,
-            contents: { parts: [{ text: prompt }] },
-            config: { 
-                responseMimeType: "application/json", 
-                temperature: 0.7,
-                systemInstruction: systemInstruction 
-            }
-        });
+        
+        // MODIFICACIÓN: Usar generateWithFallback con REPORT_MODELS
+        const response = await generateWithFallback(
+            ai, 
+            REPORT_MODELS, 
+            prompt, 
+            systemInstruction
+        );
 
         const aiRes = JSON.parse(cleanJson(response.text || '{}'));
 
@@ -318,20 +391,15 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
         required: ["exercises"]
     };
 
-    const response = await ai.models.generateContent({
-        model: AUDIO_MODEL,
-        contents: { 
-            parts: [
-                { inlineData: { mimeType, data: audioBase64 } }, 
-                { text: "Extract workout data strictly following the JSON schema." }
-            ] 
-        },
-        config: { 
-            responseMimeType: "application/json", 
-            responseSchema: schema,
-            temperature: 0.1 
-        }
-    });
+    // MODIFICACIÓN: Usar generateWithFallback con AUDIO_MODELS
+    const response = await generateWithFallback(
+        ai,
+        AUDIO_MODELS, // Intenta el nativo, luego el 1.5 flash
+        "Extract workout data strictly following the JSON schema.",
+        undefined, // No system instruction
+        schema,
+        { inlineData: { mimeType, data: audioBase64 } }
+    );
 
     return JSON.parse(cleanJson(response.text || ''));
   } catch (error: any) { handleAIError(error); throw error; }
@@ -540,15 +608,13 @@ export const generateGroupAnalysis = async (
             full_matrix_data: matrixData
         };
 
-        const response = await ai.models.generateContent({
-            model: COMPLEX_TASK_MODEL,
-            contents: { parts: [{ text: `Genera el análisis completo: ${JSON.stringify(promptData)}` }] },
-            config: { 
-                responseMimeType: "application/json", 
-                temperature: 0.5,
-                systemInstruction: systemInstruction
-            }
-        });
+        // MODIFICACIÓN: Usar generateWithFallback con REPORT_MODELS
+        const response = await generateWithFallback(
+            ai, 
+            REPORT_MODELS, 
+            `Genera el análisis completo: ${JSON.stringify(promptData)}`, 
+            systemInstruction
+        );
 
         const aiRes = JSON.parse(cleanJson(response.text || '{}'));
 
