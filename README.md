@@ -38,11 +38,7 @@ Al ser una **PWA**, puedes instalarla en tu móvil sin pasar por la App Store o 
 *   **Comparador de PRs:** Tabla matricial para ver quién es el más fuerte en ejercicios comunes.
 *   **Juez AI:** Gemini analiza los datos del grupo y emite un veredicto sarcástico sobre quién es el "Alpha" y quién necesita esforzarse más.
 
-### 🌍 3. Internacionalización (i18n)
-*   Cambia instantáneamente entre **Español** e **Inglés**.
-*   El "Gym Bro" AI adapta su personalidad y análisis al idioma seleccionado.
-
-### 📅 4. Calendario Interactivo & Reportes
+### 📅 3. Calendario Interactivo & Reportes
 *   Visualización mensual limpia.
 *   **Reportes Mensuales AI:** Genera un resumen de tu mes con análisis de tendencias y un "veredicto final" motivador.
 

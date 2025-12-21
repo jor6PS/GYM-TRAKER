@@ -14,11 +14,9 @@ import startOfMonth from 'date-fns/startOfMonth';
 import startOfWeek from 'date-fns/startOfWeek';
 // Fix: Import locales from specific paths to resolve missing exported member errors
 import es from 'date-fns/locale/es';
-import enUS from 'date-fns/locale/en-US';
 import { clsx } from 'clsx';
 import { ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
 import { Workout } from '../types';
-import { useLanguage } from '../contexts/LanguageContext';
 import { parseLocalDate } from '../utils';
 
 interface CalendarViewProps {
@@ -41,8 +39,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   onSelectDate,
   selectedDate,
 }) => {
-  const { language } = useLanguage();
-  const dateLocale = language === 'es' ? es : enUS;
+  const dateLocale = es;
 
   const { calendarDays, monthStart, trainingDaysInMonth } = useMemo(() => {
     const monthStart = startOfMonth(viewDate);

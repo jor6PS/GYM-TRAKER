@@ -5,7 +5,7 @@ import type { WorkoutData, Exercise, Workout, Set, MetricType, WorkoutPlan } fro
 import { useLanguage } from '../contexts/LanguageContext';
 import { useExercises } from '../contexts/ExerciseContext';
 import { format } from 'date-fns';
-import { getCanonicalId, normalizeText } from '../utils';
+import { getCanonicalId, normalizeText, getExerciseIcon } from '../utils';
 import { EditExerciseModal } from './EditExerciseModal';
 
 interface UnifiedEntryModalProps {
@@ -34,6 +34,7 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
   const [selectedMetricType, setSelectedMetricType] = useState<MetricType>('strength');
   const [isHistoryBased, setIsHistoryBased] = useState(false); 
   const [setsConfig, setSetsConfig] = useState<Set[]>([{ reps: 10, weight: 0, unit: 'kg' }]);
+  const [isUnilateral, setIsUnilateral] = useState(false);
   const [editingItem, setEditingItem] = useState<{ index: number; data: Exercise } | null>(null);
 
   useEffect(() => { if (isOpen) document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = ''; }; }, [isOpen]);
@@ -55,14 +56,26 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
       for (const workout of sortedHistory) {
           const match = workout.structured_data.exercises.find(ex => getCanonicalId(ex.name, catalog) === targetId);
           if (match && match.sets.length > 0) {
-              setSetsConfig(match.sets.map(s => ({ ...s, reps: s.reps || 0, weight: s.weight || 0, distance: s.distance || 0, time: s.time || '', unit: s.unit || (type === 'cardio' ? 'km' : 'kg') })));
+              setSetsConfig(match.sets.map(s => ({ ...s, reps: s.reps || 0, weight: s.weight || 0, distance: s.distance || 0, time: s.time || '', unit: s.unit || (type === 'cardio' ? 'min' : 'kg') })));
+              setIsUnilateral(match.unilateral || false);
               historyFound = true; setIsHistoryBased(true); break;
           }
       }
-      if (!historyFound) { setIsHistoryBased(false); setSetsConfig(type === 'cardio' ? [{ distance: 0, time: '', unit: 'km' }] : [{ reps: 10, weight: 0, unit: 'kg' }]); }
+      if (!historyFound) { setIsHistoryBased(false); setSetsConfig(type === 'cardio' ? [{ time: '', unit: 'min' }] : [{ reps: 10, weight: 0, unit: 'kg' }]); setIsUnilateral(false); }
   };
 
-  const confirmAddExercise = () => { if (!selectedLibExercise) return; setSessionExercises([...sessionExercises, { name: selectedLibExercise, sets: setsConfig }]); setSelectedLibExercise(null); setLibSearch(''); setActiveTab('overview'); };
+  const confirmAddExercise = () => { 
+    if (!selectedLibExercise) return; 
+    setSessionExercises([...sessionExercises, { 
+      name: selectedLibExercise, 
+      sets: setsConfig, 
+      unilateral: isUnilateral || undefined 
+    }]); 
+    setSelectedLibExercise(null); 
+    setLibSearch(''); 
+    setIsUnilateral(false);
+    setActiveTab('overview'); 
+  };
 
   if (!isOpen) return null;
 
@@ -90,22 +103,52 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                     {!selectedLibExercise ? (
                         <>
                             <div className="relative shrink-0"><Search className="absolute left-3 top-3.5 w-5 h-5 text-zinc-500" /><input value={libSearch} onChange={(e) => setLibSearch(e.target.value)} placeholder={t('search_db')} className="w-full bg-black border border-white/20 rounded-xl py-3 pl-10 pr-4 text-sm text-white focus:border-green-400/50 outline-none" autoFocus /></div>
-                            <div className="flex-1 overflow-y-auto space-y-1 custom-scrollbar">{filteredLibrary.map((ex, i) => <button key={i} onClick={() => handleSelectExercise(ex.es)} className="w-full text-left px-4 py-3 bg-black/40 border border-white/5 hover:border-green-400/30 rounded-xl text-sm text-zinc-300 flex items-center justify-between group"><div className="flex items-center gap-3">{ex.type === 'cardio' ? <Activity className="w-4 h-4 text-zinc-600" /> : <Dumbbell className="w-4 h-4 text-zinc-600" />}{ex.es}</div><Plus className="w-4 h-4 opacity-0 group-hover:opacity-100 text-green-400" /></button>)}</div>
+                            <div className="flex-1 overflow-y-auto space-y-1 custom-scrollbar">{filteredLibrary.map((ex, i) => <button key={i} onClick={() => handleSelectExercise(ex.es)} className="w-full text-left px-4 py-3 bg-black/40 border border-white/5 hover:border-green-400/30 rounded-xl text-sm text-zinc-300 flex items-center justify-between group"><div className="flex items-center gap-3">{ex.type === 'cardio' ? <Activity className="w-4 h-4 text-red-500" /> : <Dumbbell className="w-4 h-4 text-zinc-600" />}{ex.es}</div><Plus className="w-4 h-4 opacity-0 group-hover:opacity-100 text-green-400" /></button>)}</div>
                         </>
                     ) : (
                         <div className="animate-in slide-in-from-right-10 duration-200 flex flex-col h-full">
                             <div className="flex items-center gap-2 mb-4"><button onClick={() => setSelectedLibExercise(null)} className="text-zinc-500 text-xs font-bold uppercase flex items-center gap-1"><ChevronRight className="w-4 h-4 rotate-180" /> {t('back')}</button><div className="h-4 w-px bg-white/10" /><h3 className="text-white font-bold truncate flex-1">{selectedLibExercise}</h3>{isHistoryBased && <div className="ml-auto text-[8px] bg-yellow-500/10 text-yellow-500 px-1.5 py-0.5 rounded border border-yellow-500/20 font-black tracking-widest uppercase">Auto-filled</div>}</div>
                             <div className="bg-black border border-white/10 rounded-2xl p-4 flex-1 overflow-y-auto custom-scrollbar">
-                                {setsConfig.map((set, idx) => (
-                                    <div key={idx} className="grid grid-cols-12 gap-2 items-center mb-2">
-                                        <div className="col-span-1 text-[10px] font-mono text-zinc-600 text-center">{idx+1}</div>
-                                        <div className="col-span-4"><input type="number" value={set.weight || ''} onChange={e => { const n = [...setsConfig]; n[idx].weight = Number(e.target.value); setSetsConfig(n); }} className="w-full bg-zinc-900 border border-white/5 rounded p-2 text-center text-white font-bold text-sm" placeholder="Kg" /></div>
-                                        <div className="col-span-4"><input type="number" value={set.reps || ''} onChange={e => { const n = [...setsConfig]; n[idx].reps = Number(e.target.value); setSetsConfig(n); }} className="w-full bg-zinc-900 border border-white/5 rounded p-2 text-center text-white font-bold text-sm" placeholder="Reps" /></div>
-                                        <div className="col-span-2 flex justify-center"><button onClick={() => { if(setsConfig.length > 1) { const n = [...setsConfig]; n.splice(idx, 1); setSetsConfig(n); } }} className="text-zinc-700 hover:text-red-500"><Trash2 className="w-4 h-4" /></button></div>
-                                    </div>
-                                ))}
+                                {selectedMetricType === 'strength' ? (
+                                    <>
+                                        {setsConfig.map((set, idx) => (
+                                            <div key={idx} className="grid grid-cols-12 gap-2 items-center mb-2">
+                                                <div className="col-span-1 text-[10px] font-mono text-zinc-600 text-center">{idx+1}</div>
+                                                <div className="col-span-4"><input type="number" value={set.weight || ''} onChange={e => { const n = [...setsConfig]; n[idx].weight = Number(e.target.value); setSetsConfig(n); }} className="w-full bg-zinc-900 border border-white/5 rounded p-2 text-center text-white font-bold text-sm" placeholder="Kg" /></div>
+                                                <div className="col-span-4"><input type="number" value={set.reps || ''} onChange={e => { const n = [...setsConfig]; n[idx].reps = Number(e.target.value); setSetsConfig(n); }} className="w-full bg-zinc-900 border border-white/5 rounded p-2 text-center text-white font-bold text-sm" placeholder="Reps" /></div>
+                                                <div className="col-span-2 flex justify-center"><button onClick={() => { if(setsConfig.length > 1) { const n = [...setsConfig]; n.splice(idx, 1); setSetsConfig(n); } }} className="text-zinc-700 hover:text-red-500"><Trash2 className="w-4 h-4" /></button></div>
+                                            </div>
+                                        ))}
+                                    </>
+                                ) : (
+                                    <>
+                                        {setsConfig.map((set, idx) => (
+                                            <div key={idx} className="grid grid-cols-12 gap-2 items-center mb-2">
+                                                <div className="col-span-1 text-[10px] font-mono text-zinc-600 text-center">{idx+1}</div>
+                                                <div className="col-span-8"><input type="text" value={set.time || ''} onChange={e => { const n = [...setsConfig]; n[idx].time = e.target.value; setSetsConfig(n); }} className="w-full bg-zinc-900 border border-red-500/30 rounded p-2 text-center text-white font-bold text-sm placeholder:text-red-500/50" placeholder="MM:SS" /></div>
+                                                <div className="col-span-2 flex justify-center"><button onClick={() => { if(setsConfig.length > 1) { const n = [...setsConfig]; n.splice(idx, 1); setSetsConfig(n); } }} className="text-zinc-700 hover:text-red-500"><Trash2 className="w-4 h-4" /></button></div>
+                                            </div>
+                                        ))}
+                                    </>
+                                )}
                                 <button onClick={() => setSetsConfig([...setsConfig, { ...setsConfig[setsConfig.length-1] }])} className="w-full py-2 border border-dashed border-white/10 rounded-xl text-[10px] font-black uppercase text-zinc-500 flex items-center justify-center gap-2"><Plus className="w-3 h-3" /> {t('add_set')}</button>
                             </div>
+                            {selectedMetricType === 'strength' && (
+                                <div className="mt-3 p-3 bg-black/40 border border-white/10 rounded-xl">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={isUnilateral} 
+                                            onChange={(e) => setIsUnilateral(e.target.checked)}
+                                            className="w-4 h-4 rounded border-white/20 bg-zinc-900 text-primary focus:ring-primary focus:ring-offset-0"
+                                        />
+                                        <span className="text-xs text-zinc-300 font-bold uppercase tracking-wide">
+                                            {t('unilateral') || 'Unilateral'} 
+                                            <span className="text-[10px] text-zinc-500 ml-1 normal-case">({t('unilateral_hint') || 'Peso registrado es la mitad del real'})</span>
+                                        </span>
+                                    </label>
+                                </div>
+                            )}
                             <button onClick={confirmAddExercise} className="w-full mt-4 bg-green-400 text-black font-black py-4 rounded-xl shadow-glow text-xs uppercase flex items-center justify-center gap-2 shrink-0">{t('add_to_session')}</button>
                         </div>
                     )}
@@ -138,7 +181,21 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                         <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar">
                             {sessionExercises.map((ex, i) => (
                                 <div key={i} className="bg-black border border-white/10 rounded-xl p-3 flex justify-between items-center group">
-                                    <div className="min-w-0 flex-1"><h4 className="font-bold text-white text-sm truncate">{ex.name}</h4><div className="flex flex-wrap gap-1 mt-1">{ex.sets.map((s, idx) => <span key={idx} className="bg-zinc-900 px-1.5 py-0.5 rounded text-[9px] font-mono text-zinc-500">{s.weight}x{s.reps}</span>)}</div></div>
+                                    <div className="min-w-0 flex-1">
+                                        <h4 className="font-bold text-white text-sm truncate">{ex.name}</h4>
+                                        <div className="flex flex-wrap gap-1 mt-1">
+                                            {ex.sets.map((s, idx) => {
+                                                const exerciseId = getCanonicalId(ex.name, catalog);
+                                                const exerciseDef = catalog.find(e => e.id === exerciseId);
+                                                const isCardio = exerciseDef?.type === 'cardio';
+                                                return (
+                                                    <span key={idx} className={`px-1.5 py-0.5 rounded text-[9px] font-mono ${isCardio ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-zinc-900 text-zinc-500'}`}>
+                                                        {isCardio ? (s.time || '--:--') : `${s.weight || 0}×${s.reps || 0}`}
+                                                    </span>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
                                     <div className="flex items-center gap-1 shrink-0 ml-2"><button onClick={() => setEditingItem({ index: i, data: ex })} className="p-2 text-zinc-700 hover:text-white"><Pencil className="w-3.5 h-3.5" /></button><button onClick={() => { const n = [...sessionExercises]; n.splice(i, 1); setSessionExercises(n); }} className="p-2 text-zinc-700 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button></div>
                                 </div>
                             ))}

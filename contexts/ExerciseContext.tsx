@@ -1,7 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { getExerciseCatalog } from '../services/supabase';
-import { EXERCISE_DB } from '../data/exerciseDb';
 
 export interface ExerciseDef {
   id: string;
@@ -19,22 +18,20 @@ interface ExerciseContextType {
 const ExerciseContext = createContext<ExerciseContextType | undefined>(undefined);
 
 export const ExerciseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Fallback inicial: Usar la base de datos local para que la app siempre sea funcional
-  const [catalog, setCatalog] = useState<ExerciseDef[]>(EXERCISE_DB);
+  const [catalog, setCatalog] = useState<ExerciseDef[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const loadCatalog = async () => {
       try {
         const data = await getExerciseCatalog();
-        // Solo actualizamos el estado si realmente recibimos datos de la base de datos
         if (data && data.length > 0) {
           setCatalog(data);
+        } else {
+          console.warn("No exercises found in Supabase catalog.");
         }
       } catch (e) {
-        // En caso de error (como el de tabla no encontrada), fallamos silenciosamente
-        // ya que el estado inicial ya tiene el catálogo local.
-        console.warn("Supabase catalog not found, using local fallback DB.");
+        console.error("Error loading exercise catalog from Supabase:", e);
       } finally {
         setIsLoading(false);
       }
