@@ -678,7 +678,9 @@ export const getUserTotalVolume = async (userId: string): Promise<number> => {
     return 0;
   }
 
-  return (data || []).reduce((sum: number, record: UserRecord) => sum + (record.total_volume_kg || 0), 0);
+  return (data || []).reduce((sum: number, record: { total_volume_kg: number | null | undefined }) => {
+    return sum + (record.total_volume_kg || 0);
+  }, 0);
 };
 
 /**

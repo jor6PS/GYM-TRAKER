@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { X, Plus, Trash2, Save, Search } from 'lucide-react';
+import { X, Plus, Trash2, Save, Search, Activity } from 'lucide-react';
 import { WorkoutPlan, Exercise } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useExercises } from '../contexts/ExerciseContext';

@@ -325,7 +325,6 @@ onOpenAdmin={undefined}
           <AdminPanel 
             currentUser={currentUser}
             onViewAsUser={handleViewAsUser}
-            onViewProfile={handleViewProfile}
           />
         )}
         

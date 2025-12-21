@@ -109,14 +109,14 @@ export const AIErrorDisplay: React.FC<AIErrorDisplayProps> = ({ error, onDismiss
             {onRetry && (
               <button
                 onClick={onRetry}
-                disabled={error.retryAfter && error.retryAfter > 0}
+                disabled={error.retryAfter !== undefined && error.retryAfter > 0}
                 className={`w-full py-4 ${
-                  error.retryAfter && error.retryAfter > 0
+                  error.retryAfter !== undefined && error.retryAfter > 0
                     ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
                     : 'bg-primary text-black hover:bg-primaryHover'
                 } font-black rounded-2xl text-sm uppercase shadow-lg transition-all active:scale-95`}
               >
-                {error.retryAfter && error.retryAfter > 0 ? `Espera ${error.retryAfter}s` : 'Reintentar'}
+                {error.retryAfter !== undefined && error.retryAfter > 0 ? `Espera ${error.retryAfter}s` : 'Reintentar'}
               </button>
             )}
             {onDismiss && (

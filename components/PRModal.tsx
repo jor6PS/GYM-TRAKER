@@ -682,8 +682,8 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
                                                                         })}
                                                                     </div>
                                                                     <div className="text-[9px] text-green-400/60 font-mono uppercase tracking-wider mt-2 pt-2 border-t border-green-500/10">
-                                                                        Total: {exerciseData.sets.length} series • Volumen: {Math.round(selectedRecord.best_set_combination_volume_kg)}kg
-                                                                        {selectedRecord.best_set_combination_consistency_score > 0 && ` • Consistencia: ${Math.round(selectedRecord.best_set_combination_consistency_score * 100)}%`}
+                                                                        Total: {exerciseData.sets.length} series • Volumen: {Math.round(selectedRecord.best_set_combination_volume_kg || 0)}kg
+                                                                        {selectedRecord.best_set_combination_consistency_score !== undefined && selectedRecord.best_set_combination_consistency_score > 0 && ` • Consistencia: ${Math.round(selectedRecord.best_set_combination_consistency_score * 100)}%`}
                                                                     </div>
                                                                 </div>
                                                             );
@@ -696,9 +696,9 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
                                                         <>
                                                             <div className="text-xs text-green-300/80 font-mono">
                                                                 {selectedRecord.best_set_combination_sets_count} sets × {Math.round(selectedRecord.best_set_combination_avg_reps || 0)} reps avg
-                                                                {selectedRecord.best_set_combination_weight_kg > 0 && ` @ ${selectedRecord.best_set_combination_weight_kg}kg`}
+                                                                {selectedRecord.best_set_combination_weight_kg !== undefined && selectedRecord.best_set_combination_weight_kg > 0 && ` @ ${selectedRecord.best_set_combination_weight_kg}kg`}
                                                             </div>
-                                                            {selectedRecord.best_set_combination_consistency_score > 0 && (
+                                                            {selectedRecord.best_set_combination_consistency_score !== undefined && selectedRecord.best_set_combination_consistency_score > 0 && (
                                                                 <div className="text-[9px] text-green-400/60 font-mono uppercase tracking-wider">Consistencia: {Math.round(selectedRecord.best_set_combination_consistency_score * 100)}%</div>
                                                             )}
                                                         </>

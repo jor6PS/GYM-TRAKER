@@ -182,7 +182,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                               if (pastedText) {
                                 setApiKey(pastedText.trim());
                                 // Marcar como inicializado para evitar que se sobrescriba
-                                apiKeyInitializedRef.current = true;
+                                apiKeyInitialized.current = true;
                               }
                             }}
                             placeholder="Pega tu Gemini API Key..." 
