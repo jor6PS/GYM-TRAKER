@@ -209,7 +209,7 @@ export const generateGlobalReport = async (
             ### 3.4 - Estímulo vs Fatiga
             Basado en la frecuencia y la EDAD del atleta. ¿Está descansando lo suficiente?
             
-            ### 3.5 - Potencia Relativa (OBLIGATORIO: Benchmark Edad/Peso)
+            ### 3.5 - Potencia Relativa (Benchmark Edad/Peso)
             **ESTA SECCIÓN ES OBLIGATORIA Y DEBE INCLUIRSE SIEMPRE.**
             Analiza las cargas movidas en relación al peso corporal (${currentWeight}kg) y edad (${userAge} años) del usuario. 
             Cruza los datos de sus 'Maximos' con estándares de fuerza reales.
