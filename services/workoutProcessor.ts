@@ -273,10 +273,22 @@ export const generateGlobalReport = async (
             schema
         );
 
+        // Extraer el texto de la respuesta (puede venir en diferentes formatos)
+        let rawText = '';
+        if (response.text) {
+            rawText = response.text;
+        } else if (response.candidates && response.candidates[0]?.content?.parts?.[0]?.text) {
+            rawText = response.candidates[0].content.parts[0].text;
+        } else if (typeof response === 'string') {
+            rawText = response;
+        } else {
+            // Intentar extraer de cualquier estructura posible
+            rawText = JSON.stringify(response);
+        }
+
         // Intentar parsear el JSON con múltiples intentos y limpieza progresiva
         let aiRes: any;
-        const rawText = response.text || '{}';
-        let cleanedJson = cleanJson(rawText);
+        let cleanedJson = cleanJson(rawText || '{}');
         
         let parseAttempts = 0;
         const maxAttempts = 3;
@@ -284,6 +296,12 @@ export const generateGlobalReport = async (
         while (parseAttempts < maxAttempts) {
           try {
             aiRes = JSON.parse(cleanedJson);
+            
+            // Validar que tenga los campos requeridos
+            if (!aiRes.equiv_global || !aiRes.equiv_monthly || !aiRes.analysis || aiRes.score === undefined) {
+              throw new Error('Faltan campos requeridos en la respuesta de la IA');
+            }
+            
             break;
           } catch (parseError: any) {
             parseAttempts++;
@@ -291,6 +309,7 @@ export const generateGlobalReport = async (
             if (parseAttempts >= maxAttempts) {
               // Último intento: reparación agresiva de strings sin cerrar
               console.warn('Intento de parseo fallido, aplicando reparación agresiva de strings...');
+              console.warn('Respuesta cruda recibida:', rawText.substring(0, 500));
               
               // Intentar reparar strings sin cerrar
               let fixed = cleanedJson;
@@ -341,10 +360,34 @@ export const generateGlobalReport = async (
               
               try {
                 aiRes = JSON.parse(result);
+                
+                // Validar campos después del parseo reparado
+                if (!aiRes.equiv_global || !aiRes.equiv_monthly || !aiRes.analysis || aiRes.score === undefined) {
+                  throw new Error('Faltan campos requeridos después de la reparación');
+                }
+                
                 break;
               } catch (finalError: any) {
-                // Si aún falla, intentar extraer solo los campos necesarios
+                // Si aún falla, intentar extraer solo los campos necesarios con valores por defecto
                 console.error('Error final de parseo:', finalError);
+                console.error('JSON reparado (últimos 500 chars):', result.substring(Math.max(0, result.length - 500)));
+                
+                // Intentar extraer campos manualmente como último recurso
+                const equivGlobalMatch = cleanedJson.match(/"equiv_global"\s*:\s*"([^"]*)"/);
+                const equivMonthlyMatch = cleanedJson.match(/"equiv_monthly"\s*:\s*"([^"]*)"/);
+                const analysisMatch = cleanedJson.match(/"analysis"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/);
+                const scoreMatch = cleanedJson.match(/"score"\s*:\s*(\d+)/);
+                
+                if (equivGlobalMatch && equivMonthlyMatch && analysisMatch && scoreMatch) {
+                  aiRes = {
+                    equiv_global: equivGlobalMatch[1].replace(/\\n/g, '\n'),
+                    equiv_monthly: equivMonthlyMatch[1].replace(/\\n/g, '\n'),
+                    analysis: analysisMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"'),
+                    score: parseInt(scoreMatch[1])
+                  };
+                  break;
+                }
+                
                 throw new Error(`JSON inválido en la respuesta de la IA. Error: ${parseError.message}. Por favor, intenta de nuevo.`);
               }
             } else {
@@ -357,6 +400,12 @@ export const generateGlobalReport = async (
                 .replace(/([^,}\]])\s*]/g, '$1]');
             }
           }
+        }
+        
+        // Validación final de campos requeridos
+        if (!aiRes || !aiRes.equiv_global || !aiRes.equiv_monthly || !aiRes.analysis || aiRes.score === undefined) {
+          console.error('Respuesta de IA incompleta:', aiRes);
+          throw new Error('La respuesta de la IA no tiene el formato esperado. Faltan campos requeridos.');
         }
 
         return {

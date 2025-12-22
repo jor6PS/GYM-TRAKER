@@ -468,12 +468,12 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
                     <div className="grid grid-cols-1 gap-4">
                         <div className="bg-zinc-900/40 border border-white/5 rounded-2xl p-5 relative overflow-hidden group hover:border-white/10 transition-colors">
                             <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-2 flex items-center gap-2"><Activity className="w-3 h-3" /> Volumen Histórico</span>
-                            <div className="flex items-baseline gap-2 mb-2"><span className="text-4xl font-black text-white font-mono tracking-tighter">{(data.totalVolumeKg / 1000).toFixed(1)}</span><span className="text-xs font-bold text-zinc-500 uppercase">TONS</span></div>
+                            <div className="flex items-baseline gap-2 mb-2"><span className="text-4xl font-black text-white font-mono tracking-tighter">{Math.round(data.totalVolumeKg).toLocaleString()}</span><span className="text-xs font-bold text-zinc-500 uppercase">KG</span></div>
                             {data.volumeEquivalentGlobal && <div className="text-xs font-medium text-zinc-400 border-t border-white/5 pt-2 flex items-center gap-2"><span className="text-[10px] bg-white/10 px-1.5 rounded text-white font-mono">=</span> {data.volumeEquivalentGlobal}</div>}
                         </div>
                         <div className="bg-primary/5 border border-primary/20 rounded-2xl p-5 relative overflow-hidden group hover:bg-primary/10 transition-colors">
                             <span className="text-[10px] font-black text-primary uppercase tracking-widest block mb-2 flex items-center gap-2"><Dumbbell className="w-3 h-3" /> Volumen {data.monthName}</span>
-                            <div className="flex items-baseline gap-2 mb-2"><span className="text-4xl font-black text-primary font-mono tracking-tighter">{(data.monthlyVolumeKg / 1000).toFixed(1)}</span><span className="text-xs font-bold text-primary/60 uppercase">TONS</span></div>
+                            <div className="flex items-baseline gap-2 mb-2"><span className="text-4xl font-black text-primary font-mono tracking-tighter">{Math.round(data.monthlyVolumeKg).toLocaleString()}</span><span className="text-xs font-bold text-primary/60 uppercase">KG</span></div>
                             {data.volumeEquivalentMonthly && <div className="text-xs font-medium text-primary/80 border-t border-primary/10 pt-2 flex items-center gap-2"><span className="text-[10px] bg-primary/20 px-1.5 rounded text-primary font-mono">=</span> {data.volumeEquivalentMonthly}</div>}
                         </div>
                     </div>

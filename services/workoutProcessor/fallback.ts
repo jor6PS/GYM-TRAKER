@@ -35,7 +35,7 @@ export const generateWithFallback = async (
       const config: any = { 
         responseMimeType: "application/json", 
         temperature: 0.3, // Reducido para respuestas más rápidas y deterministas
-        maxOutputTokens: 4096 // Reducido para respuestas más rápidas
+        maxOutputTokens: responseSchema ? 8192 : 4096 // Más tokens cuando hay schema (para análisis largos)
       };
       
       if (systemInstruction) config.systemInstruction = systemInstruction;
