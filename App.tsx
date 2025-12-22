@@ -168,21 +168,21 @@ function App() {
     processedUsersRef.current.clear();
   }, [currentUser?.id]);
 
-  // Debug: Log cuando cambian los workouts
-  useEffect(() => {
-    console.log('=== ESTADO ACTUAL ===');
-    console.log('currentUser:', currentUser?.id, currentUser?.name);
-    console.log('realAdminUser:', realAdminUser?.id, realAdminUser?.name);
-    console.log('workouts count:', workouts.length);
-    console.log('groupedLogs count:', groupedLogs.length);
-    console.log('selectedDate:', selectedDate.toISOString());
-    if (workouts.length > 0) {
-      console.log('Primer workout:', workouts[0]?.id, workouts[0]?.date);
-      console.log('Últimos 3 workouts:', workouts.slice(-3).map(w => ({ id: w.id, date: w.date, user_id: w.user_id })));
-    } else {
-      console.warn('⚠️ No hay workouts cargados. currentUser?.id:', currentUser?.id);
-    }
-  }, [workouts, groupedLogs, currentUser, realAdminUser, selectedDate]);
+  // Debug: Log cuando cambian los workouts (comentado para evitar spam en consola)
+  // useEffect(() => {
+  //   console.log('=== ESTADO ACTUAL ===');
+  //   console.log('currentUser:', currentUser?.id, currentUser?.name);
+  //   console.log('realAdminUser:', realAdminUser?.id, realAdminUser?.name);
+  //   console.log('workouts count:', workouts.length);
+  //   console.log('groupedLogs count:', groupedLogs.length);
+  //   console.log('selectedDate:', selectedDate.toISOString());
+  //   if (workouts.length > 0) {
+  //     console.log('Primer workout:', workouts[0]?.id, workouts[0]?.date);
+  //     console.log('Últimos 3 workouts:', workouts.slice(-3).map(w => ({ id: w.id, date: w.date, user_id: w.user_id })));
+  //   } else {
+  //     console.warn('⚠️ No hay workouts cargados. currentUser?.id:', currentUser?.id);
+  //   }
+  // }, [workouts, groupedLogs, currentUser, realAdminUser, selectedDate]);
 
   // Effects
   useEffect(() => {

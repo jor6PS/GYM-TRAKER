@@ -241,11 +241,36 @@ export const generateGlobalReport = async (
 
         const ai = getAIClient();
         
+        // Schema JSON estricto para garantizar el formato correcto de la respuesta
+        const schema = {
+            type: Type.OBJECT,
+            properties: {
+                equiv_global: {
+                    type: Type.STRING,
+                    description: "Comparación VISUAL del peso total histórico con algo masivo (ej: '3 Ballenas Azules')"
+                },
+                equiv_monthly: {
+                    type: Type.STRING,
+                    description: "Comparación VISUAL del peso mensual con objetos cotidianos o animales"
+                },
+                analysis: {
+                    type: Type.STRING,
+                    description: "Markdown detallado con el análisis completo del entrenamiento"
+                },
+                score: {
+                    type: Type.NUMBER,
+                    description: "Puntuación de eficiencia del 1 al 10"
+                }
+            },
+            required: ["equiv_global", "equiv_monthly", "analysis", "score"]
+        };
+        
         const response = await generateWithFallback(
             ai, 
             REPORT_MODELS, 
             prompt, 
-            systemInstruction
+            systemInstruction,
+            schema
         );
 
         // Intentar parsear el JSON con múltiples intentos y limpieza progresiva
@@ -529,7 +554,7 @@ export const generateGroupAnalysis = async (
         // --- FASE 1: PROCESAMIENTO MATEMÁTICO ---
         const stats: UserStats[] = await Promise.all(usersData.map(async (user) => {
             const s: UserStats = {
-                userId: user.name,
+                userId: user.userId || user.name,
                 name: user.name,
                 totalVolume: 0,
                 workoutCount: new Set(user.workouts.map(w => w.date.split('T')[0])).size,
@@ -539,10 +564,11 @@ export const generateGroupAnalysis = async (
 
             // Intentar obtener records almacenados si tenemos userId
             let storedRecords: any[] = [];
+            let storedTotalVolume = 0;
             if (user.userId) {
                 try {
                     storedRecords = await getUserRecords(user.userId);
-                    s.totalVolume = await getUserTotalVolume(user.userId);
+                    storedTotalVolume = await getUserTotalVolume(user.userId);
                 } catch (error) {
                     console.warn(`Error loading stored records for ${user.name}, using fallback:`, error);
                 }
@@ -555,6 +581,7 @@ export const generateGroupAnalysis = async (
                 bestSet: { weight: number; reps: number; isBodyweight: boolean; unit: string } 
             }>();
 
+            let workoutVolume = 0;
             user.workouts.forEach(w => {
                 const historicWeight = w.user_weight || 80; 
                 const workoutData = safeParseWorkout(w.structured_data);
@@ -578,7 +605,7 @@ export const generateGroupAnalysis = async (
                             
                             // Volumen
                             const vol = loadInKg * repsVal;
-                            s.totalVolume += vol;
+                            workoutVolume += vol;
                             s.muscleVol[muscle] += vol;
 
                             // Guardar el mejor set para este ejercicio
@@ -600,7 +627,7 @@ export const generateGroupAnalysis = async (
                                 const existing = allExercisesFromWorkouts.get(exerciseName)!;
                                 const existingMetric = existing.bestSet.isBodyweight 
                                     ? existing.bestSet.reps 
-                                    : (existing.bestSet.weight * (existing.bestSet.unit === 'lbs' ? 0.453 : 1)) * (1 + existing.bestSet.reps / 30);
+                                    : (existing.bestSet.weight * (existing.bestSet.unit === 'lbs' ? 0.453592 : 1)) * (1 + existing.bestSet.reps / 30);
                                 
                                 if (currentMetric > existingMetric) {
                                     existing.bestSet = {
@@ -628,10 +655,10 @@ export const generateGroupAnalysis = async (
                         const existing = allExercisesFromWorkouts.get(exerciseName)!;
                         const recordMetric = record.is_bodyweight 
                             ? reps 
-                            : (weight * (record.unit === 'kg' ? 1 : 0.453)) * (1 + reps / 30);
+                            : (weight * (record.unit === 'kg' ? 1 : 0.453592)) * (1 + reps / 30);
                         const existingMetric = existing.bestSet.isBodyweight 
                             ? existing.bestSet.reps 
-                            : (existing.bestSet.weight * (existing.bestSet.unit === 'lbs' ? 0.453 : 1)) * (1 + existing.bestSet.reps / 30);
+                            : (existing.bestSet.weight * (existing.bestSet.unit === 'lbs' ? 0.453592 : 1)) * (1 + existing.bestSet.reps / 30);
                         
                         if (recordMetric > existingMetric) {
                             existing.bestSet = {
@@ -662,6 +689,9 @@ export const generateGroupAnalysis = async (
                 s.maxLifts[exerciseName] = exerciseData.bestSet;
             });
             
+            // Si tenemos volumen almacenado, usamos ese valor; de lo contrario usamos el calculado de workouts
+            s.totalVolume = storedTotalVolume > 0 ? storedTotalVolume : workoutVolume;
+
             return s;
         }));
 

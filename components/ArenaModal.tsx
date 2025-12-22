@@ -56,12 +56,12 @@ const DossierRenderer = ({ text }: { text: string }) => {
         const isMatrix = tableRows[0].length > 3; 
         elements.push(
           <div key={`table-${i}`} className="my-4 w-full overflow-hidden rounded-xl border border-white/10 bg-black/40 shadow-lg flex flex-col">
-            <div className={isMatrix ? "overflow-x-auto custom-scrollbar" : "w-full"}>
-                <table className={`w-full text-left border-collapse ${isMatrix ? 'min-w-[400px]' : 'table-fixed'}`}>
+            <div className={`${isMatrix ? "overflow-x-auto custom-scrollbar" : "w-full"} w-full`}>
+                <table className={`w-full text-left border-collapse ${isMatrix ? 'min-w-[520px]' : 'table-fixed'}`}>
                 <thead>
                     <tr className="bg-white/5 border-b border-white/10">
                     {tableRows[0].map((cell, idx) => (
-                        <th key={idx} className="px-3 py-2.5 font-black text-primary uppercase tracking-widest bg-zinc-900/50 text-[10px] whitespace-nowrap border-r border-white/5 last:border-0 sticky left-0 z-10">
+                        <th key={idx} className="px-3 py-2.5 font-black text-primary uppercase tracking-widest bg-zinc-900/50 text-[10px] whitespace-nowrap border-r border-white/5 last:border-0">
                             {cell}
                         </th>
                     ))}
@@ -71,7 +71,7 @@ const DossierRenderer = ({ text }: { text: string }) => {
                     {tableRows.slice(1).map((row, rowIdx) => (
                     <tr key={rowIdx} className="hover:bg-white/5 transition-colors group">
                         {row.map((cell, cellIdx) => (
-                        <td key={cellIdx} className={`px-3 py-2 font-mono text-zinc-300 border-r border-white/5 last:border-0 text-[10px] align-middle ${cellIdx === 0 ? 'font-bold text-white whitespace-nowrap bg-zinc-900/20' : 'whitespace-normal text-center min-w-[80px]'}`}>
+                        <td key={cellIdx} className={`px-3 py-2 font-mono text-zinc-300 border-r border-white/5 last:border-0 text-[10px] leading-tight align-middle ${cellIdx === 0 ? 'font-bold text-white whitespace-nowrap bg-zinc-900/20' : 'whitespace-pre-wrap break-words text-center min-w-[96px]'}`}>
                             {cell === '---' || cell === '' ? <span className="opacity-10">-</span> : renderFormattedText(cell)}
                         </td>
                         ))}
@@ -110,7 +110,7 @@ const DossierRenderer = ({ text }: { text: string }) => {
                     {isDraw ? <Scale className="w-4 h-4 text-zinc-300" /> : <Crown className="w-4 h-4 text-primary fill-primary" />}
                 </div>
                 <div className="flex-1 min-w-0">
-                    <div className={`text-xs font-mono truncate ${isDraw ? 'text-zinc-200' : 'text-primary-foreground font-bold'}`}>
+                    <div className={`text-xs font-mono whitespace-pre-wrap break-words ${isDraw ? 'text-zinc-200' : 'text-primary-foreground font-bold'}`}>
                         {renderFormattedText(content)}
                     </div>
                 </div>
@@ -225,8 +225,8 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
 
   // Helper para formatear volumen (15000 -> 15k)
   const formatVolume = (vol: number) => {
-      if (vol >= 1000) return `${(vol / 1000).toFixed(1)}T`;
-      return `${Math.round(vol)}kg`;
+      const rounded = Math.round(vol);
+      return `${rounded.toLocaleString()} kg`;
   };
 
   return (
