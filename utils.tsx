@@ -22,25 +22,27 @@ export const parseLocalDate = (dateStr: string) => {
     return new Date(dateStr.includes('T') ? dateStr : `${dateStr}T00:00:00`);
 };
 
-export const normalizeText = (text: string): string => {
+export const normalizeText = (text: string | null | undefined): string => {
+    if (!text || typeof text !== 'string') return '';
     return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 };
 
-export const getCanonicalId = (name: string, catalog: ExerciseDef[]): string => {
+export const getCanonicalId = (name: string | null | undefined, catalog: ExerciseDef[]): string => {
+    if (!name || typeof name !== 'string') return name || '';
     const n = normalizeText(name).trim();
     if (!n) return name;
 
-    const exact = catalog.find(ex => normalizeText(ex.en) === n || normalizeText(ex.es) === n);
+    const exact = catalog.find(ex => ex.es && normalizeText(ex.es) === n);
     if (exact) return exact.id;
 
-    const startsWith = catalog.find(ex => normalizeText(ex.en).startsWith(n) || normalizeText(ex.es).startsWith(n));
+    const startsWith = catalog.find(ex => ex.es && normalizeText(ex.es).startsWith(n));
     if (startsWith) return startsWith.id;
 
-    const partial = catalog.find(ex => normalizeText(ex.en).includes(n) || normalizeText(ex.es).includes(n));
+    const partial = catalog.find(ex => ex.es && normalizeText(ex.es).includes(n));
     return partial ? partial.id : name.trim(); 
 };
 
-export const getLocalizedName = (idOrName: string, catalog: ExerciseDef[], lang: 'es' | 'en' = 'es'): string => {
+export const getLocalizedName = (idOrName: string, catalog: ExerciseDef[]): string => {
     const match = catalog.find(ex => ex.id === idOrName);
     if (match) return match.es;
     return idOrName.charAt(0).toUpperCase() + idOrName.slice(1);
@@ -149,7 +151,7 @@ export const getExerciseIcon = (name: string, catalog: ExerciseDef[], className:
     
     // Fallbacks dinámicos
     if (n.includes('banca') || n.includes('bench')) return <Dumbbell className={className} />;
-    if (n.includes('correr') || n.includes('run')) return <Heart className={className} />;
+    if (n.includes('correr') || n.includes('run') || n.includes('cardio')) return <Heart className={`${className} text-red-500`} />;
     
     return <Dumbbell className={className} />;
 };

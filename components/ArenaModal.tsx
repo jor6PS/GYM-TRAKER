@@ -4,7 +4,10 @@ import { X, Swords, Crown, Loader2, Scale, Activity, Zap, AlertTriangle, FileTex
 import { generateGroupAnalysis } from '../services/workoutProcessor';
 import { Workout, User } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useExercises } from '../contexts/ExerciseContext';
 import { useScrollLock } from '../hooks/useScrollLock';
+import { AIErrorDisplay } from './AIErrorDisplay';
+import { formatAIError, FormattedAIError } from '../services/workoutProcessor/helpers';
 
 interface ArenaModalProps {
   isOpen: boolean;
@@ -53,12 +56,12 @@ const DossierRenderer = ({ text }: { text: string }) => {
         const isMatrix = tableRows[0].length > 3; 
         elements.push(
           <div key={`table-${i}`} className="my-4 w-full overflow-hidden rounded-xl border border-white/10 bg-black/40 shadow-lg flex flex-col">
-            <div className={isMatrix ? "overflow-x-auto custom-scrollbar" : "w-full"}>
-                <table className={`w-full text-left border-collapse ${isMatrix ? 'min-w-[400px]' : 'table-fixed'}`}>
+            <div className={`${isMatrix ? "overflow-x-auto custom-scrollbar" : "w-full"} w-full`}>
+                <table className={`w-full text-left border-collapse ${isMatrix ? 'min-w-[520px]' : 'table-fixed'}`}>
                 <thead>
                     <tr className="bg-white/5 border-b border-white/10">
                     {tableRows[0].map((cell, idx) => (
-                        <th key={idx} className="px-3 py-2.5 font-black text-primary uppercase tracking-widest bg-zinc-900/50 text-[10px] whitespace-nowrap border-r border-white/5 last:border-0 sticky left-0 z-10">
+                        <th key={idx} className="px-3 py-2.5 font-black text-primary uppercase tracking-widest bg-zinc-900/50 text-[10px] whitespace-nowrap border-r border-white/5 last:border-0">
                             {cell}
                         </th>
                     ))}
@@ -68,7 +71,7 @@ const DossierRenderer = ({ text }: { text: string }) => {
                     {tableRows.slice(1).map((row, rowIdx) => (
                     <tr key={rowIdx} className="hover:bg-white/5 transition-colors group">
                         {row.map((cell, cellIdx) => (
-                        <td key={cellIdx} className={`px-3 py-2 font-mono text-zinc-300 border-r border-white/5 last:border-0 text-[10px] align-middle ${cellIdx === 0 ? 'font-bold text-white whitespace-nowrap bg-zinc-900/20' : 'whitespace-normal text-center min-w-[80px]'}`}>
+                        <td key={cellIdx} className={`px-3 py-2 font-mono text-zinc-300 border-r border-white/5 last:border-0 text-[10px] leading-tight align-middle ${cellIdx === 0 ? 'font-bold text-white whitespace-nowrap bg-zinc-900/20' : 'whitespace-pre-wrap break-words text-center min-w-[96px]'}`}>
                             {cell === '---' || cell === '' ? <span className="opacity-10">-</span> : renderFormattedText(cell)}
                         </td>
                         ))}
@@ -107,7 +110,7 @@ const DossierRenderer = ({ text }: { text: string }) => {
                     {isDraw ? <Scale className="w-4 h-4 text-zinc-300" /> : <Crown className="w-4 h-4 text-primary fill-primary" />}
                 </div>
                 <div className="flex-1 min-w-0">
-                    <div className={`text-xs font-mono truncate ${isDraw ? 'text-zinc-200' : 'text-primary-foreground font-bold'}`}>
+                    <div className={`text-xs font-mono whitespace-pre-wrap break-words ${isDraw ? 'text-zinc-200' : 'text-primary-foreground font-bold'}`}>
                         {renderFormattedText(content)}
                     </div>
                 </div>
@@ -153,7 +156,9 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
   const [analysis, setAnalysis] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { t, language } = useLanguage();
+  const [formattedError, setFormattedError] = useState<FormattedAIError | null>(null);
+  const { t } = useLanguage();
+  const { catalog } = useExercises();
 
   useScrollLock(isOpen);
 
@@ -172,10 +177,11 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
     try {
         const usersPayload = friendsData.map(f => ({
             name: f.name,
-            workouts: f.workouts
+            workouts: f.workouts,
+            userId: f.userId
         }));
 
-        const rawResult: any = await generateGroupAnalysis(usersPayload, language);
+        const rawResult: any = await generateGroupAnalysis(usersPayload, catalog);
 
         const maxVol = Math.max(...rawResult.rawStats.map((s: any) => s.totalVolume));
         const rankings = rawResult.rawStats
@@ -199,7 +205,16 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
 
     } catch (e: any) {
         console.error("Arena Error:", e);
-        setError(e.message || "Error desconocido al contactar con la IA.");
+        const errorMessage = e.message || "Error desconocido al contactar con la IA.";
+        setError(errorMessage);
+        
+        // Intentar formatear el error
+        try {
+          const formatted = formatAIError(e);
+          setFormattedError(formatted);
+        } catch {
+          setFormattedError(null);
+        }
     } finally {
         setLoading(false);
     }
@@ -210,8 +225,8 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
 
   // Helper para formatear volumen (15000 -> 15k)
   const formatVolume = (vol: number) => {
-      if (vol >= 1000) return `${(vol / 1000).toFixed(1)}T`;
-      return `${Math.round(vol)}kg`;
+      const rounded = Math.round(vol);
+      return `${rounded.toLocaleString()} kg`;
   };
 
   return (
@@ -242,7 +257,23 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar relative">
             <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.04] pointer-events-none fixed"></div>
 
-            {error && (
+            {formattedError && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm">
+                    <AIErrorDisplay 
+                        error={formattedError} 
+                        onDismiss={() => {
+                            setError(null);
+                            setFormattedError(null);
+                        }}
+                        onRetry={() => {
+                            setError(null);
+                            setFormattedError(null);
+                            handleBattle();
+                        }}
+                    />
+                </div>
+            )}
+            {error && !formattedError && (
                 <div className="absolute top-6 left-6 right-6 z-50 animate-in slide-in-from-top-4">
                     <div className="bg-red-500/10 border border-red-500/50 rounded-2xl p-4 shadow-2xl flex flex-col items-center text-center backdrop-blur-md">
                         <AlertTriangle className="w-8 h-8 text-red-500 mb-2" />

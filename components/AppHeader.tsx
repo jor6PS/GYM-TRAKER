@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Users, Trophy, Sparkles } from 'lucide-react';
+import { Users, Trophy, Sparkles, Shield } from 'lucide-react';
 import { AppLogo } from '../utils';
 import { User } from '../types';
 
@@ -12,6 +12,7 @@ interface AppHeaderProps {
   onOpenPR: () => void;
   onOpenMonthly: () => void;
   onOpenProfile: () => void;
+  onOpenAdmin?: () => void;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
@@ -21,7 +22,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onOpenSocial,
   onOpenPR,
   onOpenMonthly,
-  onOpenProfile
+  onOpenProfile,
+  onOpenAdmin
 }) => {
   return (
     <div className="fixed top-0 left-0 right-0 z-40 px-4 py-4 pointer-events-none">
@@ -62,6 +64,17 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             >
               <Sparkles className="w-5 h-5" />
             </button>
+
+            {currentUser.role === 'admin' && onOpenAdmin && (
+              <button 
+                onClick={onOpenAdmin}
+                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surfaceHighlight transition-colors text-subtext hover:text-red-400 relative"
+                title="Panel de Administración"
+              >
+                <Shield className="w-5 h-5" />
+                <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
+              </button>
+            )}
             
             <button onClick={onOpenProfile} className="ml-1">
               <div className="w-9 h-9 rounded-full bg-surface border border-border p-0.5 overflow-hidden shadow-lg transition-transform hover:scale-105 active:scale-95">

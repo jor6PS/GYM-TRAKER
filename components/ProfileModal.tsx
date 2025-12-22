@@ -12,7 +12,9 @@ import {
   Key,
   ExternalLink,
   User as UserIcon,
-  Calendar // Added Calendar icon for Age
+  Calendar, // Added Calendar icon for Age
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { User as UserType, Workout } from '../types';
 import { uploadAvatar, updateUserProfile, updateUserPassword } from '../services/supabase';
@@ -38,24 +40,49 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [weight, setWeight] = useState(user.weight || 80);
   const [height, setHeight] = useState(user.height || 180);
   const [age, setAge] = useState(user.age || 25); // NEW STATE FOR AGE (Default 25 or user's age)
-  const [apiKey, setApiKey] = useState(localStorage.getItem('USER_GEMINI_API_KEY') || '');
+  const [apiKey, setApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const apiKeyInitialized = useRef(false);
   const { t } = useLanguage();
 
+  // Actualizar valores cuando cambia el usuario
+  useEffect(() => {
+    if (user) {
+      setName(user.name);
+      setWeight(user.weight || 80);
+      setHeight(user.height || 180);
+      setAge(user.age || 25);
+    }
+  }, [user]);
+
+  // Cargar API key solo una vez cuando se abre el modal
   useEffect(() => {
     if (isOpen) {
         setName(user.name);
         setWeight(user.weight || 80);
         setHeight(user.height || 180);
-        setAge(user.age || 25); // Set age on open
-        setApiKey(localStorage.getItem('USER_GEMINI_API_KEY') || '');
+        setAge(user.age || 25);
+        
+        // Solo cargar API key del localStorage si no está inicializada
+        // Esto evita sobrescribir lo que el usuario está escribiendo
+        if (!apiKeyInitialized.current) {
+          const savedKey = localStorage.getItem('USER_GEMINI_API_KEY');
+          if (savedKey) {
+            setApiKey(savedKey);
+          }
+          apiKeyInitialized.current = true;
+        }
+    } else {
+        // Resetear el flag cuando se cierra el modal para que se cargue de nuevo la próxima vez
+        apiKeyInitialized.current = false;
     }
-  }, [isOpen, user]);
+  }, [isOpen]); // Removido 'user' de las dependencias para evitar que se ejecute cuando cambia el usuario
 
   const handleSaveProfile = async () => {
     setIsSaving(true);
@@ -63,9 +90,18 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     try {
       // 1. Guardar API Key en LocalStorage
       if (apiKey.trim()) {
-          localStorage.setItem('USER_GEMINI_API_KEY', apiKey.trim());
+          const trimmedKey = apiKey.trim();
+          // Validar que la API key tenga al menos 20 caracteres (las de Gemini suelen tener más)
+          if (trimmedKey.length < 20) {
+            setMessage({ type: 'error', text: 'La API Key parece ser demasiado corta. Verifica que sea correcta.' });
+            setIsSaving(false);
+            return;
+          }
+          localStorage.setItem('USER_GEMINI_API_KEY', trimmedKey);
+          console.log('✅ API Key guardada en localStorage:', trimmedKey.substring(0, 10) + '...');
       } else {
           localStorage.removeItem('USER_GEMINI_API_KEY');
+          console.log('🗑️ API Key eliminada de localStorage');
       }
 
       // 2. Actualizar Perfil en Supabase
@@ -133,14 +169,33 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                         <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-[9px] text-zinc-500 hover:text-white flex items-center gap-1 transition-colors uppercase font-bold">Obtener Key Gratis <ExternalLink className="w-2.5 h-2.5" /></a>
                     </div>
                     <div className="relative group">
-                        <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-600 group-focus-within:text-primary transition-colors" />
+                        <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-600 group-focus-within:text-primary transition-colors z-10" />
                         <input 
-                            type="password" 
+                            type={showApiKey ? "text" : "password"} 
                             value={apiKey} 
                             onChange={(e) => setApiKey(e.target.value)} 
+                            onPaste={(e) => {
+                              // Manejar el pegado explícitamente para evitar problemas
+                              e.preventDefault();
+                              e.stopPropagation();
+                              const pastedText = e.clipboardData.getData('text');
+                              if (pastedText) {
+                                setApiKey(pastedText.trim());
+                                // Marcar como inicializado para evitar que se sobrescriba
+                                apiKeyInitialized.current = true;
+                              }
+                            }}
                             placeholder="Pega tu Gemini API Key..." 
-                            className="w-full bg-black border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white focus:border-primary/50 font-mono" 
+                            className="w-full bg-black border border-white/10 rounded-xl py-3 pl-10 pr-12 text-sm text-white focus:border-primary/50 font-mono" 
                         />
+                        <button
+                          type="button"
+                          onClick={() => setShowApiKey(!showApiKey)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-primary transition-colors z-10"
+                          title={showApiKey ? "Ocultar API Key" : "Mostrar API Key"}
+                        >
+                          {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
                     </div>
                     <p className="text-[9px] text-zinc-600 leading-relaxed italic">Usa tu propia clave para evitar límites de cuota compartidos. Tus datos de voz se procesan directamente con Google.</p>
                 </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { X, ShieldAlert, AlertTriangle, Target, FileText, Dumbbell, Save, Check, Activity } from 'lucide-react';
 import { Workout, GlobalReportData, User, WorkoutPlan, Exercise } from '../types';
 import { generateGlobalReport } from '../services/workoutProcessor';
@@ -6,9 +6,10 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { useExercises } from '../contexts/ExerciseContext';
 import { getCanonicalId, getLocalizedName } from '../utils';
 import { useScrollLock } from '../hooks/useScrollLock';
+import { AIErrorDisplay } from './AIErrorDisplay';
+import { formatAIError, FormattedAIError } from '../services/workoutProcessor/helpers';
 
 // --- DEFINICIÓN DE TIPOS LOCAL (CORREGIDA) ---
-// Añadimos 'en' y 'es' para satisfacer a las funciones de utilidad
 export interface ExerciseDef {
   id: string;
   name?: string;
@@ -110,7 +111,7 @@ const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: 
           
           // USO DE 'as any' PARA EVITAR CONFLICTOS DE TIPOS TS2345
           const canonicalId = getCanonicalId(name, catalog as any[]); 
-          const normalizedName = getLocalizedName(canonicalId, catalog as any[], 'es');
+          const normalizedName = getLocalizedName(canonicalId, catalog as any[]);
 
           return { name: normalizedName, sets: Array(sets).fill({ reps, weight: weightVal, unit }) };
       });
@@ -285,40 +286,98 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
   const [data, setData] = useState<GlobalReportData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { language } = useLanguage();
+  const [formattedError, setFormattedError] = useState<FormattedAIError | null>(null);
   const { catalog } = useExercises();
+  const isLoadingRef = useRef(false);
+  const mountedRef = useRef(true);
 
   useScrollLock(isOpen);
 
   useEffect(() => {
-    if (isOpen) {
-        setLoading(true); setError(null);
-        const timer = setTimeout(() => {
-             if (!workouts || workouts.length === 0) {
-                setError("No hay suficientes entrenamientos registrados para generar un informe."); 
-                setLoading(false);
-                return;
-            }
-            
-            // Casting a any en currentUser para evitar errores si TS es muy estricto con age
-            const userAny = currentUser as any;
+    mountedRef.current = true;
+    
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
-            generateGlobalReport(
-                workouts, 
-                language, 
-                currentUser.weight || 80, 
-                currentUser.height || 180,
-                userAny.age || 25 
-            )
-                .then(setData)
-                .catch(e => setError(e.message || "Error neuronal al procesar los datos."))
-                .finally(() => setLoading(false));
-        }, 100);
-        return () => clearTimeout(timer);
-    } else {
-        setData(null); setError(null);
+  useEffect(() => {
+    // Limpiar estado cuando se cierra el modal
+    if (!isOpen) {
+      setData(null);
+      setError(null);
+      setLoading(false);
+      isLoadingRef.current = false;
+      return;
     }
-  }, [isOpen, workouts, currentUser, language]);
+
+    // Si ya está cargando, no hacer nada
+    if (isLoadingRef.current) {
+      return;
+    }
+
+    // Si el modal se abre, iniciar la carga
+    if (isOpen && !isLoadingRef.current) {
+      isLoadingRef.current = true;
+      setLoading(true);
+      setError(null);
+      
+      const timer = setTimeout(() => {
+        if (!mountedRef.current) return;
+        
+        if (!workouts || workouts.length === 0) {
+          if (mountedRef.current) {
+            setError("No hay suficientes entrenamientos registrados para generar un informe."); 
+            setLoading(false);
+            isLoadingRef.current = false;
+          }
+          return;
+        }
+        
+        // Casting a any en currentUser para evitar errores si TS es muy estricto con age
+        const userAny = currentUser as any;
+
+        generateGlobalReport(
+          workouts,
+          catalog,
+          currentUser.weight || 80, 
+          currentUser.height || 180,
+          userAny.age || 25,
+          currentUser.id
+        )
+          .then((result) => {
+            if (mountedRef.current) {
+              setData(result);
+              setLoading(false);
+              isLoadingRef.current = false;
+            }
+          })
+          .catch((e) => {
+            if (mountedRef.current) {
+              const errorMessage = e.message || "Error neuronal al procesar los datos.";
+              setError(errorMessage);
+              
+              // Intentar formatear el error si tiene información estructurada
+              try {
+                const formatted = formatAIError(e);
+                setFormattedError(formatted);
+              } catch {
+                // Si no se puede formatear, usar el mensaje original
+                setFormattedError(null);
+              }
+              
+              setLoading(false);
+              isLoadingRef.current = false;
+            }
+          });
+      }, 100);
+      
+      return () => {
+        clearTimeout(timer);
+        isLoadingRef.current = false;
+      };
+    }
+  }, [isOpen]); // Solo ejecutar cuando isOpen cambia, no cuando cambian workouts/catalog
 
   if (!isOpen) return null;
 
@@ -344,23 +403,77 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
                     <span className="text-[10px] font-mono text-primary uppercase tracking-widest animate-pulse">Analizando Biomecánica...</span>
                 </div>
             ) : error ? (
-                <div className="flex flex-col items-center justify-center h-full text-center space-y-4 px-8">
-                    <div className="p-4 bg-red-500/10 rounded-full border border-red-500/20">
-                        <AlertTriangle className="w-10 h-10 text-red-500" />
-                    </div>
-                    <p className="text-red-500 font-bold uppercase text-xs tracking-widest leading-relaxed">{error}</p>
-                </div>
+                formattedError ? (
+                  <div className="flex flex-col items-center justify-center h-full">
+                    <AIErrorDisplay 
+                      error={formattedError} 
+                      onDismiss={() => {
+                        setError(null);
+                        setFormattedError(null);
+                        onClose();
+                      }}
+                      onRetry={() => {
+                        setError(null);
+                        setFormattedError(null);
+                        isLoadingRef.current = false;
+                        // Trigger reload by toggling isOpen
+                        const timer = setTimeout(() => {
+                          isLoadingRef.current = true;
+                          setLoading(true);
+                          const userAny = currentUser as any;
+                          generateGlobalReport(
+                            workouts,
+                            catalog,
+                            currentUser.weight || 80, 
+                            currentUser.height || 180,
+                            userAny.age || 25,
+                            currentUser.id
+                          )
+                            .then((result) => {
+                              if (mountedRef.current) {
+                                setData(result);
+                                setLoading(false);
+                                isLoadingRef.current = false;
+                              }
+                            })
+                            .catch((e) => {
+                              if (mountedRef.current) {
+                                const errorMessage = e.message || "Error neuronal al procesar los datos.";
+                                setError(errorMessage);
+                                try {
+                                  const formatted = formatAIError(e);
+                                  setFormattedError(formatted);
+                                } catch {
+                                  setFormattedError(null);
+                                }
+                                setLoading(false);
+                                isLoadingRef.current = false;
+                              }
+                            });
+                        }, 100);
+                        return () => clearTimeout(timer);
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full text-center space-y-4 px-8">
+                      <div className="p-4 bg-red-500/10 rounded-full border border-red-500/20">
+                          <AlertTriangle className="w-10 h-10 text-red-500" />
+                      </div>
+                      <p className="text-red-500 font-bold uppercase text-xs tracking-widest leading-relaxed">{error}</p>
+                  </div>
+                )
             ) : data ? (
                 <div className="animate-in fade-in slide-in-from-bottom-4 space-y-6 pb-8">
                     <div className="grid grid-cols-1 gap-4">
                         <div className="bg-zinc-900/40 border border-white/5 rounded-2xl p-5 relative overflow-hidden group hover:border-white/10 transition-colors">
                             <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-2 flex items-center gap-2"><Activity className="w-3 h-3" /> Volumen Histórico</span>
-                            <div className="flex items-baseline gap-2 mb-2"><span className="text-4xl font-black text-white font-mono tracking-tighter">{(data.totalVolumeKg / 1000).toFixed(1)}</span><span className="text-xs font-bold text-zinc-500 uppercase">TONS</span></div>
+                            <div className="flex items-baseline gap-2 mb-2"><span className="text-4xl font-black text-white font-mono tracking-tighter">{Math.round(data.totalVolumeKg).toLocaleString()}</span><span className="text-xs font-bold text-zinc-500 uppercase">KG</span></div>
                             {data.volumeEquivalentGlobal && <div className="text-xs font-medium text-zinc-400 border-t border-white/5 pt-2 flex items-center gap-2"><span className="text-[10px] bg-white/10 px-1.5 rounded text-white font-mono">=</span> {data.volumeEquivalentGlobal}</div>}
                         </div>
                         <div className="bg-primary/5 border border-primary/20 rounded-2xl p-5 relative overflow-hidden group hover:bg-primary/10 transition-colors">
                             <span className="text-[10px] font-black text-primary uppercase tracking-widest block mb-2 flex items-center gap-2"><Dumbbell className="w-3 h-3" /> Volumen {data.monthName}</span>
-                            <div className="flex items-baseline gap-2 mb-2"><span className="text-4xl font-black text-primary font-mono tracking-tighter">{(data.monthlyVolumeKg / 1000).toFixed(1)}</span><span className="text-xs font-bold text-primary/60 uppercase">TONS</span></div>
+                            <div className="flex items-baseline gap-2 mb-2"><span className="text-4xl font-black text-primary font-mono tracking-tighter">{Math.round(data.monthlyVolumeKg).toLocaleString()}</span><span className="text-xs font-bold text-primary/60 uppercase">KG</span></div>
                             {data.volumeEquivalentMonthly && <div className="text-xs font-medium text-primary/80 border-t border-primary/10 pt-2 flex items-center gap-2"><span className="text-[10px] bg-primary/20 px-1.5 rounded text-primary font-mono">=</span> {data.volumeEquivalentMonthly}</div>}
                         </div>
                     </div>

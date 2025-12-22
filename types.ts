@@ -16,6 +16,7 @@ export interface Exercise {
   category?: string; // Nuevo: Músculo objetivo (Chest, Back, etc.)
   type?: MetricType; // Nuevo: Tipo de carga (Strength, Cardio)
   sets: Set[];
+  unilateral?: boolean; // Indica si el ejercicio se ejecutó de manera unilateral (peso registrado es la mitad del real)
 }
 
 export interface WorkoutData {

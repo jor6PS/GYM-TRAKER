@@ -1,10 +1,10 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { X, Plus, Trash2, Save, Search } from 'lucide-react';
+import { X, Plus, Trash2, Save, Search, Activity } from 'lucide-react';
 import { WorkoutPlan, Exercise } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useExercises } from '../contexts/ExerciseContext';
-import { normalizeText } from '../utils';
+import { normalizeText, getCanonicalId } from '../utils';
 
 interface CreatePlanModalProps {
   isOpen: boolean;
@@ -130,12 +130,21 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
             ) : (
               exercises.map((ex, idx) => {
                 const firstSet = ex.sets[0];
+                const exerciseId = getCanonicalId(ex.name, catalog);
+                const exerciseDef = catalog.find(e => e.id === exerciseId);
+                const isCardio = exerciseDef?.type === 'cardio';
                 return (
                   <div key={idx} className="flex items-center justify-between bg-zinc-900/50 p-2 rounded border border-white/5">
                      <div>
-                       <div className="font-bold text-sm text-text">{ex.name}</div>
+                       <div className="font-bold text-sm text-text flex items-center gap-2">
+                         {isCardio && <Activity className="w-3 h-3 text-red-500" />}
+                         {ex.name}
+                       </div>
                        <div className="text-xs text-subtext font-mono">
-                         {ex.sets.length} series x {firstSet ? firstSet.reps : 0} reps {(firstSet && firstSet.weight && firstSet.weight > 0) ? `@ ${firstSet.weight}kg` : ''}
+                         {isCardio 
+                           ? `${ex.sets.length} series x ${firstSet?.time || '--:--'}`
+                           : `${ex.sets.length} series x ${firstSet ? firstSet.reps : 0} reps ${(firstSet && firstSet.weight && firstSet.weight > 0) ? `@ ${firstSet.weight}kg` : ''}`
+                         }
                        </div>
                      </div>
                      <button onClick={() => removeExercise(idx)} className="text-zinc-600 hover:text-red-500 transition-colors p-1"><Trash2 className="w-4 h-4" /></button>

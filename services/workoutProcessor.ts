@@ -1,38 +1,21 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from "@google/genai";
 import { WorkoutData, Workout, GlobalReportData, MaxComparisonEntry, GroupAnalysisData } from "../types";
 import { format, isSameMonth, isAfter } from "date-fns";
-// Fix: Import subMonths and startOfMonth from their specific paths to avoid missing exported member errors
 import subMonths from "date-fns/subMonths";
-import startOfMonth from "date-fns/startOfMonth";
-// Fix: Import locales from specific paths as the barrel export might be incomplete or missing
 import es from 'date-fns/locale/es';
-import enUS from 'date-fns/locale/en-US';
 import { getCanonicalId, getLocalizedName } from "../utils";
-import { EXERCISE_DB } from "../data/exerciseDb";
-
-// --- CONSTANTS & CONFIG ---
-
-// MODIFICACIÓN: Listas de prioridad para fallback
-// El sistema intentará usar el primero, si falla por cuota, usará el segundo, etc.
-const REPORT_MODELS = [
-    'gemini-3-pro-preview',
-    'gemini-3-flash-preview',
-    'gemini-2.5-flash',
-    'gemini-2.0-pro-exp-02-05', // 1. Experimental Pro (Mejor razonamiento actual)
-    'gemini-1.5-pro',           // 2. Pro Estable
-    'gemini-2.0-flash',         // 3. Flash Nuevo (Más rápido/barato)
-    'gemini-1.5-flash'          // 4. Flash Estable (Mayor cuota disponible)
-];
-
-const AUDIO_MODELS = [
-    'gemini-2.0-flash-exp',     // Soporta audio nativo y es multimodal
-    'gemini-1.5-flash'          // Fallback robusto para audio
-];
-
-const CALISTHENIC_IDS = new Set([
-  'pull_up', 'chin_up', 'dips_chest', 'push_ups', 
-  'handstand_pushup', 'muscle_up', 'dips_triceps', 'dominadas'
-]);
+import { ExerciseDef } from "../contexts/ExerciseContext";
+import { getAIClient } from "./workoutProcessor/aiClient";
+import { generateWithFallback, REPORT_MODELS, AUDIO_MODELS } from "./workoutProcessor/fallback";
+import { 
+  isCalisthenic, 
+  getMuscleGroup, 
+  calculateSetVolume, 
+  safeParseWorkout, 
+  cleanJson, 
+  handleAIError 
+} from "./workoutProcessor/helpers";
+import { getUserRecords, getUserTotalVolume } from "./recordsService";
 
 // Interfaces internas
 interface UserStats {
@@ -51,156 +34,17 @@ interface CommonExerciseComparison {
     winner: string;
 }
 
-// --- HELPERS ---
-
-const getAIClient = (): GoogleGenAI => {
-  // Priorizamos la clave del perfil del usuario (localStorage)
-  const userKey = localStorage.getItem('USER_GEMINI_API_KEY');
-  const finalKey = (userKey && userKey.trim().length > 10) ? userKey.trim() : process.env.API_KEY;
-  
-  if (!finalKey || finalKey === 'undefined' || finalKey === 'null') {
-    throw new Error("API_KEY_MISSING: Por favor, configura tu API Key en el Perfil para activar la inteligencia.");
-  }
-  
-  return new GoogleGenAI({ apiKey: finalKey });
-};
-
-const cleanJson = (text: string): string => {
-  if (!text) return "{}";
-  
-  let clean = text.replace(/```json/gi, '').replace(/```/g, '').trim();
-  
-  const firstOpen = clean.indexOf('{');
-  const lastClose = clean.lastIndexOf('}');
-  if (firstOpen !== -1 && lastClose !== -1 && lastClose > firstOpen) {
-    clean = clean.substring(firstOpen, lastClose + 1);
-  }
-
-  clean = clean.replace(/\n/g, " ");
-  clean = clean.replace(/\t/g, " ");
-  clean = clean.replace(/\\(?![/\\bfnrtu"']|u[0-9a-fA-F]{4})/g, "\\\\");
-
-  return clean;
-};
-
-const safeParseWorkout = (structuredData: any): WorkoutData => {
-    if (!structuredData) return { exercises: [] };
-    if (typeof structuredData === 'object') return structuredData;
-    if (typeof structuredData === 'string') {
-        try {
-            return JSON.parse(structuredData);
-        } catch (e) {
-            console.warn("Error parsing structured_data:", e);
-            return { exercises: [] };
-        }
-    }
-    return { exercises: [] };
-};
-
-const handleAIError = (error: any) => {
-    console.error("AI Module Error:", error);
-    throw new Error(`ERROR DE INTELIGENCIA: ${error.message || "Fallo en el procesamiento neuronal."}`);
-};
-
-// --- LOGICA DE REINTENTO (FALLBACK) ---
-const generateWithFallback = async (
-    ai: GoogleGenAI, 
-    models: string[], 
-    prompt: string, 
-    systemInstruction?: string,
-    responseSchema?: any,
-    inlineData?: any
-): Promise<any> => {
-    let lastError;
-
-    for (const modelName of models) {
-        try {
-            // CONFIGURACIÓN DINÁMICA
-            const config: any = { 
-                responseMimeType: "application/json", 
-                temperature: 0.5,
-                maxOutputTokens: 8192 // <--- IMPORTANTE: Evita que se corte el plan de acción
-            };
-            
-            if (systemInstruction) config.systemInstruction = systemInstruction;
-            if (responseSchema) config.responseSchema = responseSchema;
-
-            const parts: any[] = [];
-            if (inlineData) parts.push(inlineData);
-            parts.push({ text: prompt });
-
-            console.log(`🧠 Intentando generar con modelo: ${modelName}...`);
-
-            // Usando la sintaxis de @google/genai
-            const response = await ai.models.generateContent({
-                model: modelName,
-                contents: { parts: parts },
-                config: config
-            });
-
-            return response;
-
-        } catch (error: any) {
-            console.warn(`⚠️ Fallo en modelo ${modelName}:`, error.message);
-            lastError = error;
-            
-            const isRetryable = error.message?.includes('429') || 
-                                error.message?.includes('503') || 
-                                error.message?.includes('quota') ||
-                                error.message?.includes('resource exhausted');
-
-            // Si no es error de cuota y es el último modelo, fallamos.
-            if (!isRetryable && models.indexOf(modelName) === models.length - 1) {
-                 throw error;
-            }
-        }
-    }
-    throw new Error(`Todos los modelos fallaron. Último error: ${lastError?.message}`);
-};
-
-
-const isCalisthenic = (id: string): boolean => CALISTHENIC_IDS.has(id);
-
-const getMuscleGroup = (id: string): string => {
-    const lowerId = id.toLowerCase();
-    if (lowerId.includes('bench') || lowerId.includes('push_up') || lowerId.includes('dips') || lowerId.includes('chest') || lowerId.includes('tricep') || lowerId.includes('press_banca')) return 'PUSH (Pecho/Tríceps)';
-    if (lowerId.includes('pull') || lowerId.includes('row') || lowerId.includes('deadlift') || lowerId.includes('bicep') || lowerId.includes('curl') || lowerId.includes('dominadas')) return 'PULL (Espalda/Bíceps)';
-    if (lowerId.includes('squat') || lowerId.includes('leg') || lowerId.includes('lunge') || lowerId.includes('calf') || lowerId.includes('sentadilla')) return 'LEGS (Pierna)';
-    if (lowerId.includes('shoulder') || lowerId.includes('press') || lowerId.includes('raise') || lowerId.includes('hombro')) return 'SHOULDERS (Hombro)';
-    return 'OTROS';
-};
-
-const calculateSetVolume = (
-    reps: number, 
-    weight: number | undefined, 
-    unit: string | undefined, 
-    userWeight: number, 
-    isCalisthenicExercise: boolean
-): number => {
-    const safeReps = reps || 0;
-    let weightInKg = 0;
-
-    if (weight && weight > 0) {
-        weightInKg = unit === 'lbs' ? weight * 0.453592 : weight;
-    }
-
-    if (isCalisthenicExercise) {
-        return (userWeight + weightInKg) * safeReps;
-    } else {
-        return weightInKg * safeReps; 
-    }
-};
-
 // --- CORE FUNCTIONS ---
 
 export const generateGlobalReport = async (
     allWorkouts: Workout[],
-    language: 'es' | 'en' = 'es',
+    catalog: ExerciseDef[],
     // NOTA: Estos son valores por defecto (fallback) si el usuario NO tiene datos en su perfil.
     // Si el usuario tiene perfil, estos valores se sobrescriben con los reales.
     currentWeight: number = 80,
     userHeight: number = 180,
-    userAge: number = 25 // <--- NUEVO: Edad por defecto (fallback)
+    userAge: number = 25, // <--- NUEVO: Edad por defecto (fallback)
+    userId?: string // <--- NUEVO: userId para obtener records almacenados
 ): Promise<GlobalReportData> => {
     try {
         const now = new Date();
@@ -211,36 +55,96 @@ export const generateGlobalReport = async (
         const globalMaxMap = new Map<string, { val: number, unit: string, isBW: boolean }>();
         const monthlyMaxMap = new Map<string, { val: number, unit: string, isBW: boolean }>();
 
-        // 1. Procesamiento
-        for (const w of allWorkouts) {
-            const wDate = new Date(w.date);
-            const isThisMonth = isSameMonth(wDate, now);
-            const historicWeight = w.user_weight || currentWeight;
+        // Intentar obtener records almacenados si tenemos userId
+        let storedRecords: any[] = [];
+        if (userId) {
+            try {
+                storedRecords = await getUserRecords(userId);
+                totalVolume = await getUserTotalVolume(userId);
+            } catch (error) {
+                console.warn('Error loading stored records, using fallback calculation:', error);
+            }
+        }
 
-            const workoutData = safeParseWorkout(w.structured_data);
-            if (!workoutData.exercises || !Array.isArray(workoutData.exercises)) continue;
-
-            for (const ex of workoutData.exercises) {
-                const id = getCanonicalId(ex.name, EXERCISE_DB);
-                const displayName = getLocalizedName(id, EXERCISE_DB, language);
-                const isCalis = isCalisthenic(id);
-
-                for (const s of ex.sets) {
-                    const isBW = !s.weight || s.weight <= 0;
-                    const val = isBW ? (s.reps || 0) : (s.weight || 0);
-                    const unit = isBW ? 'reps' : (s.unit || 'kg');
-                    
-                    const setVol = calculateSetVolume(s.reps || 0, s.weight, s.unit, historicWeight, isCalis);
-                    totalVolume += setVol;
-
-                    if (isThisMonth) {
-                        monthlyVolume += setVol;
+        // Si tenemos records almacenados, usarlos para los máximos
+        if (storedRecords.length > 0) {
+            for (const record of storedRecords) {
+                const displayName = getLocalizedName(record.exercise_id, catalog);
+                const val = record.is_bodyweight ? record.max_reps : record.max_weight_kg;
+                const unit = record.unit || 'kg';
+                const isBW = record.is_bodyweight;
+                
+                // Máximo global
+                const currentG = globalMaxMap.get(displayName);
+                if (!currentG || val > currentG.val) {
+                    globalMaxMap.set(displayName, { val, unit, isBW });
+                }
+                
+                // Máximo mensual (si la fecha del record es de este mes)
+                if (record.max_weight_date || record.max_reps_date || record.max_1rm_date) {
+                    const recordDate = new Date(record.max_weight_date || record.max_reps_date || record.max_1rm_date);
+                    if (isSameMonth(recordDate, now)) {
                         const currentM = monthlyMaxMap.get(displayName);
-                        if (!currentM || val > currentM.val) monthlyMaxMap.set(displayName, { val, unit, isBW });
+                        if (!currentM || val > currentM.val) {
+                            monthlyMaxMap.set(displayName, { val, unit, isBW });
+                        }
                     }
+                }
+            }
+        }
 
-                    const currentG = globalMaxMap.get(displayName);
-                    if (!currentG || val > currentG.val) globalMaxMap.set(displayName, { val, unit, isBW });
+        // Calcular volumen mensual desde workouts (si no tenemos records o como fallback)
+        if (monthlyVolume === 0 || storedRecords.length === 0) {
+            for (const w of allWorkouts) {
+                const wDate = new Date(w.date);
+                const isThisMonth = isSameMonth(wDate, now);
+                if (!isThisMonth) continue;
+                
+                const historicWeight = w.user_weight || currentWeight;
+                const workoutData = safeParseWorkout(w.structured_data);
+                if (!workoutData.exercises || !Array.isArray(workoutData.exercises)) continue;
+
+                for (const ex of workoutData.exercises) {
+                    const id = getCanonicalId(ex.name, catalog);
+                    const exerciseDef = catalog.find(e => e.id === id);
+                    const exerciseType = exerciseDef?.type || 'strength';
+                    
+                    // Solo procesar ejercicios de fuerza (igual que en recordsService)
+                    if (exerciseType !== 'strength') continue;
+                    
+                    const isCalis = isCalisthenic(id);
+                    const isUnilateral = ex.unilateral || false;
+
+                    for (const s of ex.sets) {
+                        const setVol = calculateSetVolume(s.reps || 0, s.weight, s.unit, historicWeight, isCalis, isUnilateral);
+                        monthlyVolume += setVol;
+                    }
+                }
+            }
+        }
+
+        // Fallback: calcular totalVolume desde workouts si no tenemos records
+        if (totalVolume === 0) {
+            for (const w of allWorkouts) {
+                const historicWeight = w.user_weight || currentWeight;
+                const workoutData = safeParseWorkout(w.structured_data);
+                if (!workoutData.exercises || !Array.isArray(workoutData.exercises)) continue;
+
+                for (const ex of workoutData.exercises) {
+                    const id = getCanonicalId(ex.name, catalog);
+                    const exerciseDef = catalog.find(e => e.id === id);
+                    const exerciseType = exerciseDef?.type || 'strength';
+                    
+                    // Solo procesar ejercicios de fuerza (igual que en recordsService)
+                    if (exerciseType !== 'strength') continue;
+                    
+                    const isCalis = isCalisthenic(id);
+                    const isUnilateral = ex.unilateral || false;
+
+                    for (const s of ex.sets) {
+                        const setVol = calculateSetVolume(s.reps || 0, s.weight, s.unit, historicWeight, isCalis, isUnilateral);
+                        totalVolume += setVol;
+                    }
                 }
             }
         }
@@ -255,7 +159,7 @@ export const generateGlobalReport = async (
                     date: w.date,
                     exercises: wData.exercises?.map(ex => ({
                         name: ex.name,
-                        id: getCanonicalId(ex.name, EXERCISE_DB),
+                        id: getCanonicalId(ex.name, catalog),
                         sets: ex.sets
                     })) || []
                 };
@@ -337,21 +241,179 @@ export const generateGlobalReport = async (
 
         const ai = getAIClient();
         
+        // Schema JSON estricto para garantizar el formato correcto de la respuesta
+        const schema = {
+            type: Type.OBJECT,
+            properties: {
+                equiv_global: {
+                    type: Type.STRING,
+                    description: "Comparación VISUAL del peso total histórico con algo masivo (ej: '3 Ballenas Azules')"
+                },
+                equiv_monthly: {
+                    type: Type.STRING,
+                    description: "Comparación VISUAL del peso mensual con objetos cotidianos o animales"
+                },
+                analysis: {
+                    type: Type.STRING,
+                    description: "Markdown detallado con el análisis completo del entrenamiento"
+                },
+                score: {
+                    type: Type.NUMBER,
+                    description: "Puntuación de eficiencia del 1 al 10"
+                }
+            },
+            required: ["equiv_global", "equiv_monthly", "analysis", "score"]
+        };
+        
         const response = await generateWithFallback(
             ai, 
             REPORT_MODELS, 
             prompt, 
-            systemInstruction
+            systemInstruction,
+            schema
         );
 
-        const aiRes = JSON.parse(cleanJson(response.text || '{}'));
+        // Extraer el texto de la respuesta (puede venir en diferentes formatos)
+        let rawText = '';
+        if (response.text) {
+            rawText = response.text;
+        } else if (response.candidates && response.candidates[0]?.content?.parts?.[0]?.text) {
+            rawText = response.candidates[0].content.parts[0].text;
+        } else if (typeof response === 'string') {
+            rawText = response;
+        } else {
+            // Intentar extraer de cualquier estructura posible
+            rawText = JSON.stringify(response);
+        }
+
+        // Intentar parsear el JSON con múltiples intentos y limpieza progresiva
+        let aiRes: any;
+        let cleanedJson = cleanJson(rawText || '{}');
+        
+        let parseAttempts = 0;
+        const maxAttempts = 3;
+        
+        while (parseAttempts < maxAttempts) {
+          try {
+            aiRes = JSON.parse(cleanedJson);
+            
+            // Validar que tenga los campos requeridos
+            if (!aiRes.equiv_global || !aiRes.equiv_monthly || !aiRes.analysis || aiRes.score === undefined) {
+              throw new Error('Faltan campos requeridos en la respuesta de la IA');
+            }
+            
+            break;
+          } catch (parseError: any) {
+            parseAttempts++;
+            
+            if (parseAttempts >= maxAttempts) {
+              // Último intento: reparación agresiva de strings sin cerrar
+              console.warn('Intento de parseo fallido, aplicando reparación agresiva de strings...');
+              console.warn('Respuesta cruda recibida:', rawText.substring(0, 500));
+              
+              // Intentar reparar strings sin cerrar
+              let fixed = cleanedJson;
+              let inString = false;
+              let escapeNext = false;
+              let result = '';
+              
+              for (let i = 0; i < fixed.length; i++) {
+                const char = fixed[i];
+                
+                if (escapeNext) {
+                  result += char;
+                  escapeNext = false;
+                  continue;
+                }
+                
+                if (char === '\\') {
+                  result += char;
+                  escapeNext = true;
+                  continue;
+                }
+                
+                if (char === '"' && !escapeNext) {
+                  inString = !inString;
+                  result += char;
+                  continue;
+                }
+                
+                // Si estamos en un string y encontramos un carácter problemático, escapar o cerrar
+                if (inString) {
+                  // Si encontramos un salto de línea o caracteres problemáticos, escapar
+                  if (char === '\n' || char === '\r') {
+                    result += '\\n';
+                  } else if (char === '\t') {
+                    result += '\\t';
+                  } else {
+                    result += char;
+                  }
+                } else {
+                  result += char;
+                }
+              }
+              
+              // Si el string no se cerró, cerrarlo
+              if (inString) {
+                result += '"';
+              }
+              
+              try {
+                aiRes = JSON.parse(result);
+                
+                // Validar campos después del parseo reparado
+                if (!aiRes.equiv_global || !aiRes.equiv_monthly || !aiRes.analysis || aiRes.score === undefined) {
+                  throw new Error('Faltan campos requeridos después de la reparación');
+                }
+                
+                break;
+              } catch (finalError: any) {
+                // Si aún falla, intentar extraer solo los campos necesarios con valores por defecto
+                console.error('Error final de parseo:', finalError);
+                console.error('JSON reparado (últimos 500 chars):', result.substring(Math.max(0, result.length - 500)));
+                
+                // Intentar extraer campos manualmente como último recurso
+                const equivGlobalMatch = cleanedJson.match(/"equiv_global"\s*:\s*"([^"]*)"/);
+                const equivMonthlyMatch = cleanedJson.match(/"equiv_monthly"\s*:\s*"([^"]*)"/);
+                const analysisMatch = cleanedJson.match(/"analysis"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/);
+                const scoreMatch = cleanedJson.match(/"score"\s*:\s*(\d+)/);
+                
+                if (equivGlobalMatch && equivMonthlyMatch && analysisMatch && scoreMatch) {
+                  aiRes = {
+                    equiv_global: equivGlobalMatch[1].replace(/\\n/g, '\n'),
+                    equiv_monthly: equivMonthlyMatch[1].replace(/\\n/g, '\n'),
+                    analysis: analysisMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"'),
+                    score: parseInt(scoreMatch[1])
+                  };
+                  break;
+                }
+                
+                throw new Error(`JSON inválido en la respuesta de la IA. Error: ${parseError.message}. Por favor, intenta de nuevo.`);
+              }
+            } else {
+              // Limpieza adicional para el siguiente intento
+              cleanedJson = cleanedJson
+                .replace(/,\s*,+/g, ',')
+                .replace(/,\s*}/g, '}')
+                .replace(/,\s*]/g, ']')
+                .replace(/([^,}\]])\s*}/g, '$1}')
+                .replace(/([^,}\]])\s*]/g, '$1]');
+            }
+          }
+        }
+        
+        // Validación final de campos requeridos
+        if (!aiRes || !aiRes.equiv_global || !aiRes.equiv_monthly || !aiRes.analysis || aiRes.score === undefined) {
+          console.error('Respuesta de IA incompleta:', aiRes);
+          throw new Error('La respuesta de la IA no tiene el formato esperado. Faltan campos requeridos.');
+        }
 
         return {
             totalVolumeKg: totalVolume,
             volumeEquivalentGlobal: aiRes.equiv_global,
             monthlyVolumeKg: monthlyVolume,
             volumeEquivalentMonthly: aiRes.equiv_monthly,
-            monthName: format(now, 'MMMM', { locale: language === 'es' ? es : enUS }),
+            monthName: format(now, 'MMMM', { locale: es }),
             monthlyAnalysisText: aiRes.analysis,
             efficiencyScore: aiRes.score || 5,
             maxComparison: maxComparison
@@ -360,9 +422,20 @@ export const generateGlobalReport = async (
     } catch (error) { handleAIError(error); throw error; }
 };
 
-export const processWorkoutAudio = async (audioBase64: string, mimeType: string): Promise<WorkoutData> => {
+export const processWorkoutAudio = async (audioBase64: string, mimeType: string, catalog?: ExerciseDef[]): Promise<WorkoutData> => {
   try {
     const ai = getAIClient();
+    
+    // Obtener catálogo de ejercicios si no se proporciona
+    let exerciseCatalog = catalog;
+    if (!exerciseCatalog) {
+      const { getExerciseCatalog } = await import('./supabase');
+      exerciseCatalog = await getExerciseCatalog();
+    }
+    
+    // Crear lista reducida de nombres de ejercicios más comunes (solo 30 para no sobrecargar)
+    const commonExercises = exerciseCatalog?.slice(0, 30).map(ex => ex.es || ex.en || ex.id).join(', ') || '';
+    
     const schema = {
         type: Type.OBJECT, 
         properties: {
@@ -394,18 +467,127 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
         required: ["exercises"]
     };
 
+    // System instruction más conciso y directo
+    const systemInstruction = `Extrae datos de entrenamiento desde audio en español. Usa nombres de ejercicios en español. Formato: "ejercicio, peso, series, reps". Ejemplos: "Press Banca 80kg 3x10" → {name:"Press Banca", sets:[{reps:10, weight:80, unit:"kg"} x3]}. Si dice "kilos" o "kg" → unit:"kg". Si dice "libras" o "lbs" → unit:"lbs". Extrae TODOS los ejercicios mencionados.`;
+
+    const prompt = `Extrae los ejercicios del audio.${commonExercises ? ` Ejercicios comunes: ${commonExercises}` : ''}`;
+
     // MODIFICACIÓN: Usar generateWithFallback con AUDIO_MODELS
     const response = await generateWithFallback(
         ai,
         AUDIO_MODELS, // Intenta el nativo, luego el 1.5 flash
-        "Extract workout data strictly following the JSON schema.",
-        undefined, // No system instruction
+        prompt,
+        systemInstruction,
         schema,
         { inlineData: { mimeType, data: audioBase64 } }
     );
 
-    return JSON.parse(cleanJson(response.text || ''));
-  } catch (error: any) { handleAIError(error); throw error; }
+    let cleanedJson = cleanJson(response.text || '');
+    
+    let rawData;
+    let parseAttempts = 0;
+    const maxAttempts = 3;
+    
+    while (parseAttempts < maxAttempts) {
+      try {
+        rawData = JSON.parse(cleanedJson);
+        break; // Si el parse es exitoso, salir del loop
+      } catch (parseError: any) {
+        parseAttempts++;
+        
+        if (parseAttempts >= maxAttempts) {
+          console.error('Error parsing JSON después de múltiples intentos:', parseError);
+          console.error('Cleaned JSON (first 1000 chars):', cleanedJson.substring(0, 1000));
+          console.error('Cleaned JSON (last 1000 chars):', cleanedJson.substring(Math.max(0, cleanedJson.length - 1000)));
+          console.error('Error position:', parseError.message);
+          
+          // Último intento: extraer solo la parte de exercises si es posible
+          try {
+            // Buscar el array de exercises de forma más flexible
+            const exercisesPattern = /"exercises"\s*:\s*\[([\s\S]*?)\]/;
+            const match = cleanedJson.match(exercisesPattern);
+            
+            if (match && match[1]) {
+              // Intentar limpiar y parsear solo el contenido del array
+              let exercisesContent = match[1].trim();
+              
+              // Si el contenido está vacío o es muy corto, crear un array vacío
+              if (exercisesContent.length < 10) {
+                rawData = { exercises: [], notes: '' };
+                break;
+              }
+              
+              // Intentar reparar el contenido del array
+              exercisesContent = exercisesContent
+                .replace(/}\s*{/g, '},{')
+                .replace(/,\s*,/g, ',')
+                .replace(/,\s*}/g, '}')
+                .replace(/,\s*]/g, ']');
+              
+              try {
+                const exercisesArray = JSON.parse(`[${exercisesContent}]`);
+                rawData = { exercises: exercisesArray, notes: '' };
+                break;
+              } catch (e) {
+                // Si aún falla, intentar extraer ejercicios individuales
+                const exerciseMatches = cleanedJson.match(/"name"\s*:\s*"([^"]+)"[\s\S]*?"sets"\s*:\s*\[([\s\S]*?)\]/g);
+                if (exerciseMatches && exerciseMatches.length > 0) {
+                  // Crear ejercicios básicos desde los matches
+                  const basicExercises = exerciseMatches.map(match => {
+                    const nameMatch = match.match(/"name"\s*:\s*"([^"]+)"/);
+                    const setsMatch = match.match(/"sets"\s*:\s*\[([\s\S]*?)\]/);
+                    return {
+                      name: nameMatch ? nameMatch[1] : 'Ejercicio',
+                      sets: setsMatch ? [] : [{ reps: 0 }]
+                    };
+                  });
+                  rawData = { exercises: basicExercises, notes: '' };
+                  break;
+                }
+              }
+            }
+            
+            // Si llegamos aquí, no pudimos extraer nada útil
+            throw new Error(`No se pudo interpretar el audio. La IA generó una respuesta con formato inválido. Intenta grabar de nuevo hablando más claro, mencionando: nombre del ejercicio, peso y repeticiones. Ejemplo: "Press banca, 80 kilos, 3 series de 10".`);
+          } catch (extractError: any) {
+            throw new Error(extractError.message || `JSON inválido en la respuesta de la IA. Error: ${parseError.message}. Intenta grabar de nuevo con una descripción más clara.`);
+          }
+        }
+        
+        // Intentar limpiar más agresivamente en el siguiente intento
+        cleanedJson = cleanedJson
+          .replace(/,\s*,+/g, ',')
+          .replace(/,\s*}/g, '}')
+          .replace(/,\s*]/g, ']')
+          .replace(/([^,}\]])\s*}/g, '$1}')
+          .replace(/([^,}\]])\s*]/g, '$1]');
+      }
+    }
+    
+    // Validar que rawData tenga la estructura esperada
+    if (!rawData || typeof rawData !== 'object') {
+      throw new Error('La respuesta de la IA no tiene el formato esperado. Intenta grabar de nuevo.');
+    }
+    
+    if (!rawData.exercises || !Array.isArray(rawData.exercises)) {
+      rawData.exercises = [];
+    }
+    
+    // Normalizar los nombres de ejercicios usando el catálogo
+    if (exerciseCatalog && rawData.exercises) {
+      const { sanitizeWorkoutData } = await import('../utils');
+      return sanitizeWorkoutData(rawData, exerciseCatalog);
+    }
+    
+    return rawData;
+  } catch (error: any) { 
+    // Si el error ya tiene un mensaje personalizado, lanzarlo directamente
+    if (error.message && error.message.includes('JSON inválido') || error.message.includes('formato esperado')) {
+      throw error;
+    }
+    handleAIError(error); 
+    throw error; 
+  }
 };
 
 // ------------------------------------------------------------------
@@ -413,15 +595,15 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string)
 // ------------------------------------------------------------------
 
 export const generateGroupAnalysis = async (
-    usersData: { name: string; workouts: Workout[] }[],
-    language: 'es' | 'en' = 'es'
+    usersData: { name: string; workouts: Workout[]; userId?: string }[],
+    catalog: ExerciseDef[]
 ): Promise<GroupAnalysisData> => {
     try {
         const ai = getAIClient();
         // --- FASE 1: PROCESAMIENTO MATEMÁTICO ---
-        const stats: UserStats[] = usersData.map(user => {
+        const stats: UserStats[] = await Promise.all(usersData.map(async (user) => {
             const s: UserStats = {
-                userId: user.name,
+                userId: user.userId || user.name,
                 name: user.name,
                 totalVolume: 0,
                 workoutCount: new Set(user.workouts.map(w => w.date.split('T')[0])).size,
@@ -429,13 +611,34 @@ export const generateGroupAnalysis = async (
                 maxLifts: {} 
             };
 
+            // Intentar obtener records almacenados si tenemos userId
+            let storedRecords: any[] = [];
+            let storedTotalVolume = 0;
+            if (user.userId) {
+                try {
+                    storedRecords = await getUserRecords(user.userId);
+                    storedTotalVolume = await getUserTotalVolume(user.userId);
+                } catch (error) {
+                    console.warn(`Error loading stored records for ${user.name}, using fallback:`, error);
+                }
+            }
+
+            // Procesar TODOS los workouts para extraer TODOS los ejercicios únicos
+            const allExercisesFromWorkouts = new Map<string, { 
+                name: string; 
+                id: string; 
+                bestSet: { weight: number; reps: number; isBodyweight: boolean; unit: string } 
+            }>();
+
+            let workoutVolume = 0;
             user.workouts.forEach(w => {
                 const historicWeight = w.user_weight || 80; 
                 const workoutData = safeParseWorkout(w.structured_data);
                 
                 if (workoutData.exercises) {
                     workoutData.exercises.forEach(ex => {
-                        const id = getCanonicalId(ex.name, EXERCISE_DB);
+                        const id = getCanonicalId(ex.name, catalog);
+                        const exerciseName = getLocalizedName(id, catalog);
                         const muscle = getMuscleGroup(id);
                         
                         if (!s.muscleVol[muscle]) s.muscleVol[muscle] = 0;
@@ -451,40 +654,95 @@ export const generateGroupAnalysis = async (
                             
                             // Volumen
                             const vol = loadInKg * repsVal;
-                            s.totalVolume += vol;
+                            workoutVolume += vol;
                             s.muscleVol[muscle] += vol;
 
-                            // Cálculo de 1RM Estimado (Epley Formula)
+                            // Guardar el mejor set para este ejercicio
                             const isBW = weightVal === 0 && isCalis;
                             const currentMetric = isBW ? repsVal : (loadInKg * (1 + repsVal / 30));
-
-                            const currentBest = s.maxLifts[ex.name];
-                            let isNewRecord = false;
                             
-                            if (!currentBest) {
-                                isNewRecord = true;
+                            if (!allExercisesFromWorkouts.has(exerciseName)) {
+                                allExercisesFromWorkouts.set(exerciseName, {
+                                    name: exerciseName,
+                                    id: id,
+                                    bestSet: {
+                                        weight: weightVal,
+                                        reps: repsVal,
+                                        isBodyweight: isBW,
+                                        unit: set.unit || 'kg'
+                                    }
+                                });
                             } else {
-                                const prevMetric = currentBest.isBodyweight 
-                                    ? currentBest.reps 
-                                    : (currentBest.weight * (currentBest.unit === 'lbs' ? 0.453 : 1)) * (1 + currentBest.reps / 30);
+                                const existing = allExercisesFromWorkouts.get(exerciseName)!;
+                                const existingMetric = existing.bestSet.isBodyweight 
+                                    ? existing.bestSet.reps 
+                                    : (existing.bestSet.weight * (existing.bestSet.unit === 'lbs' ? 0.453592 : 1)) * (1 + existing.bestSet.reps / 30);
                                 
-                                if (currentMetric > prevMetric) isNewRecord = true;
-                            }
-
-                            if (isNewRecord) {
-                                s.maxLifts[ex.name] = {
-                                    weight: weightVal,
-                                    reps: repsVal,
-                                    isBodyweight: isBW,
-                                    unit: set.unit || 'kg'
-                                };
+                                if (currentMetric > existingMetric) {
+                                    existing.bestSet = {
+                                        weight: weightVal,
+                                        reps: repsVal,
+                                        isBodyweight: isBW,
+                                        unit: set.unit || 'kg'
+                                    };
+                                }
                             }
                         });
                     });
                 }
             });
+
+            // Si tenemos records almacenados, usarlos para los máximos (sobrescriben si son mejores)
+            if (storedRecords.length > 0) {
+                for (const record of storedRecords) {
+                    const exerciseName = getLocalizedName(record.exercise_id, catalog);
+                    const weight = record.is_bodyweight ? 0 : record.max_weight_kg;
+                    const reps = record.is_bodyweight ? record.max_reps : record.max_weight_reps;
+                    
+                    // Si ya tenemos este ejercicio de los workouts, comparar y usar el mejor
+                    if (allExercisesFromWorkouts.has(exerciseName)) {
+                        const existing = allExercisesFromWorkouts.get(exerciseName)!;
+                        const recordMetric = record.is_bodyweight 
+                            ? reps 
+                            : (weight * (record.unit === 'kg' ? 1 : 0.453592)) * (1 + reps / 30);
+                        const existingMetric = existing.bestSet.isBodyweight 
+                            ? existing.bestSet.reps 
+                            : (existing.bestSet.weight * (existing.bestSet.unit === 'lbs' ? 0.453592 : 1)) * (1 + existing.bestSet.reps / 30);
+                        
+                        if (recordMetric > existingMetric) {
+                            existing.bestSet = {
+                                weight: weight,
+                                reps: reps,
+                                isBodyweight: record.is_bodyweight,
+                                unit: record.unit || 'kg'
+                            };
+                        }
+                    } else {
+                        // Si no está en los workouts pero sí en records, agregarlo
+                        allExercisesFromWorkouts.set(exerciseName, {
+                            name: exerciseName,
+                            id: record.exercise_id,
+                            bestSet: {
+                                weight: weight,
+                                reps: reps,
+                                isBodyweight: record.is_bodyweight,
+                                unit: record.unit || 'kg'
+                            }
+                        });
+                    }
+                }
+            }
+
+            // Agregar todos los ejercicios encontrados a maxLifts
+            allExercisesFromWorkouts.forEach((exerciseData, exerciseName) => {
+                s.maxLifts[exerciseName] = exerciseData.bestSet;
+            });
+            
+            // Si tenemos volumen almacenado, usamos ese valor; de lo contrario usamos el calculado de workouts
+            s.totalVolume = storedTotalVolume > 0 ? storedTotalVolume : workoutVolume;
+
             return s;
-        });
+        }));
 
         // --- FASE 2: CROSS-ANALYSIS (Head-to-Head + Empates) ---
         const allExercisesSet = new Set<string>();

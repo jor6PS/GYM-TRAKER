@@ -89,6 +89,8 @@ const translations = {
     no_matches: "No se encontraron coincidencias.",
     add_set: "Añadir Serie",
     add_to_session: "Añadir a Sesión",
+    unilateral: "Unilateral",
+    unilateral_hint: "Peso registrado es la mitad del real",
     session_empty: "Sesión Vacía",
     go_to_lib: "Ve a la biblioteca para añadir.",
     open_library: "Abrir Biblioteca",
@@ -150,19 +152,17 @@ const translations = {
 
 interface LanguageContextType {
   t: (key: keyof typeof translations['es']) => string;
-  language: 'es'; // Fixed to es
 }
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Always 'es'
   const t = (key: keyof typeof translations['es']) => {
     return translations.es[key] || key;
   };
 
   return (
-    <LanguageContext.Provider value={{ t, language: 'es' }}>
+    <LanguageContext.Provider value={{ t }}>
       {children}
     </LanguageContext.Provider>
   );
