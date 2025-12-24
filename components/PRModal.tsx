@@ -216,9 +216,10 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
     try {
       const uniqueDays = new Set(workouts.map(w => w.date)).size;
       
-      // Usar volumen total desde records si está disponible, sino calcular desde workouts
-      let volumeKg = totalVolume;
-      if (volumeKg === 0 || !useStoredRecords) {
+      // ✅ CORRECCIÓN: Siempre recalcular desde workouts para asegurar que esté actualizado
+      // El valor de records puede estar desactualizado si hay nuevos workouts
+      let volumeKg = 0;
+      
       workouts.forEach(w => {
         // Validar que el workout tenga datos válidos
         if (!w?.structured_data?.exercises || !Array.isArray(w.structured_data.exercises)) {
@@ -250,7 +251,6 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
           });
         });
       });
-    }
 
       return {
           totalVolume: Math.round(volumeKg).toLocaleString('es-ES') + " kg",
@@ -263,7 +263,7 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
         daysTrained: 0
       };
     }
-  }, [workouts, catalog, totalVolume, useStoredRecords]);
+  }, [workouts, catalog]);
 
   const selectedExerciseType: MetricType = useMemo(() => {
       if (!selectedExerciseId) return 'strength';

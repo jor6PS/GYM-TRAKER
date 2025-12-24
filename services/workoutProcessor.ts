@@ -98,16 +98,15 @@ export const generateGlobalReport = async (
         }
 
         // 3. PROCESAMIENTO DE WORKOUTS (SINGLE PASS - Bucle Único)
-        const calcTotalFromScratch = totalVolume === 0;
+        // ✅ CORRECCIÓN: Siempre recalcular totalVolume desde workouts para asegurar que esté actualizado
+        // El valor de records puede estar desactualizado si hay nuevos workouts
+        totalVolume = 0; // Resetear para recalcular desde cero
         const recentHistory: any[] = []; 
 
         for (const w of allWorkouts) {
             const wDate = new Date(w.date);
             const isThisMonth = isSameMonth(wDate, now);
             const isRecent = isAfter(wDate, lookbackDate);
-
-            // Si no necesitamos calcular total y el workout es antiguo, saltamos
-            if (!calcTotalFromScratch && !isThisMonth && !isRecent) continue;
 
             const historicUserWeight = w.user_weight || currentWeight;
             const workoutData = safeParseWorkout(w.structured_data);
@@ -150,7 +149,8 @@ export const generateGlobalReport = async (
                     }
                 }
 
-                if (calcTotalFromScratch) totalVolume += sessionExVolume;
+                // ✅ CORRECCIÓN: Siempre sumar al totalVolume (ya no depende de calcTotalFromScratch)
+                totalVolume += sessionExVolume;
                 if (isThisMonth) monthlyVolume += sessionExVolume;
 
                 if (isRecent) {
