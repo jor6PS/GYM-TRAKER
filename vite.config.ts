@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       VitePWA({
-        registerType: 'prompt',
+        registerType: 'autoUpdate',
         injectRegister: 'auto',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png'],
         devOptions: {
@@ -29,6 +29,8 @@ export default defineConfig(({ mode }) => {
           start_url: '/',
           scope: '/',
           id: '/',
+          categories: ['health', 'fitness', 'lifestyle'],
+          lang: 'es',
           icons: [
             {
               src: 'pwa-192x192.png',

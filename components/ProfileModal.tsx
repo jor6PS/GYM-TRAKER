@@ -14,11 +14,13 @@ import {
   User as UserIcon,
   Calendar, // Added Calendar icon for Age
   Eye,
-  EyeOff
+  EyeOff,
+  Download
 } from 'lucide-react';
 import { User as UserType, Workout } from '../types';
 import { uploadAvatar, updateUserProfile, updateUserPassword } from '../services/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
+import { usePWAInstall } from '../hooks/usePWAInstall';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -50,6 +52,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const apiKeyInitialized = useRef(false);
   const { t } = useLanguage();
+  const { isInstallable, isInstalled, install } = usePWAInstall();
 
   // Actualizar valores cuando cambia el usuario
   useEffect(() => {
@@ -234,6 +237,37 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                         <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirmar Contraseña" className="w-full bg-black border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:border-primary/50" />
                     </div>
                 </div>
+
+                {/* PWA INSTALLATION */}
+                {!isInstalled && (
+                    <div className="space-y-4">
+                        <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-2"><Download className="w-3 h-3" /> Instalar App</div>
+                        {isInstallable ? (
+                            <button 
+                                onClick={async () => {
+                                    const success = await install();
+                                    if (success) {
+                                        setMessage({ type: 'success', text: '¡App instalada correctamente!' });
+                                    } else {
+                                        setMessage({ type: 'error', text: 'La instalación fue cancelada.' });
+                                    }
+                                }}
+                                className="w-full bg-primary/20 hover:bg-primary/30 border border-primary/50 text-primary font-black py-3 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95"
+                            >
+                                <Download className="w-4 h-4" />
+                                INSTALAR COMO APLICACIÓN
+                            </button>
+                        ) : (
+                            <div className="p-4 bg-zinc-900/50 border border-white/5 rounded-xl">
+                                <p className="text-[10px] text-zinc-500 text-center">
+                                    {typeof window !== 'undefined' && 'serviceWorker' in navigator 
+                                        ? 'La app ya está instalada o no es compatible con tu navegador.'
+                                        : 'Tu navegador no soporta la instalación de aplicaciones.'}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {message && <div className={`p-4 rounded-xl text-[10px] font-black text-center border animate-in slide-in-from-top-2 ${message.type === 'success' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>{message.text.toUpperCase()}</div>}
 
