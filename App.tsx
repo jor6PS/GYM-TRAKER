@@ -6,6 +6,7 @@ import { LoginScreen } from './components/LoginScreen';
 import { ResetPasswordScreen } from './components/ResetPasswordScreen'; 
 import { AppHeader } from './components/AppHeader';
 import { ActionDock } from './components/ActionDock';
+import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { Workout, WorkoutData, WorkoutPlan, Exercise, User } from './types';
 import { supabase, getPendingRequestsCount, isConfigured } from './services/supabase';
 import { format, isSameDay, isFuture } from 'date-fns';
@@ -292,6 +293,7 @@ function App() {
         </div>
       )}
 
+      <PWAInstallBanner />
       <AppHeader 
         currentUser={currentUser} 
         pendingRequestsCount={pendingRequestsCount} 
