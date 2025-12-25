@@ -52,7 +52,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const apiKeyInitialized = useRef(false);
   const { t } = useLanguage();
-  const { isInstallable, isInstalled, install } = usePWAInstall();
+  const { isInstallable, isInstalled, install, installInfo } = usePWAInstall();
 
   // Actualizar valores cuando cambia el usuario
   useEffect(() => {
@@ -257,12 +257,18 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                                 <Download className="w-4 h-4" />
                                 INSTALAR COMO APLICACIÓN
                             </button>
+                        ) : installInfo ? (
+                            <div className="p-4 bg-zinc-900/50 border border-white/5 rounded-xl space-y-2">
+                                <p className="text-[10px] text-zinc-400 font-bold uppercase">{installInfo.reason}</p>
+                                <p className="text-[9px] text-zinc-500 leading-relaxed">{installInfo.instructions}</p>
+                                <p className="text-[8px] text-zinc-600 mt-2 italic">
+                                    💡 Asegúrate de estar en HTTPS y que el service worker esté activo.
+                                </p>
+                            </div>
                         ) : (
                             <div className="p-4 bg-zinc-900/50 border border-white/5 rounded-xl">
                                 <p className="text-[10px] text-zinc-500 text-center">
-                                    {typeof window !== 'undefined' && 'serviceWorker' in navigator 
-                                        ? 'La app ya está instalada o no es compatible con tu navegador.'
-                                        : 'Tu navegador no soporta la instalación de aplicaciones.'}
+                                    Verificando disponibilidad de instalación...
                                 </p>
                             </div>
                         )}
