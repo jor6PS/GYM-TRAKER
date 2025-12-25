@@ -32,99 +32,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     
-    <!-- Tailwind via CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        darkMode: 'class',
-        theme: {
-          fontFamily: {
-            sans: ['Inter', 'sans-serif'],
-            mono: ['JetBrains Mono', 'monospace'],
-          },
-          extend: {
-            colors: {
-              background: 'var(--background)',
-              surface: 'var(--surface)',
-              surfaceHighlight: 'var(--surface-highlight)',
-              primary: '#D4FF00',
-              primaryHover: '#B8E600', 
-              text: 'var(--text)',       
-              subtext: 'var(--subtext)',
-              border: 'var(--border)',
-              danger: '#FF4444',
-            },
-            boxShadow: {
-              'glow': '0 0 20px -5px rgba(212, 255, 0, 0.5)', 
-              'glass': '0 8px 32px 0 rgba(0, 0, 0, 0.37)',
-            },
-            animation: {
-              'float': 'float 6s ease-in-out infinite',
-              'spin-slow': 'spin 3s linear infinite',
-              'progress-loop': 'progress-loop 2s infinite linear',
-            },
-            keyframes: {
-              float: {
-                '0%, 100%': { transform: 'translateY(0)' },
-                '50%': { transform: 'translateY(-10px)' },
-              },
-              'progress-loop': {
-                '0%': { transform: 'translateX(-100%)' },
-                '100%': { transform: 'translateX(300%)' }
-              }
-            }
-          }
-        }
-      }
-    </script>
-    <style>
-      :root {
-        /* Light Mode Defaults - Improved Contrast */
-        --background: #F0F0F3; 
-        --surface: #FFFFFF;
-        --surface-highlight: #F4F4F5;
-        --text: #09090B;
-        --subtext: #52525B;
-        --border: #D4D4D8;
-        color-scheme: light;
-      }
-
-      /* Dark Mode Overrides */
-      html.dark {
-        --background: #050505;
-        --surface: #121212;
-        --surface-highlight: #1E1E1E;
-        --text: #FFFFFF;
-        --subtext: #A1A1AA;
-        --border: #2A2A2A;
-        color-scheme: dark;
-      }
-
-      html { scroll-behavior: smooth; }
-      .no-scrollbar::-webkit-scrollbar { display: none; }
-      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      
-      /* Custom Scrollbar */
-      .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
-      .custom-scrollbar::-webkit-scrollbar-track { background: var(--background); }
-      .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--subtext); border-radius: 3px; }
-      .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--text); }
-
-      body {
-        background-color: var(--background);
-        min-height: 100vh;
-        color: var(--text);
-        transition: background-color 0.3s ease, color 0.3s ease;
-        overscroll-behavior-y: none; /* Prevents pull-to-refresh on mobile which feels nicer for apps */
-      }
-      
-      .glass-panel {
-        background: rgba(var(--surface), 0.7);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border: 1px solid var(--border);
-      }
-    </style>
     
     <!-- Theme Script -->
     <script>
@@ -132,6 +39,24 @@
         document.documentElement.classList.add('dark')
       } else {
         document.documentElement.classList.remove('dark')
+      }
+    </script>
+    
+    <!-- Desregistrar Service Worker en desarrollo para evitar conflictos con HMR -->
+    <script>
+      // Solo en desarrollo (localhost)
+      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function(registrations) {
+            for(let registration of registrations) {
+              registration.unregister().then(function(success) {
+                if (success) {
+                  console.log('✅ Service Worker desregistrado en desarrollo');
+                }
+              });
+            }
+          });
+        }
       }
     </script>
   <script type="importmap">
