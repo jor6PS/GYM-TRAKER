@@ -61,17 +61,29 @@ npm install
 ```
 
 ### 2. Variables de Entorno
-Crea un archivo `.env` en la raíz.
+Crea un archivo `.env` en la raíz copiando desde `.env.example`:
+
+```bash
+cp .env.example .env
+```
+
+Luego edita `.env` y rellena con tus credenciales reales:
 
 ```env
 # Supabase (Configuración de Proyecto)
+# Obtén estas credenciales desde tu proyecto en https://supabase.com
+# Ve a Settings > API y copia la URL y la anon/public key
 VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
 VITE_SUPABASE_ANON_KEY=tu-clave-anonima-publica
 
-# Google Gemini AI (Inteligencia)
-# La app busca 'API_KEY' o 'VITE_API_KEY'.
-API_KEY=tu_clave_api_gemini
+# Google Gemini AI (Inteligencia - Opcional)
+# La app busca 'VITE_API_KEY' o 'API_KEY'.
+# Nota: Los usuarios pueden configurar su propia API Key desde el perfil
+# Obtén tu API Key desde https://aistudio.google.com/app/apikey
+VITE_API_KEY=tu_clave_api_gemini
 ```
+
+**⚠️ IMPORTANTE:** El archivo `.env` está en `.gitignore` y no se subirá al repositorio. Nunca compartas tus credenciales.
 
 ### 3. Configuración de Base de Datos (IMPORTANTE)
 Copia y pega el bloque de código SQL (ver archivo original o repositorio) en el **SQL Editor** de tu proyecto de Supabase.

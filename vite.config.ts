@@ -10,8 +10,13 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       VitePWA({
-        registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
+        registerType: 'prompt',
+        injectRegister: 'auto',
+        includeAssets: ['favicon.ico', 'apple-touch-icon.png'],
+        devOptions: {
+          enabled: true,
+          type: 'module'
+        },
         // 1. MANIFEST.JSON CONFIGURATION
         manifest: {
           name: 'GymTracker AI',
@@ -23,6 +28,7 @@ export default defineConfig(({ mode }) => {
           orientation: 'portrait',
           start_url: '/',
           scope: '/',
+          id: '/',
           icons: [
             {
               src: 'pwa-192x192.png',

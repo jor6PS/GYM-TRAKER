@@ -2,21 +2,11 @@ import React, { useEffect, useState, useRef } from 'react';
 import { X, ShieldAlert, AlertTriangle, Target, FileText, Dumbbell, Save, Check, Activity } from 'lucide-react';
 import { Workout, GlobalReportData, User, WorkoutPlan, Exercise } from '../types';
 import { generateGlobalReport } from '../services/workoutProcessor';
-import { useExercises } from '../contexts/ExerciseContext';
+import { useExercises, ExerciseDef } from '../contexts/ExerciseContext';
 import { getCanonicalId, getLocalizedName } from '../utils';
 import { useScrollLock } from '../hooks/useScrollLock';
 import { AIErrorDisplay } from './AIErrorDisplay';
 import { formatAIError, FormattedAIError } from '../services/workoutProcessor/helpers';
-
-// Definición de tipos local
-export interface ExerciseDef {
-  id: string;
-  name?: string;
-  muscle?: string;
-  es?: string;
-  en?: string;
-  [key: string]: any;
-}
 
 const Loader2 = ({ className }: { className?: string }) => (
     <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
@@ -30,8 +20,6 @@ interface MonthlySummaryModalProps {
   onSavePlan?: (plan: WorkoutPlan) => Promise<void>;
 }
 
-// --- RENDERIZADOR BLINDADO V9 ---
-// (Se mantiene idéntico, ya que soporta todos los formatos necesarios)
 const DossierRenderer = ({ text, catalog, onSaveDay }: { text: string, catalog: ExerciseDef[], onSaveDay: (dayName: string, exercises: Exercise[]) => void }) => {
   if (!text) return null;
   

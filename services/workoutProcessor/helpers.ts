@@ -33,9 +33,6 @@ export const isCalisthenic = (id: string): boolean => {
   return isDip || isPullUp;
 };
 
-// Función eliminada - los ejercicios de core NO se tratan como bodyweight
-// Solo dips y pull-ups son bodyweight
-
 export const getMuscleGroup = (id: string): string => {
   const lowerId = id.toLowerCase();
   if (lowerId.includes('bench') || lowerId.includes('push_up') || lowerId.includes('dips') || lowerId.includes('chest') || lowerId.includes('tricep') || lowerId.includes('press_banca')) {

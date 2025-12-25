@@ -168,22 +168,6 @@ function App() {
     processedUsersRef.current.clear();
   }, [currentUser?.id]);
 
-  // Debug: Log cuando cambian los workouts (comentado para evitar spam en consola)
-  // useEffect(() => {
-  //   console.log('=== ESTADO ACTUAL ===');
-  //   console.log('currentUser:', currentUser?.id, currentUser?.name);
-  //   console.log('realAdminUser:', realAdminUser?.id, realAdminUser?.name);
-  //   console.log('workouts count:', workouts.length);
-  //   console.log('groupedLogs count:', groupedLogs.length);
-  //   console.log('selectedDate:', selectedDate.toISOString());
-  //   if (workouts.length > 0) {
-  //     console.log('Primer workout:', workouts[0]?.id, workouts[0]?.date);
-  //     console.log('Últimos 3 workouts:', workouts.slice(-3).map(w => ({ id: w.id, date: w.date, user_id: w.user_id })));
-  //   } else {
-  //     console.warn('⚠️ No hay workouts cargados. currentUser?.id:', currentUser?.id);
-  //   }
-  // }, [workouts, groupedLogs, currentUser, realAdminUser, selectedDate]);
-
   // Effects
   useEffect(() => {
     if (currentUser) {
@@ -446,13 +430,8 @@ onOpenAdmin={undefined}
               {realAdminUser ? `No hay actividad registrada para ${currentUser?.name || 'este usuario'}` : t('no_activity')}
             </div>
           ) : !realAdminUser && groupedLogs.length === 0 && workouts.length > 0 ? (
-            <div className="py-12 text-center border-2 border-dashed border-border/30 rounded-[2.5rem] bg-surfaceHighlight/10">
-              <div className="text-[10px] font-black uppercase tracking-widest text-subtext mb-2">
-                Cargando workouts para {currentUser?.name || 'usuario'}...
-              </div>
-              <div className="text-[8px] text-zinc-600">
-                {workouts.length} workouts encontrados, pero ninguno para la fecha seleccionada ({format(selectedDate, 'yyyy-MM-dd')})
-              </div>
+            <div className="py-12 text-center border-2 border-dashed border-border/30 rounded-[2.5rem] bg-surfaceHighlight/10 text-subtext text-[10px] font-black uppercase tracking-widest">
+              No hay registros que mostrar para {format(selectedDate, 'dd/MM/yyyy')}
             </div>
           ) : !realAdminUser && groupedLogs.length > 0 ? (
             <div className="space-y-6">

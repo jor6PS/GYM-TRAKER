@@ -3,8 +3,9 @@ import { createClient } from '@supabase/supabase-js';
 import { Friend, Workout } from '../types';
 
 // --- CONFIGURATION ---
-const SUPABASE_URL = 'https://hjmttgdlxsqnkequnacz.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhqbXR0Z2RseHNxbmtlcXVuYWN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1OTc1NzQsImV4cCI6MjA4MTE3MzU3NH0.A6exntms4j0o6hNFON4gLhltLmbccEjDxpL_GcQmeE0';
+// Las credenciales se cargan desde variables de entorno para mayor seguridad
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 export const isConfigured = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 
