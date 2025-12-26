@@ -2,7 +2,7 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
 // https://vitejs.dev/config/
@@ -11,16 +11,39 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       react(),
-      // Plugin personalizado para limpiar el manifest después de generarlo
+      // Plugin personalizado para limpiar el manifest y copiar archivos de Cloudflare
       {
-        name: 'clean-manifest',
+        name: 'clean-manifest-and-cloudflare-files',
         closeBundle() {
-          const manifestPath = join(process.cwd(), 'dist', 'manifest.webmanifest');
+          const distPath = join(process.cwd(), 'dist');
+          const publicPath = join(process.cwd(), 'public');
+          const manifestPath = join(distPath, 'manifest.webmanifest');
+          
+          // Limpiar manifest
           try {
             const content = readFileSync(manifestPath, 'utf-8').trim();
             writeFileSync(manifestPath, content, 'utf-8');
           } catch (error) {
             // Ignorar si el archivo no existe
+          }
+          
+          // Copiar archivos de configuración de Cloudflare (_headers, _redirects)
+          try {
+            const headersSource = join(publicPath, '_headers');
+            const headersDest = join(distPath, '_headers');
+            if (existsSync(headersSource)) {
+              const headersContent = readFileSync(headersSource, 'utf-8');
+              writeFileSync(headersDest, headersContent, 'utf-8');
+            }
+            
+            const redirectsSource = join(publicPath, '_redirects');
+            const redirectsDest = join(distPath, '_redirects');
+            if (existsSync(redirectsSource)) {
+              const redirectsContent = readFileSync(redirectsSource, 'utf-8');
+              writeFileSync(redirectsDest, redirectsContent, 'utf-8');
+            }
+          } catch (error) {
+            console.warn('Error copying Cloudflare config files:', error);
           }
         }
       },
