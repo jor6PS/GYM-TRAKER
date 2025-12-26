@@ -38,10 +38,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   onUpdateUser,
   onLogout
 }) => {
-  const [name, setName] = useState(user.name);
-  const [weight, setWeight] = useState(user.weight || 80);
-  const [height, setHeight] = useState(user.height || 180);
-  const [age, setAge] = useState(user.age || 25); // NEW STATE FOR AGE (Default 25 or user's age)
+  const [name, setName] = useState(user.name || '');
+  const [weight, setWeight] = useState(user.weight ?? 80);
+  const [height, setHeight] = useState(user.height ?? 180);
+  const [age, setAge] = useState(user.age ?? 25);
   const [apiKey, setApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
   const [password, setPassword] = useState('');
@@ -51,26 +51,25 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const apiKeyInitialized = useRef(false);
+  const valuesInitialized = useRef(false);
+  const lastUserId = useRef<string | null>(null);
   const { t } = useLanguage();
   const { isInstallable, isInstalled, install, installInfo } = usePWAInstall();
 
-  // Actualizar valores cuando cambia el usuario
-  useEffect(() => {
-    if (user) {
-      setName(user.name);
-      setWeight(user.weight || 80);
-      setHeight(user.height || 180);
-      setAge(user.age || 25);
-    }
-  }, [user]);
-
-  // Cargar API key solo una vez cuando se abre el modal
+  // Inicializar valores solo una vez cuando se abre el modal o cuando cambia el usuario
+  // Esto evita que se reseteen mientras el usuario está escribiendo
   useEffect(() => {
     if (isOpen) {
-        setName(user.name);
-        setWeight(user.weight || 80);
-        setHeight(user.height || 180);
-        setAge(user.age || 25);
+        // Inicializar solo si es la primera vez que se abre o si cambió el usuario
+        const userIdChanged = lastUserId.current !== user.id;
+        if (!valuesInitialized.current || userIdChanged) {
+          setName(user.name || '');
+          setWeight(user.weight ?? 80);
+          setHeight(user.height ?? 180);
+          setAge(user.age ?? 25);
+          valuesInitialized.current = true;
+          lastUserId.current = user.id;
+        }
         
         // Solo cargar API key del localStorage si no está inicializada
         // Esto evita sobrescribir lo que el usuario está escribiendo
@@ -82,10 +81,11 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
           apiKeyInitialized.current = true;
         }
     } else {
-        // Resetear el flag cuando se cierra el modal para que se cargue de nuevo la próxima vez
+        // Resetear los flags cuando se cierra el modal para que se carguen de nuevo la próxima vez
+        valuesInitialized.current = false;
         apiKeyInitialized.current = false;
     }
-  }, [isOpen]); // Removido 'user' de las dependencias para evitar que se ejecute cuando cambia el usuario
+  }, [isOpen, user.id]); // Solo ejecutar cuando se abre/cierra el modal o cuando cambia el ID del usuario
 
   const handleSaveProfile = async () => {
     setIsSaving(true);
@@ -110,9 +110,33 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
       // 2. Actualizar Perfil en Supabase
       const updates: any = {};
       if (name !== user.name) updates.name = name.trim();
-      if (weight !== user.weight) updates.weight = Number(weight);
-      if (height !== user.height) updates.height = Number(height);
-      if (age !== user.age) updates.age = Number(age); // Add age to updates
+      
+      // Actualizar peso, altura y edad - siempre enviar valores si son válidos
+      // Validar que sean números válidos y mayores a 0
+      const newWeight = Number(weight);
+      const newHeight = Number(height);
+      const newAge = Number(age);
+      
+      // Actualizar peso si es válido y diferente del actual
+      if (!isNaN(newWeight) && newWeight > 0) {
+        if (user.weight === undefined || newWeight !== user.weight) {
+          updates.weight = newWeight;
+        }
+      }
+      
+      // Actualizar altura si es válida y diferente de la actual
+      if (!isNaN(newHeight) && newHeight > 0) {
+        if (user.height === undefined || newHeight !== user.height) {
+          updates.height = newHeight;
+        }
+      }
+      
+      // Actualizar edad si es válida y diferente de la actual
+      if (!isNaN(newAge) && newAge > 0) {
+        if (user.age === undefined || newAge !== user.age) {
+          updates.age = newAge;
+        }
+      }
 
       if (Object.keys(updates).length > 0) {
         await updateUserProfile(user.id, updates);
@@ -206,25 +230,58 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 {/* BIOMETRY */}
                 <div className="space-y-4">
                     <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-2"><Scale className="w-3 h-3" /> Biometría</div>
-                    <div className="grid grid-cols-3 gap-3"> {/* Changed to 3 columns */}
+                    <div className="grid grid-cols-3 gap-3">
                         <div className="space-y-1">
                             <label className="text-[10px] text-zinc-500 uppercase ml-1">Peso (kg)</label>
-                            <input type="number" value={weight} onChange={(e) => setWeight(Number(e.target.value))} className="w-full bg-black border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:border-primary/50" />
+                            <input 
+                                type="number" 
+                                value={weight === 0 ? '' : weight} 
+                                onChange={(e) => {
+                                    const val = e.target.value === '' ? 0 : Number(e.target.value);
+                                    if (!isNaN(val) && val >= 0) {
+                                        setWeight(val);
+                                    }
+                                }}
+                                placeholder="80"
+                                min="0"
+                                step="0.1"
+                                className="w-full bg-black border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:border-primary/50" 
+                            />
                         </div>
                         <div className="space-y-1">
                             <label className="text-[10px] text-zinc-500 uppercase ml-1">Altura (cm)</label>
-                            <input type="number" value={height} onChange={(e) => setHeight(Number(e.target.value))} className="w-full bg-black border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:border-primary/50" />
+                            <input 
+                                type="number" 
+                                value={height === 0 ? '' : height} 
+                                onChange={(e) => {
+                                    const val = e.target.value === '' ? 0 : Number(e.target.value);
+                                    if (!isNaN(val) && val >= 0) {
+                                        setHeight(val);
+                                    }
+                                }}
+                                placeholder="180"
+                                min="0"
+                                step="1"
+                                className="w-full bg-black border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:border-primary/50" 
+                            />
                         </div>
                         <div className="space-y-1">
                             <label className="text-[10px] text-zinc-500 uppercase ml-1">Edad</label>
-                            <div className="relative">
-                                <input 
-                                    type="number" 
-                                    value={age} 
-                                    onChange={(e) => setAge(Number(e.target.value))} 
-                                    className="w-full bg-black border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:border-primary/50" 
-                                />
-                            </div>
+                            <input 
+                                type="number" 
+                                value={age === 0 ? '' : age} 
+                                onChange={(e) => {
+                                    const val = e.target.value === '' ? 0 : Number(e.target.value);
+                                    if (!isNaN(val) && val >= 0) {
+                                        setAge(val);
+                                    }
+                                }}
+                                placeholder="25"
+                                min="0"
+                                max="150"
+                                step="1"
+                                className="w-full bg-black border border-white/10 rounded-xl py-3 px-4 text-sm text-white focus:border-primary/50" 
+                            />
                         </div>
                     </div>
                 </div>

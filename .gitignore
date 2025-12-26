@@ -92,5 +92,6 @@ public
 # Mac OS
 .DS_Store
 
-# Dist
+# Dist and build directories
 dist/
+dev-dist/
