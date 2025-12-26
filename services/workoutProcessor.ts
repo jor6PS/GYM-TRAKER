@@ -704,19 +704,149 @@ export const generateGroupAnalysis = async (
                 parseAttempts++;
                 const errorMessage = error?.message || String(error);
                 
-                // Si es el último intento, intentar extraer JSON manualmente
+                // Si es el último intento, intentar reparar el JSON truncado
                 if (parseAttempts >= maxAttempts) {
                     console.error("Error parseando JSON después de", maxAttempts, "intentos.");
                     console.error("Error:", errorMessage);
                     console.error("JSON (primeros 500 chars):", cleanedJson.substring(0, 500));
                     console.error("JSON completo (últimos 500 chars):", cleanedJson.substring(Math.max(0, cleanedJson.length - 500)));
                     
-                    // Intentar extraer el objeto JSON usando regex como último recurso
+                    // Intentar reparar JSON truncado: cerrar strings y objetos abiertos
                     try {
-                        // Buscar el contenido JSON entre las primeras { y últimas }
-                        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+                        let fixedJson = cleanedJson;
+                        let inString = false;
+                        let escapeNext = false;
+                        let braceCount = 0;
+                        let bracketCount = 0;
+                        let lastStringStart = -1;
+                        
+                        // Analizar el JSON carácter por carácter para encontrar strings abiertos
+                        for (let i = 0; i < fixedJson.length; i++) {
+                            const char = fixedJson[i];
+                            if (escapeNext) {
+                                escapeNext = false;
+                                continue;
+                            }
+                            if (char === '\\') {
+                                escapeNext = true;
+                                continue;
+                            }
+                            if (char === '"') {
+                                if (!inString) {
+                                    lastStringStart = i;
+                                    inString = true;
+                                } else {
+                                    inString = false;
+                                    lastStringStart = -1;
+                                }
+                                continue;
+                            }
+                            if (!inString) {
+                                if (char === '{') braceCount++;
+                                if (char === '}') braceCount--;
+                                if (char === '[') bracketCount++;
+                                if (char === ']') bracketCount--;
+                            }
+                        }
+                        
+                        // Si estamos dentro de un string que no está cerrado, cerrarlo
+                        if (inString) {
+                            // Buscar dónde debería cerrarse el string (antes del último })
+                            // O simplemente agregar " al final
+                            const lastBrace = fixedJson.lastIndexOf('}');
+                            if (lastBrace > lastStringStart && lastBrace < fixedJson.length - 1) {
+                                // Insertar " antes del último }
+                                fixedJson = fixedJson.substring(0, lastBrace) + '"' + fixedJson.substring(lastBrace);
+                            } else {
+                                // Agregar " al final
+                                fixedJson += '"';
+                            }
+                            inString = false;
+                        }
+                        
+                        // Re-contar llaves después de cerrar el string
+                        braceCount = 0;
+                        bracketCount = 0;
+                        inString = false;
+                        escapeNext = false;
+                        for (let i = 0; i < fixedJson.length; i++) {
+                            const char = fixedJson[i];
+                            if (escapeNext) {
+                                escapeNext = false;
+                                continue;
+                            }
+                            if (char === '\\') {
+                                escapeNext = true;
+                                continue;
+                            }
+                            if (char === '"') {
+                                inString = !inString;
+                                continue;
+                            }
+                            if (!inString) {
+                                if (char === '{') braceCount++;
+                                if (char === '}') braceCount--;
+                                if (char === '[') bracketCount++;
+                                if (char === ']') bracketCount--;
+                            }
+                        }
+                        
+                        // Cerrar objetos y arrays abiertos
+                        if (bracketCount > 0) {
+                            fixedJson += ']'.repeat(bracketCount);
+                        }
+                        if (braceCount > 0) {
+                            fixedJson += '}'.repeat(braceCount);
+                        }
+                        
+                        // Intentar parsear el JSON reparado
+                        aiRes = JSON.parse(fixedJson);
+                        console.log("JSON reparado exitosamente");
+                        break;
+                    } catch (repairError) {
+                        console.error("No se pudo reparar el JSON:", repairError);
+                    }
+                    
+                    // Último recurso: intentar extraer JSON válido usando regex
+                    try {
+                        // Buscar el objeto JSON más completo posible
+                        const jsonMatch = rawText.match(/\{[\s\S]*/);
                         if (jsonMatch) {
-                            const extractedJson = cleanJson(jsonMatch[0]);
+                            let extractedJson = jsonMatch[0];
+                            
+                            // Intentar cerrar strings y objetos
+                            let inString = false;
+                            let escapeNext = false;
+                            let braceCount = 0;
+                            let bracketCount = 0;
+                            
+                            for (let i = 0; i < extractedJson.length; i++) {
+                                const char = extractedJson[i];
+                                if (escapeNext) {
+                                    escapeNext = false;
+                                    continue;
+                                }
+                                if (char === '\\') {
+                                    escapeNext = true;
+                                    continue;
+                                }
+                                if (char === '"') {
+                                    inString = !inString;
+                                    continue;
+                                }
+                                if (!inString) {
+                                    if (char === '{') braceCount++;
+                                    if (char === '}') braceCount--;
+                                    if (char === '[') bracketCount++;
+                                    if (char === ']') bracketCount--;
+                                }
+                            }
+                            
+                            if (inString) extractedJson += '"';
+                            if (bracketCount > 0) extractedJson += ']'.repeat(bracketCount);
+                            if (braceCount > 0) extractedJson += '}'.repeat(braceCount);
+                            
+                            extractedJson = cleanJson(extractedJson);
                             aiRes = JSON.parse(extractedJson);
                             console.log("JSON extraído exitosamente usando regex");
                             break;
@@ -725,7 +855,7 @@ export const generateGroupAnalysis = async (
                         console.error("No se pudo extraer JSON usando regex:", extractError);
                     }
                     
-                    // Si aún falla, lanzar el error original con más información
+                    // Si todo falla, lanzar el error original con más información
                     throw new Error(`Error parseando respuesta de IA: ${errorMessage}. JSON truncado a 500 chars: ${cleanedJson.substring(0, 500)}`);
                 }
                 
@@ -733,40 +863,38 @@ export const generateGroupAnalysis = async (
                 // Pero primero, intentar reparar strings no cerrados
                 if (errorMessage.includes('Unterminated string') || errorMessage.includes('string')) {
                     // Intentar encontrar y cerrar strings no terminados
-                    const lines = cleanedJson.split('\n');
-                    let fixedLines: string[] = [];
+                    let fixedJson = cleanedJson;
                     let inString = false;
                     let escapeNext = false;
                     
-                    for (let line of lines) {
-                        let fixedLine = '';
-                        for (let i = 0; i < line.length; i++) {
-                            const char = line[i];
-                            if (escapeNext) {
-                                fixedLine += char;
-                                escapeNext = false;
-                                continue;
-                            }
-                            if (char === '\\') {
-                                fixedLine += char;
-                                escapeNext = true;
-                                continue;
-                            }
-                            if (char === '"') {
-                                inString = !inString;
-                                fixedLine += char;
-                                continue;
-                            }
-                            fixedLine += char;
+                    // Buscar el último '"' que no está escapado
+                    for (let i = fixedJson.length - 1; i >= 0; i--) {
+                        const char = fixedJson[i];
+                        if (char === '\\' && i > 0 && fixedJson[i-1] !== '\\') {
+                            continue; // Es parte de un escape
                         }
-                        // Si terminamos en un string abierto, cerrarlo
-                        if (inString && !fixedLine.endsWith('"')) {
-                            fixedLine += '"';
-                            inString = false;
+                        if (char === '"') {
+                            // Verificar si estamos dentro de un string contando escapes hacia atrás
+                            let escapes = 0;
+                            for (let j = i - 1; j >= 0 && fixedJson[j] === '\\'; j--) {
+                                escapes++;
+                            }
+                            inString = (escapes % 2 === 0); // Si es par, es una comilla de apertura/cierre
+                            break;
                         }
-                        fixedLines.push(fixedLine);
                     }
-                    cleanedJson = fixedLines.join('\n');
+                    
+                    // Si estamos dentro de un string, intentar cerrarlo inteligentemente
+                    if (inString) {
+                        // Buscar el final del JSON y cerrar el string antes del último }
+                        const lastBrace = fixedJson.lastIndexOf('}');
+                        if (lastBrace > 0) {
+                            fixedJson = fixedJson.substring(0, lastBrace) + '"' + fixedJson.substring(lastBrace);
+                        } else {
+                            fixedJson += '"';
+                        }
+                    }
+                    cleanedJson = fixedJson;
                 } else {
                     // Para otros errores, simplemente limpiar de nuevo
                     cleanedJson = cleanJson(rawText);
