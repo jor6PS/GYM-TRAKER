@@ -174,6 +174,7 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
   const handleBattle = async () => {
     setLoading(true);
     setError(null);
+    setFormattedError(null);
     try {
         const usersPayload = friendsData.map(f => ({
             name: f.name,
@@ -182,6 +183,11 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
         }));
 
         const rawResult: any = await generateGroupAnalysis(usersPayload, catalog);
+
+        // Validar que tenemos los datos mínimos necesarios
+        if (!rawResult || !rawResult.rawStats || rawResult.rawStats.length === 0) {
+            throw new Error("No se pudieron obtener los datos de análisis. Por favor, intenta de nuevo.");
+        }
 
         const maxVol = Math.max(...rawResult.rawStats.map((s: any) => s.totalVolume));
         const rankings = rawResult.rawStats
@@ -197,7 +203,8 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
         setAnalysis({
             winner: rawResult.alpha_user || rankings[0].name,
             rankings: rankings,
-            markdown_body: rawResult.markdown_report || "",
+            // Si el markdown_report está vacío o truncado, usar un mensaje por defecto
+            markdown_body: rawResult.markdown_report || "El análisis completo no está disponible en este momento.",
             volume_table: rawResult.rawStats
                 .sort((a: any, b: any) => b.totalVolume - a.totalVolume)
                 .map((s: any) => ({ name: s.name, total_volume_kg: Math.round(s.totalVolume) })),
@@ -205,15 +212,34 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
 
     } catch (e: any) {
         console.error("Arena Error:", e);
-        const errorMessage = e.message || "Error desconocido al contactar con la IA.";
-        setError(errorMessage);
         
-        // Intentar formatear el error
-        try {
-          const formatted = formatAIError(e);
-          setFormattedError(formatted);
-        } catch {
-          setFormattedError(null);
+        // Detectar errores específicos de JSON truncado
+        const errorMessage = e.message || "Error desconocido al contactar con la IA.";
+        const isJsonError = errorMessage.includes('JSON') || errorMessage.includes('parse') || errorMessage.includes('Unterminated string');
+        
+        if (isJsonError) {
+            // Intentar formatear el error de JSON de manera más amigable
+            const formatted = formatAIError(e);
+            // Si es un error de JSON, personalizar el mensaje
+            if (formatted.type === 'json_parse') {
+                setFormattedError({
+                    ...formatted,
+                    title: 'Error de Formato en el Análisis',
+                    message: 'La respuesta de la IA se cortó antes de completarse. Esto puede ocurrir cuando hay muchos datos. Por favor, intenta de nuevo.',
+                    details: 'Si el problema persiste, intenta con menos participantes o espera unos momentos antes de reintentar.'
+                });
+            } else {
+                setFormattedError(formatted);
+            }
+        } else {
+            // Para otros errores, usar el formateo normal
+            try {
+                const formatted = formatAIError(e);
+                setFormattedError(formatted);
+            } catch {
+                setFormattedError(null);
+                setError(errorMessage);
+            }
         }
     } finally {
         setLoading(false);

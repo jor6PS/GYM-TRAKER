@@ -632,7 +632,9 @@ export const generateGroupAnalysis = async (
         TU ROL: Analista de datos brutalmente honesto.
         
         INSTRUCCIONES DE FORMATO (CRÍTICO):
-        1. Respuesta JSON válido. "markdown_report" en UNA SOLA LÍNEA (usa \\n).
+        1. Respuesta JSON válido. "markdown_report" en UNA SOLA LÍNEA (usa \\n para saltos de línea).
+        2. IMPORTANTE: El JSON debe estar completo y bien formado. Asegúrate de cerrar todas las comillas y llaves.
+        3. Si la respuesta es muy larga, puedes acortar las tablas pero MANTÉN el JSON válido y completo.
         
         ESTRUCTURA DEL REPORTE MARKDOWN:
         
@@ -657,11 +659,13 @@ export const generateGroupAnalysis = async (
         **TABLA 3: MATRIZ DE RENDIMIENTO COMPLETA (The Matrix)**
         (Aquí SÍ usa una Tabla normal).
         Columnas: Ejercicio | [Nombre Usuario 1] | [Nombre Usuario 2] ...
-        Filas: Todos los ejercicios provistos en 'full_matrix_data'.
+        Filas: Muestra solo los ejercicios más importantes si hay muchos (máximo 15-20 filas).
         Celdas: Copia el valor exacto (ej: "100kg x 5"). Si está vacío, deja la celda vacía.
         
         **VEREDICTO FINAL**
-        Párrafo final ácido resumiendo quién es el Alpha.
+        Párrafo final ácido resumiendo quién es el Alpha (máximo 3-4 líneas).
+        
+        RECUERDA: El JSON debe estar completo y válido. Escapa correctamente todas las comillas dobles dentro del markdown_report usando \\".
         `;
 
         const promptData = {
@@ -751,11 +755,10 @@ export const generateGroupAnalysis = async (
                         
                         // Si estamos dentro de un string que no está cerrado, cerrarlo
                         if (inString) {
-                            // Buscar dónde debería cerrarse el string (antes del último })
-                            // O simplemente agregar " al final
+                            // Si el JSON termina con }, probablemente el string debe cerrarse antes
                             const lastBrace = fixedJson.lastIndexOf('}');
-                            if (lastBrace > lastStringStart && lastBrace < fixedJson.length - 1) {
-                                // Insertar " antes del último }
+                            if (lastBrace > 0 && lastBrace === fixedJson.length - 1) {
+                                // El JSON termina con }, insertar " antes del último }
                                 fixedJson = fixedJson.substring(0, lastBrace) + '"' + fixedJson.substring(lastBrace);
                             } else {
                                 // Agregar " al final
