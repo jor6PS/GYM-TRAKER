@@ -685,7 +685,94 @@ export const generateGroupAnalysis = async (
             systemInstruction
         );
 
-        const aiRes = JSON.parse(cleanJson(response.text || '{}'));
+        // Parsear JSON con manejo robusto de errores
+        let aiRes: any;
+        let rawText = response.text || '{}';
+        let cleanedJson = cleanJson(rawText);
+        let parseAttempts = 0;
+        const maxAttempts = 5;
+        
+        while (parseAttempts < maxAttempts) {
+            try {
+                aiRes = JSON.parse(cleanedJson);
+                // Validar que tenga los campos esperados
+                if (aiRes && typeof aiRes === 'object') {
+                    break;
+                }
+                throw new Error('Respuesta no válida');
+            } catch (error: any) {
+                parseAttempts++;
+                const errorMessage = error?.message || String(error);
+                
+                // Si es el último intento, intentar extraer JSON manualmente
+                if (parseAttempts >= maxAttempts) {
+                    console.error("Error parseando JSON después de", maxAttempts, "intentos.");
+                    console.error("Error:", errorMessage);
+                    console.error("JSON (primeros 500 chars):", cleanedJson.substring(0, 500));
+                    console.error("JSON completo (últimos 500 chars):", cleanedJson.substring(Math.max(0, cleanedJson.length - 500)));
+                    
+                    // Intentar extraer el objeto JSON usando regex como último recurso
+                    try {
+                        // Buscar el contenido JSON entre las primeras { y últimas }
+                        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+                        if (jsonMatch) {
+                            const extractedJson = cleanJson(jsonMatch[0]);
+                            aiRes = JSON.parse(extractedJson);
+                            console.log("JSON extraído exitosamente usando regex");
+                            break;
+                        }
+                    } catch (extractError) {
+                        console.error("No se pudo extraer JSON usando regex:", extractError);
+                    }
+                    
+                    // Si aún falla, lanzar el error original con más información
+                    throw new Error(`Error parseando respuesta de IA: ${errorMessage}. JSON truncado a 500 chars: ${cleanedJson.substring(0, 500)}`);
+                }
+                
+                // Para los intentos intermedios, intentar limpiar más agresivamente
+                // Pero primero, intentar reparar strings no cerrados
+                if (errorMessage.includes('Unterminated string') || errorMessage.includes('string')) {
+                    // Intentar encontrar y cerrar strings no terminados
+                    const lines = cleanedJson.split('\n');
+                    let fixedLines: string[] = [];
+                    let inString = false;
+                    let escapeNext = false;
+                    
+                    for (let line of lines) {
+                        let fixedLine = '';
+                        for (let i = 0; i < line.length; i++) {
+                            const char = line[i];
+                            if (escapeNext) {
+                                fixedLine += char;
+                                escapeNext = false;
+                                continue;
+                            }
+                            if (char === '\\') {
+                                fixedLine += char;
+                                escapeNext = true;
+                                continue;
+                            }
+                            if (char === '"') {
+                                inString = !inString;
+                                fixedLine += char;
+                                continue;
+                            }
+                            fixedLine += char;
+                        }
+                        // Si terminamos en un string abierto, cerrarlo
+                        if (inString && !fixedLine.endsWith('"')) {
+                            fixedLine += '"';
+                            inString = false;
+                        }
+                        fixedLines.push(fixedLine);
+                    }
+                    cleanedJson = fixedLines.join('\n');
+                } else {
+                    // Para otros errores, simplemente limpiar de nuevo
+                    cleanedJson = cleanJson(rawText);
+                }
+            }
+        }
 
         return {
             ...aiRes, 
