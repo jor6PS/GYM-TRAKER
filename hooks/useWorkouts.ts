@@ -251,20 +251,21 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
     
     await supabase.from('workouts').update({ structured_data: updatedData }).eq('id', workoutId);
     
-    // Actualizar records después de eliminar ejercicio
-    if (catalog) {
+    // Recalcular records después de eliminar ejercicio
+    // Nota: Esto requiere recalculación completa para reflejar correctamente el estado sin el ejercicio eliminado
+    if (userId && catalog) {
       try {
-        const { data: workoutData } = await supabase
+        const { recalculateUserRecords } = await import('../services/recordsService');
+        const { data: allWorkouts } = await supabase
           .from('workouts')
           .select('*')
-          .eq('id', workoutId)
-          .single();
+          .eq('user_id', userId);
         
-        if (workoutData) {
-          await updateUserRecords(workoutData as Workout, catalog);
+        if (allWorkouts) {
+          await recalculateUserRecords(userId, allWorkouts as Workout[], catalog);
         }
       } catch (error) {
-        console.error('Error updating records after exercise deletion:', error);
+        console.error('Error recalculating records after exercise deletion:', error);
       }
     }
   }, [workouts, confirmDeleteWorkout]);

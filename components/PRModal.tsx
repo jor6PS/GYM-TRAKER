@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { X, Trophy, TrendingUp, Search, Calendar, ChevronRight, ArrowLeft, Calculator, Activity, Hash, Scale, Zap, Layers } from 'lucide-react';
+import { X, Trophy, TrendingUp, Search, Calendar, ChevronRight, ArrowLeft, Calculator, Activity, Hash, Scale, Zap, Target } from 'lucide-react';
 import { Workout, PersonalRecord, MetricType } from '../types';
 import { format } from 'date-fns';
 import { getExerciseIcon, getCanonicalId, getLocalizedName } from '../utils';
@@ -37,12 +37,9 @@ interface PersonalRecordWithCategory extends PersonalRecord {
     volume: number;
     date: string;
   };
-  bestSetCombination?: {
-    volume: number;
-    sets: number;
-    avgReps: number;
+  bestNearMax?: {
     weight: number;
-    consistency: number;
+    reps: number;
     date: string;
   };
 }
@@ -83,8 +80,8 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [bestComboWorkout, setBestComboWorkout] = useState<Workout | null>(null);
-  const [bestComboExerciseName, setBestComboExerciseName] = useState<string>('');
+  const [bestNearMaxWorkout, setBestNearMaxWorkout] = useState<Workout | null>(null);
+  const [bestNearMaxExerciseName, setBestNearMaxExerciseName] = useState<string>('');
   const { t } = useLanguage();
   const { catalog } = useExercises();
 
@@ -153,28 +150,29 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
 
   // Cargar workout del mejor combo cuando se selecciona un ejercicio
   useEffect(() => {
-    const loadBestComboWorkout = async () => {
+    const loadBestNearMaxWorkout = async () => {
       if (!selectedExerciseId || !userId || !storedRecords.length) {
-        setBestComboWorkout(null);
-        setBestComboExerciseName('');
+        setBestNearMaxWorkout(null);
+        setBestNearMaxExerciseName('');
         return;
       }
 
       const selectedRecord = storedRecords.find(r => {
-        const recordExerciseId = getCanonicalId(getLocalizedName(r.exercise_id, catalog), catalog);
+        // exercise_id ahora es el nombre exacto, obtener el canonicalId para comparar
+        const recordExerciseId = getCanonicalId(r.exercise_id, catalog);
         return recordExerciseId === selectedExerciseId;
       });
 
-      if (selectedRecord?.best_set_combination_workout_id) {
+      if (selectedRecord?.best_near_max_workout_id) {
         try {
           const { data: workoutData, error } = await supabase
             .from('workouts')
             .select('*')
-            .eq('id', selectedRecord.best_set_combination_workout_id)
+            .eq('id', selectedRecord.best_near_max_workout_id)
             .single();
 
           if (!error && workoutData) {
-            setBestComboWorkout(workoutData as Workout);
+            setBestNearMaxWorkout(workoutData as Workout);
             // Buscar el nombre del ejercicio en el workout
             const workout = workoutData as Workout;
             const exerciseData = workout.structured_data?.exercises?.find(ex => {
@@ -183,33 +181,33 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
               return exId === selectedExerciseId;
             });
             if (exerciseData) {
-              setBestComboExerciseName(exerciseData.name);
+              setBestNearMaxExerciseName(exerciseData.name);
             } else {
               // Si no encontramos el ejercicio por canonicalId, intentar por nombre directo
               const exerciseByName = workout.structured_data?.exercises?.find(ex => 
                 getLocalizedName(ex.name, catalog) === getLocalizedName(selectedExerciseId, catalog)
               );
               if (exerciseByName) {
-                setBestComboExerciseName(exerciseByName.name);
+                setBestNearMaxExerciseName(exerciseByName.name);
               }
             }
           } else {
             console.error('Error loading workout:', error);
-            setBestComboWorkout(null);
-            setBestComboExerciseName('');
+            setBestNearMaxWorkout(null);
+            setBestNearMaxExerciseName('');
           }
         } catch (error) {
-          console.error('Error loading best combo workout:', error);
-          setBestComboWorkout(null);
-          setBestComboExerciseName('');
+          console.error('Error loading best near max workout:', error);
+          setBestNearMaxWorkout(null);
+          setBestNearMaxExerciseName('');
         }
       } else {
-        setBestComboWorkout(null);
-        setBestComboExerciseName('');
+        setBestNearMaxWorkout(null);
+        setBestNearMaxExerciseName('');
       }
     };
 
-    loadBestComboWorkout();
+    loadBestNearMaxWorkout();
   }, [selectedExerciseId, storedRecords, userId, catalog]);
 
   const globalStats = useMemo(() => {
@@ -277,8 +275,10 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
       // Si tenemos records almacenados y están disponibles, usarlos
       if (useStoredRecords && storedRecords && storedRecords.length > 0) {
       return storedRecords.map(record => {
-        const exerciseName = getLocalizedName(record.exercise_id, catalog);
-        const def = catalog.find(e => e.id === record.exercise_id);
+        // exercise_id ahora es el nombre exacto, no el ID del catálogo
+        const canonicalId = getCanonicalId(record.exercise_id, catalog);
+        const exerciseName = getLocalizedName(canonicalId, catalog);
+        const def = catalog.find(e => e.id === canonicalId);
         const category = record.category || def?.category || 'General';
         
         return {
@@ -301,13 +301,10 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
             volume: record.best_single_set_volume_kg || 0,
             date: record.best_single_set_date || ''
           } : undefined,
-          bestSetCombination: record.best_set_combination_volume_kg && record.best_set_combination_sets_count ? {
-            volume: record.best_set_combination_volume_kg,
-            sets: record.best_set_combination_sets_count,
-            avgReps: record.best_set_combination_avg_reps || 0,
-            weight: record.best_set_combination_weight_kg || 0,
-            consistency: record.best_set_combination_consistency_score || 0,
-            date: record.best_set_combination_date || ''
+          bestNearMax: record.best_near_max_weight_kg && record.best_near_max_reps ? {
+            weight: record.best_near_max_weight_kg,
+            reps: record.best_near_max_reps,
+            date: record.best_near_max_date || ''
           } : undefined
         };
       }).sort((a, b) => a.exerciseName.localeCompare(b.exerciseName));
@@ -420,7 +417,48 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
   // Fix: Added explicit return type to exerciseHistory useMemo to fix 'unknown' type errors on line 283
   const exerciseHistory = useMemo<HistoryPoint[]>(() => {
     if (!selectedExerciseId) return [];
+    
+    // Buscar el record almacenado para este ejercicio
+    const selectedRecord = storedRecords.find(r => getCanonicalId(r.exercise_id, catalog) === selectedExerciseId);
+    
+    // Si tenemos un record con daily_max, usarlo para construir el historial
+    if (selectedRecord?.daily_max && Array.isArray(selectedRecord.daily_max) && selectedRecord.daily_max.length > 0) {
+      const history: HistoryPoint[] = [];
+      const isBW = selectedRecord.is_bodyweight || false;
+      const unit = selectedRecord.unit || 'kg';
+      
+      selectedRecord.daily_max.forEach((dayMax: { date: string; max_weight_kg: number; max_reps: number }) => {
+        if (!dayMax.date) return;
+        
+        let primaryVal = 0, secondaryVal = 0, label = "";
+        
+        if (isBW) {
+          primaryVal = dayMax.max_reps || 0;
+          label = `${primaryVal} reps`;
+        } else {
+          primaryVal = dayMax.max_weight_kg || 0;
+          secondaryVal = calculate1RM(primaryVal, dayMax.max_reps || 0);
+          label = `${primaryVal}${unit}`;
+        }
+        
+        history.push({
+          date: dayMax.date,
+          value: primaryVal,
+          secondaryValue: secondaryVal,
+          unit: unit,
+          reps: dayMax.max_reps || 0,
+          label,
+          isBodyweight: isBW
+        });
+      });
+      
+      return history.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    }
+    
+    // Fallback: calcular desde workouts (método antiguo mejorado)
     const history: HistoryPoint[] = [];
+    const dayMaxMap = new Map<string, { max_weight_kg: number; max_reps: number; unit: string; isBW: boolean; date: string }>();
+    
     workouts.forEach(workout => {
         // Validar que el workout tenga datos válidos
         if (!workout?.structured_data?.exercises || !Array.isArray(workout.structured_data.exercises)) {
@@ -431,39 +469,70 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
           if (!e || !e.name || typeof e.name !== 'string') return false;
           return getCanonicalId(e.name, catalog) === selectedExerciseId;
         });
+        
         if (exerciseData) {
-            let bestSet = exerciseData.sets[0];
-            let bestScore = -1;
-            let isBW = false;
-            exerciseData.sets.forEach(set => {
-                let score = 0;
-                if (selectedExerciseType === 'cardio') {
-                    // Para cardio, usar tiempo como métrica principal (convertir MM:SS a minutos)
-                    const timeInMinutes = parseTimeToMinutes(set.time || '');
-                    score = timeInMinutes;
+          const workoutDateOnly = workout.date.split('T')[0];
+          let dayMax = dayMaxMap.get(workoutDateOnly) || { max_weight_kg: 0, max_reps: 0, unit: 'kg', isBW: false, date: workoutDateOnly };
+          
+          exerciseData.sets.forEach(set => {
+            const weight = set.weight || 0;
+            const reps = set.reps || 0;
+            const unit = set.unit || 'kg';
+            const isUnilateral = exerciseData.unilateral || false;
+            
+            if (selectedExerciseType === 'cardio') {
+              // Para cardio, usar tiempo
+              const timeInMinutes = parseTimeToMinutes(set.time || '');
+              if (timeInMinutes > (dayMax.max_reps || 0)) {
+                dayMax = { ...dayMax, max_reps: timeInMinutes, unit };
+              }
+            } else {
+              if (weight > 0) {
+                const realWeight = isUnilateral ? weight * 2 : weight;
+                if (realWeight > dayMax.max_weight_kg || (realWeight === dayMax.max_weight_kg && reps > dayMax.max_reps)) {
+                  dayMax = { ...dayMax, max_weight_kg: realWeight, max_reps: reps, unit, isBW: false };
                 }
-                else {
-                    if (set.weight && set.weight > 0) score = calculate1RM(set.weight, set.reps || 0);
-                    else { score = set.reps || 0; isBW = true; }
+              } else {
+                if (reps > dayMax.max_reps) {
+                  dayMax = { ...dayMax, max_reps: reps, isBW: true };
                 }
-                if (score > bestScore) { bestScore = score; bestSet = set; isBW = !set.weight || set.weight === 0; }
-            });
-            if (bestSet && bestScore > 0) {
-                let primaryVal = 0, secondaryVal = 0, label = "";
-                if (selectedExerciseType === 'cardio') {
-                    primaryVal = parseTimeToMinutes(bestSet.time || '');
-                    label = bestSet.time || '--:--';
-                    // Para cardio, el valor primario es el tiempo en minutos
-                } else {
-                    if (isBW) { primaryVal = bestSet.reps || 0; label = `${primaryVal} reps`; }
-                    else { primaryVal = bestSet.weight || 0; secondaryVal = calculate1RM(primaryVal, bestSet.reps || 0); label = `${primaryVal}${bestSet.unit}`; }
-                }
-                history.push({ date: workout.date, value: primaryVal, secondaryValue: secondaryVal, unit: bestSet.unit, reps: bestSet.reps || 0, label, isBodyweight: isBW });
+              }
             }
+          });
+          
+          dayMaxMap.set(workoutDateOnly, dayMax);
         }
     });
+    
+    // Convertir el mapa a array de HistoryPoint
+    dayMaxMap.forEach((dayMax, date) => {
+      let primaryVal = 0, secondaryVal = 0, label = "";
+      
+      if (selectedExerciseType === 'cardio') {
+        primaryVal = dayMax.max_reps; // Para cardio, max_reps almacena minutos
+        label = `${Math.floor(primaryVal)}:${String(Math.round((primaryVal % 1) * 60)).padStart(2, '0')}`;
+      } else if (dayMax.isBW) {
+        primaryVal = dayMax.max_reps;
+        label = `${primaryVal} reps`;
+      } else {
+        primaryVal = dayMax.max_weight_kg;
+        secondaryVal = calculate1RM(primaryVal, dayMax.max_reps);
+        label = `${primaryVal}${dayMax.unit}`;
+      }
+      
+      history.push({
+        date: dayMax.date,
+        value: primaryVal,
+        secondaryValue: secondaryVal,
+        unit: dayMax.unit,
+        reps: dayMax.max_reps,
+        label,
+        isBodyweight: dayMax.isBW
+      });
+    });
+    
     return history.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  }, [selectedExerciseId, workouts, selectedExerciseType, catalog]);
+  }, [selectedExerciseId, workouts, selectedExerciseType, catalog, storedRecords]);
 
   const isMostlyBodyweight = useMemo(() => {
       if (exerciseHistory.length === 0) return false;
@@ -573,7 +642,7 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
                                                         <span className="text-[9px] text-zinc-600 font-mono uppercase tracking-wider">{format(new Date(pr.date), 'dd MMM')}</span>
                                                         {pr.estimated1RM && <span className="text-[8px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-black uppercase italic">1RM: {pr.estimated1RM}kg</span>}
                                                         {pr.bestSingleSet && <span className="text-[8px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded font-black uppercase italic">Best Set: {pr.bestSingleSet.weight}kg × {pr.bestSingleSet.reps}</span>}
-                                                        {pr.bestSetCombination && <span className="text-[8px] bg-green-500/10 text-green-400 px-1.5 py-0.5 rounded font-black uppercase italic">Best Combo: {Math.round(pr.bestSetCombination.volume)}kg</span>}
+                                                        {pr.bestNearMax && <span className="text-[8px] bg-green-500/10 text-green-400 px-1.5 py-0.5 rounded font-black uppercase italic">Near Max: {pr.isBodyweight ? `${pr.bestNearMax.reps} reps` : `${pr.bestNearMax.weight}kg × ${pr.bestNearMax.reps}`}</span>}
                                                     </div>
                                                 </div>
                                             </div>
@@ -593,29 +662,42 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
                 <div className="space-y-8 animate-in slide-in-from-right-10 fade-in duration-300">
                     {/* Obtener el record del ejercicio seleccionado para mostrar best single set y best combo */}
                     {(() => {
-                        const selectedRecord = storedRecords.find(r => getCanonicalId(getLocalizedName(r.exercise_id, catalog), catalog) === selectedExerciseId);
+                        // exercise_id ahora es el nombre exacto, obtener el canonicalId para comparar
+                        const selectedRecord = storedRecords.find(r => getCanonicalId(r.exercise_id, catalog) === selectedExerciseId);
                         return (
                             <>
-                                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                <div className={`grid grid-cols-2 ${selectedExerciseType === 'strength' && !isMostlyBodyweight && selectedRecord && selectedRecord.total_volume_kg > 0 ? 'md:grid-cols-4' : selectedExerciseType === 'strength' && !isMostlyBodyweight ? 'md:grid-cols-3' : selectedRecord && selectedRecord.total_volume_kg > 0 ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-4`}>
                                     <div className="bg-zinc-900/80 border border-white/5 p-5 rounded-3xl">
                                          <div className="flex items-center gap-2 mb-1">{isMostlyBodyweight ? <Hash className="w-3.5 h-3.5 text-pink-400" /> : <Trophy className="w-3.5 h-3.5" style={{ color: chartColor }} />}<span className="text-[10px] uppercase font-black text-zinc-500 tracking-widest">{primaryLabel}</span></div>
-                                         <div className="text-2xl font-black text-white font-mono">{Math.max(...exerciseHistory.map(h => h.value))} <span className="text-[10px] text-zinc-600 font-sans font-bold">{unitLabel}</span></div>
+                                         <div className="text-2xl font-black text-white font-mono">
+                                           {selectedRecord ? (selectedRecord.is_bodyweight ? selectedRecord.max_reps : selectedRecord.max_weight_kg) : (exerciseHistory.length > 0 ? Math.max(...exerciseHistory.map(h => h.value)) : 0)} 
+                                           <span className="text-[10px] text-zinc-600 font-sans font-bold">{unitLabel}</span>
+                                         </div>
                                     </div>
                                     {selectedExerciseType === 'strength' && !isMostlyBodyweight && (
                                         <div className="bg-primary/5 border border-primary/20 p-5 rounded-3xl relative overflow-hidden">
                                             <div className="absolute -right-2 -bottom-2 opacity-5"><Zap className="w-16 h-16 text-primary" /></div>
                                             <div className="flex items-center gap-2 mb-1"><Calculator className="w-3.5 h-3.5 text-primary" /><span className="text-[10px] uppercase font-black text-primary tracking-widest">PR Proyectado (1RM)</span></div>
-                                            <div className="text-2xl font-black text-primary font-mono">{Math.max(...exerciseHistory.map(h => h.secondaryValue || 0))} <span className="text-[10px] text-zinc-600 font-sans font-bold">KG</span></div>
+                                            <div className="text-2xl font-black text-primary font-mono">
+                                              {selectedRecord ? selectedRecord.max_1rm_kg : (exerciseHistory.length > 0 ? Math.max(...exerciseHistory.map(h => h.secondaryValue || 0)) : 0)} 
+                                              <span className="text-[10px] text-zinc-600 font-sans font-bold">KG</span>
+                                            </div>
                                         </div>
                                     )}
                                     <div className="bg-zinc-900/80 border border-white/5 p-5 rounded-3xl flex flex-col justify-center">
                                          <div className="flex items-center gap-2 mb-1"><Activity className="w-3.5 h-3.5 text-green-500" /><span className="text-[10px] uppercase font-black text-zinc-500 tracking-widest">Sesiones Totales</span></div>
                                          <div className="text-2xl font-black text-green-500 font-mono">{exerciseHistory.length}</div>
                                     </div>
+                                    {selectedRecord && selectedRecord.total_volume_kg > 0 && (
+                                        <div className="bg-zinc-900/80 border border-white/5 p-5 rounded-3xl flex flex-col justify-center">
+                                            <div className="flex items-center gap-2 mb-1"><Scale className="w-3.5 h-3.5 text-blue-500" /><span className="text-[10px] uppercase font-black text-zinc-500 tracking-widest">Total kg</span></div>
+                                            <div className="text-2xl font-black text-blue-500 font-mono">{Math.round(selectedRecord.total_volume_kg)}</div>
+                                        </div>
+                                    )}
                                 </div>
 
-                                {/* Best Single Set y Best Set Combination */}
-                                {(selectedRecord?.best_single_set_weight_kg || selectedRecord?.best_set_combination_volume_kg) && (
+                                {/* Best Single Set y Best Near Max */}
+                                {(selectedRecord?.best_single_set_weight_kg || selectedRecord?.best_near_max_weight_kg) && (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         {selectedRecord.best_single_set_weight_kg && selectedRecord.best_single_set_reps && (
                                             <div className="bg-blue-500/10 border border-blue-500/20 p-5 rounded-3xl relative overflow-hidden">
@@ -633,79 +715,28 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
                                                 </div>
                                             </div>
                                         )}
-                                        {selectedRecord.best_set_combination_volume_kg && selectedRecord.best_set_combination_sets_count && (
+                                        {selectedRecord.best_near_max_weight_kg && selectedRecord.best_near_max_reps && (
                                             <div className="bg-green-500/10 border border-green-500/20 p-5 rounded-3xl relative overflow-hidden">
-                                                <div className="absolute -right-2 -bottom-2 opacity-5"><Layers className="w-16 h-16 text-green-400" /></div>
-                                                <div className="flex items-center gap-2 mb-3">
-                                                    <Layers className="w-4 h-4 text-green-400" />
-                                                    <span className="text-[10px] uppercase font-black text-green-400 tracking-widest">Mejor Combinación de Series</span>
+                                                <div className="absolute -right-2 -bottom-2 opacity-5"><Target className="w-16 h-16 text-green-400" /></div>
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <Target className="w-4 h-4 text-green-400" />
+                                                    <span className="text-[10px] uppercase font-black text-green-400 tracking-widest">Mejor Serie Cerca del Máximo</span>
                                                 </div>
-                                                <div className="space-y-2">
-                                                    <div className="text-2xl font-black text-green-400 font-mono">{Math.round(selectedRecord.best_set_combination_volume_kg)}kg</div>
-                                                    
-                                                    {/* Mostrar detalles de cada serie si tenemos el workout */}
-                                                    {bestComboWorkout && (() => {
-                                                        // Buscar el ejercicio en el workout
-                                                        let exerciseData = bestComboWorkout.structured_data?.exercises?.find(ex => {
-                                                            if (!ex || !ex.name || typeof ex.name !== 'string') return false;
-                                                            const exId = getCanonicalId(ex.name, catalog);
-                                                            return exId === selectedExerciseId;
-                                                        });
-                                                        
-                                                        // Si no lo encontramos por canonicalId, intentar por nombre directo
-                                                        if (!exerciseData) {
-                                                            exerciseData = bestComboWorkout.structured_data?.exercises?.find(ex => 
-                                                                getLocalizedName(ex.name, catalog) === getLocalizedName(selectedExerciseId, catalog)
-                                                            );
+                                                <div className="space-y-1">
+                                                    <div className="text-2xl font-black text-green-400 font-mono">
+                                                        {selectedRecord.is_bodyweight 
+                                                            ? `${selectedRecord.best_near_max_reps} reps`
+                                                            : `${selectedRecord.best_near_max_weight_kg}kg × ${selectedRecord.best_near_max_reps} reps`
                                                         }
-                                                        
-                                                        if (exerciseData && exerciseData.sets && exerciseData.sets.length > 0) {
-                                                            return (
-                                                                <div className="space-y-1.5 mt-3 pt-3 border-t border-green-500/20">
-                                                                    <div className="text-[9px] text-green-400/80 font-black uppercase tracking-wider mb-2">Detalles de las Series:</div>
-                                                                    <div className="space-y-1">
-                                                                        {exerciseData.sets.map((set, idx) => {
-                                                                            const weightInKg = set.unit === 'lbs' ? (set.weight || 0) * 0.453592 : (set.weight || 0);
-                                                                            const isUnilateral = exerciseData.unilateral || false;
-                                                                            const realWeight = isUnilateral ? weightInKg * 2 : weightInKg;
-                                                                            
-                                                                            return (
-                                                                                <div key={idx} className="flex items-center justify-between text-xs font-mono text-green-300/90 bg-green-500/5 px-2 py-1.5 rounded border border-green-500/10">
-                                                                                    <span className="text-green-400/60 font-bold">Serie {idx + 1}:</span>
-                                                                                    <span className="font-black">
-                                                                                        {realWeight.toFixed(1)}kg × {set.reps || 0} reps
-                                                                                        {isUnilateral && <span className="text-[10px] text-green-400/60 ml-1">(×2)</span>}
-                                                                                        {set.unit === 'lbs' && !isUnilateral && <span className="text-[10px] text-green-400/60 ml-1">({set.weight}lbs)</span>}
-                                                                                    </span>
-                                                                                </div>
-                                                                            );
-                                                                        })}
-                                                                    </div>
-                                                                    <div className="text-[9px] text-green-400/60 font-mono uppercase tracking-wider mt-2 pt-2 border-t border-green-500/10">
-                                                                        Total: {exerciseData.sets.length} series • Volumen: {Math.round(selectedRecord.best_set_combination_volume_kg || 0)}kg
-                                                                        {selectedRecord.best_set_combination_consistency_score !== undefined && selectedRecord.best_set_combination_consistency_score > 0 && ` • Consistencia: ${Math.round(selectedRecord.best_set_combination_consistency_score * 100)}%`}
-                                                                    </div>
-                                                                </div>
-                                                            );
+                                                    </div>
+                                                    <div className="text-xs text-green-300/80 font-mono">
+                                                        {selectedRecord.is_bodyweight
+                                                            ? `Repeticiones cercanas al máximo (${selectedRecord.max_reps} reps)`
+                                                            : `Peso cercano al máximo (${selectedRecord.max_weight_kg}kg)`
                                                         }
-                                                        return null;
-                                                    })()}
-                                                    
-                                                    {/* Fallback si no tenemos el workout */}
-                                                    {!bestComboWorkout && (
-                                                        <>
-                                                            <div className="text-xs text-green-300/80 font-mono">
-                                                                {selectedRecord.best_set_combination_sets_count} sets × {Math.round(selectedRecord.best_set_combination_avg_reps || 0)} reps avg
-                                                                {selectedRecord.best_set_combination_weight_kg !== undefined && selectedRecord.best_set_combination_weight_kg > 0 && ` @ ${selectedRecord.best_set_combination_weight_kg}kg`}
-                                                            </div>
-                                                            {selectedRecord.best_set_combination_consistency_score !== undefined && selectedRecord.best_set_combination_consistency_score > 0 && (
-                                                                <div className="text-[9px] text-green-400/60 font-mono uppercase tracking-wider">Consistencia: {Math.round(selectedRecord.best_set_combination_consistency_score * 100)}%</div>
-                                                            )}
-                                                        </>
-                                                    )}
-                                                    
-                                                    {selectedRecord.best_set_combination_date && (
-                                                        <div className="text-[9px] text-green-400/60 font-mono uppercase tracking-wider">{format(new Date(selectedRecord.best_set_combination_date), 'dd MMM yyyy')}</div>
+                                                    </div>
+                                                    {selectedRecord.best_near_max_date && (
+                                                        <div className="text-[9px] text-green-400/60 font-mono uppercase tracking-wider">{format(new Date(selectedRecord.best_near_max_date), 'dd MMM yyyy')}</div>
                                                     )}
                                                 </div>
                                             </div>
