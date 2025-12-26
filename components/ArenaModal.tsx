@@ -201,13 +201,18 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
             .map((u: any, index: number) => ({ ...u, rank: index + 1 }));
 
         setAnalysis({
-            winner: rawResult.alpha_user || rankings[0].name,
-            rankings: rankings,
-            // Si el markdown_report está vacío o truncado, usar un mensaje por defecto
-            markdown_body: rawResult.markdown_report || "El análisis completo no está disponible en este momento.",
-            volume_table: rawResult.rawStats
+            winner: rawResult.winner || rawResult.alpha_user || rankings[0].name,
+            loser: rawResult.loser,
+            rankings: rawResult.rankings || rankings,
+            volume_table: rawResult.volume_table || rawResult.rawStats
                 .sort((a: any, b: any) => b.totalVolume - a.totalVolume)
                 .map((s: any) => ({ name: s.name, total_volume_kg: Math.round(s.totalVolume) })),
+            volume_verdict: rawResult.volume_verdict,
+            points_table: rawResult.points_table,
+            comparison_table: rawResult.comparison_table,
+            individual_records: rawResult.individual_records,
+            roast: rawResult.roast,
+            markdown_body: rawResult.markdown_report || "",
         });
 
     } catch (e: any) {
