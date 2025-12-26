@@ -432,6 +432,7 @@ export const generateGroupAnalysis = async (
             }
 
             // Procesar TODOS los workouts para extraer TODOS los ejercicios únicos
+            // Usar como fallback si no hay records almacenados
             const allExercisesFromWorkouts = new Map<string, { 
                 name: string; 
                 id: string; 
@@ -465,7 +466,8 @@ export const generateGroupAnalysis = async (
                             workoutVolume += vol;
                             s.muscleVol[muscle] += vol;
 
-                            // Guardar el mejor set para este ejercicio
+                            // Guardar el mejor set para este ejercicio (solo si no hay records almacenados)
+                            // Si hay records, estos se usarán en su lugar
                             const isBW = weightVal === 0 && isCalis;
                             const currentMetric = isBW ? repsVal : (loadInKg * (1 + repsVal / 30));
                             
@@ -500,48 +502,37 @@ export const generateGroupAnalysis = async (
                 }
             });
 
-            // Si tenemos records almacenados, usarlos para los máximos (sobrescriben si son mejores)
+            // PRIORIDAD: Usar records almacenados (max_weight_kg + max_weight_reps) para comparaciones
+            // Los records son la fuente de verdad para los pesos máximos
             if (storedRecords.length > 0) {
+                // Limpiar los ejercicios de workouts y usar solo records
+                allExercisesFromWorkouts.clear();
                 for (const record of storedRecords) {
-                    const exerciseName = getLocalizedName(record.exercise_id, catalog);
-                    const weight = record.is_bodyweight ? 0 : record.max_weight_kg;
+                    // Usar canonicalId para normalizar y comparar ejercicios entre usuarios
+                    const canonicalId = getCanonicalId(record.exercise_id, catalog);
+                    const exerciseName = getLocalizedName(canonicalId, catalog);
+                    
+                    // Usar max_weight_kg y max_weight_reps directamente de los records
+                    const weight = record.max_weight_kg || 0;
                     const reps = record.is_bodyweight ? record.max_reps : record.max_weight_reps;
                     
-                    // Si ya tenemos este ejercicio de los workouts, comparar y usar el mejor
-                    if (allExercisesFromWorkouts.has(exerciseName)) {
-                        const existing = allExercisesFromWorkouts.get(exerciseName)!;
-                        const recordMetric = record.is_bodyweight 
-                            ? reps 
-                            : (weight * (record.unit === 'kg' ? 1 : 0.453592)) * (1 + reps / 30);
-                        const existingMetric = existing.bestSet.isBodyweight 
-                            ? existing.bestSet.reps 
-                            : (existing.bestSet.weight * (existing.bestSet.unit === 'lbs' ? 0.453592 : 1)) * (1 + existing.bestSet.reps / 30);
-                        
-                        if (recordMetric > existingMetric) {
-                            existing.bestSet = {
-                                weight: weight,
-                                reps: reps,
-                                isBodyweight: record.is_bodyweight,
-                                unit: record.unit || 'kg'
-                            };
+                    // Usar canonicalId como clave para normalizar ejercicios
+                    allExercisesFromWorkouts.set(exerciseName, {
+                        name: exerciseName,
+                        id: canonicalId,
+                        bestSet: {
+                            weight: weight,
+                            reps: reps,
+                            isBodyweight: record.is_bodyweight || false,
+                            unit: record.unit || 'kg'
                         }
-                    } else {
-                        // Si no está en los workouts pero sí en records, agregarlo
-                        allExercisesFromWorkouts.set(exerciseName, {
-                            name: exerciseName,
-                            id: record.exercise_id,
-                            bestSet: {
-                                weight: weight,
-                                reps: reps,
-                                isBodyweight: record.is_bodyweight,
-                                unit: record.unit || 'kg'
-                            }
-                        });
-                    }
+                    });
                 }
             }
 
             // Agregar todos los ejercicios encontrados a maxLifts
+            // Si hay records, ya están en allExercisesFromWorkouts desde la sección anterior
+            // Si no hay records, usar los calculados de workouts
             allExercisesFromWorkouts.forEach((exerciseData, exerciseName) => {
                 s.maxLifts[exerciseName] = exerciseData.bestSet;
             });
@@ -553,19 +544,33 @@ export const generateGroupAnalysis = async (
         }));
 
         // --- FASE 2: CROSS-ANALYSIS (Head-to-Head + Empates) ---
-        const allExercisesSet = new Set<string>();
-        stats.forEach(s => Object.keys(s.maxLifts).forEach(k => allExercisesSet.add(k)));
-        const allExercisesList = Array.from(allExercisesSet).sort();
+        // Usar un Map para normalizar ejercicios por canonicalId
+        const allExercisesMap = new Map<string, string>(); // canonicalId -> displayName
+        stats.forEach(s => {
+            Object.keys(s.maxLifts).forEach(exKey => {
+                // exKey es el nombre del ejercicio que usamos como clave
+                allExercisesMap.set(exKey, exKey);
+            });
+        });
+        const allExercisesList = Array.from(allExercisesMap.keys()).sort();
 
+        // Head-to-Head: Solo ejercicios realizados por TODOS los participantes
         const headToHead: CommonExerciseComparison[] = [];
+        const totalUsers = stats.length;
 
         allExercisesList.forEach(exName => {
-            const participants = stats.filter(s => s.maxLifts[exName]);
+            // Verificar que TODOS los usuarios tengan este ejercicio
+            const participants = stats.filter(s => s.maxLifts[exName] !== undefined);
             
-            if (participants.length > 1) {
-                const entries = participants.map(p => {
+            // Solo incluir si TODOS los participantes tienen este ejercicio
+            if (participants.length === totalUsers) {
+                const entries = stats.map(p => {
                     const lift = p.maxLifts[exName];
+                    // Usar max_weight_kg y max_weight_reps para comparación
                     const weightInKg = lift.unit === 'lbs' ? lift.weight * 0.453 : lift.weight;
+                    // Para comparación: priorizar peso máximo con sus repeticiones
+                    // Para calistenia: comparar por reps
+                    // Para peso: comparar por peso * reps (o 1RM estimado)
                     const powerScore = lift.isBodyweight ? lift.reps : weightInKg * (1 + lift.reps / 30);
                     
                     return {
@@ -592,84 +597,80 @@ export const generateGroupAnalysis = async (
                 });
             }
         });
+        
+        console.log(`Found ${headToHead.length} common exercises for head-to-head comparison`);
 
-        // --- PREPARACIÓN DE DATOS (TABLAS 2 y 3) ---
-
-        // A) DATOS PARA LA MATRIZ (TABLA 3)
+        // --- PREPARACIÓN DE DATOS PARA LA MATRIZ (SECCIÓN 2) ---
+        // La matriz incluye TODOS los ejercicios realizados por CUALQUIER participante
+        // CRÍTICO: Incluir TODAS las columnas de usuarios, incluso si no tienen datos
         const matrixData = allExercisesList.map(exName => {
             const row: any = { exercise: exName };
+            // Asegurar que TODOS los usuarios tengan una columna en cada fila
             stats.forEach(user => {
                 const lift = user.maxLifts[exName];
                 if (lift) {
-                    row[user.name] = lift.isBodyweight 
-                        ? `${lift.reps} reps` 
-                        : `${lift.weight}${lift.unit} x ${lift.reps}`;
+                    // Usar max_weight_kg + max_weight_reps para mostrar
+                    if (lift.isBodyweight) {
+                        row[user.name] = lift.reps > 0 ? `${lift.reps} reps` : "---";
+                    } else {
+                        row[user.name] = (lift.weight > 0 || lift.reps > 0) 
+                            ? `${lift.weight}${lift.unit} x ${lift.reps}` 
+                            : "---";
+                    }
                 } else {
-                    row[user.name] = ""; 
+                    row[user.name] = "---";
                 }
             });
             return row;
         });
-
-        // B) DATOS PARA ENFOQUE (TABLA 2)
-        const focusComparison = stats.map(user => {
-            const total = user.totalVolume || 1;
-            const breakdown = Object.entries(user.muscleVol)
-                .sort(([, a], [, b]) => b - a)
-                .map(([muscle, vol]) => {
-                    const pct = Math.round((vol / total) * 100);
-                    return `${muscle} (${pct}%)`;
-                }).slice(0, 3);
-            
-            return {
-                name: user.name,
-                top_muscles: breakdown.join(', ')
-            };
-        });
+        
+        // Obtener los nombres de todos los usuarios para el prompt
+        const allUserNames = stats.map(s => s.name);
 
         // --- FASE 3: GENERACIÓN IA ---
-        const systemInstruction = `Eres el Juez Supremo de una Arena de Entrenamiento.
-        TU ROL: Analista de datos brutalmente honesto.
-        
-        INSTRUCCIONES DE FORMATO (CRÍTICO):
-        1. Respuesta JSON válido. "markdown_report" en UNA SOLA LÍNEA (usa \\n para saltos de línea).
-        2. IMPORTANTE: El JSON debe estar completo y bien formado. Asegúrate de cerrar todas las comillas y llaves.
-        3. Si la respuesta es muy larga, puedes acortar las tablas pero MANTÉN el JSON válido y completo.
-        
-        ESTRUCTURA DEL REPORTE MARKDOWN:
-        
-        **SECCIÓN 1: DUELOS (Head-to-Head)**
-        ¡IMPORTANTE! NO HAGAS UNA TABLA AQUÍ.
-        Genera una lista visual de tarjetas para los ejercicios comunes más relevantes (máximo 5-6).
-        Formato obligatorio por ejercicio:
-        
-        ### [NOMBRE EJERCICIO MAYÚSCULAS]
-        🏆 **[Ganador]**: [Carga] [Reps]
-        ⚔️ vs [Segundo]: [Carga] [Reps]
-        (Deja espacio entre ejercicios)
-        
-        *Si 'winner' es 'EMPATE', usa este formato:*
-        ⚖️ **EMPATE TÉCNICO**: [Carga] [Reps]
-        ⚔️ [Usuario A] vs [Usuario B]
+        const systemInstruction = `Eres el Juez Supremo de una Arena de Entrenamiento. Analiza los datos y genera un reporte completo.
 
-        **TABLA 2: DISTRIBUCIÓN DE ENTRENAMIENTO (Focus Analysis)**
-        (Aquí SÍ usa una Tabla normal).
-        Columnas: Atleta | Top 3 Grupos Musculares (% del volumen).
-        
-        **TABLA 3: MATRIZ DE RENDIMIENTO COMPLETA (The Matrix)**
-        (Aquí SÍ usa una Tabla normal).
-        Columnas: Ejercicio | [Nombre Usuario 1] | [Nombre Usuario 2] ...
-        Filas: Muestra solo los ejercicios más importantes si hay muchos (máximo 15-20 filas).
-        Celdas: Copia el valor exacto (ej: "100kg x 5"). Si está vacío, deja la celda vacía.
-        
-        **VEREDICTO FINAL**
-        Párrafo final ácido resumiendo quién es el Alpha (máximo 3-4 líneas).
-        
-        RECUERDA: El JSON debe estar completo y válido. Escapa correctamente todas las comillas dobles dentro del markdown_report usando \\".
+FORMATO DE RESPUESTA (JSON válido):
+{
+  "winner": "nombre del ganador basado en mayor volumen total",
+  "loser": "nombre del perdedor (opcional)",
+  "markdown_report": "reporte completo en markdown usando \\n para saltos de línea"
+}
+
+ESTRUCTURA DEL markdown_report (OBLIGATORIO - incluir TODAS las secciones):
+
+**SECCIÓN 1: DUELOS (Head-to-Head)**
+Lista de ejercicios que TODOS los participantes han realizado (solo estos ejercicios):
+### [NOMBRE EJERCICIO]
+🏆 **[Ganador]**: [Carga] [Reps]
+⚔️ vs [Segundo]: [Carga] [Reps]
+(Repetir para TODOS los ejercicios de "head_to_head_results" - NO limites a 5-6, incluye TODOS)
+Si no hay ejercicios comunes, escribe: "No se encontraron ejercicios realizados por TODOS los participantes para un duelo directo."
+
+**SECCIÓN 2: MATRIZ DE RENDIMIENTO COMPLETA (The Matrix)**
+Tabla markdown con TODOS los ejercicios de "full_matrix_data" (ejercicios realizados por CUALQUIER participante).
+CRÍTICO: La tabla DEBE tener EXACTAMENTE estas columnas: Ejercicio | ${allUserNames.join(' | ')}
+Cada fila DEBE incluir valores para TODAS las columnas de usuarios. Si un usuario no tiene datos para un ejercicio, usa "---".
+Ejemplo de formato:
+| Ejercicio | ${allUserNames.join(' | ')} |
+|-----------|${allUserNames.map(() => '----------').join('|')}|
+| Ejercicio1 | valor o --- | valor o --- | valor o --- |
+| Ejercicio2 | valor o --- | valor o --- | valor o --- |
+... (continuar con TODOS los ejercicios sin excepción, NO limites a 15-20, incluye TODOS)
+NO omitas columnas. Cada fila debe tener el mismo número de columnas que el encabezado.
+
+**VEREDICTO FINAL**
+Párrafo final (3-4 líneas) resumiendo quién es el Alpha basado en volumen total y rendimiento en la matriz.
+
+IMPORTANTE:
+- SECCIÓN 1 solo incluye ejercicios de "head_to_head_results" (ejercicios comunes a TODOS)
+- SECCIÓN 2 debe incluir TODOS los ejercicios de "full_matrix_data" con TODAS las columnas de usuarios
+- El JSON debe estar COMPLETO (cierra todas las llaves y comillas)
+- Escapa comillas dobles dentro de markdown_report: \\"
         `;
 
         const promptData = {
-            head_to_head_results: headToHead.slice(0, 10).map(h => ({
+            head_to_head_results: headToHead.map(h => ({
                 exercise: h.exerciseName,
                 winner: h.winner,
                 details: h.entries.map(e => ({
@@ -677,15 +678,37 @@ export const generateGroupAnalysis = async (
                     display: e.weight > 0 ? `${e.weight}${e.unit} x ${e.reps}` : `${e.reps} reps`
                 }))
             })),
-            focus_comparison: focusComparison,
             full_matrix_data: matrixData
         };
 
         // MODIFICACIÓN: Usar generateWithFallback con REPORT_MODELS
+        // Construir prompt más claro sobre qué debe devolver
+        const userPrompt = `Analiza estos datos de usuarios y genera el reporte completo en formato JSON:
+
+USUARIOS Y SUS ESTADÍSTICAS:
+${stats.map(s => `- ${s.name}: Volumen total ${Math.round(s.totalVolume)}kg, ${s.workoutCount} entrenamientos`).join('\n')}
+
+DUELOS HEAD-TO-HEAD (${promptData.head_to_head_results.length} ejercicios realizados por TODOS):
+${JSON.stringify(promptData.head_to_head_results, null, 2)}
+
+MATRIZ COMPLETA DE EJERCICIOS (${promptData.full_matrix_data.length} ejercicios realizados por CUALQUIER participante):
+Los usuarios son: ${allUserNames.join(', ')}
+${JSON.stringify(promptData.full_matrix_data.slice(0, 100), null, 2)}${promptData.full_matrix_data.length > 100 ? `\n... (${promptData.full_matrix_data.length - 100} ejercicios más con la misma estructura)` : ''}
+
+INSTRUCCIONES CRÍTICAS:
+1. Genera un objeto JSON válido con campos: winner, loser (opcional), markdown_report
+2. En markdown_report, incluye TODAS las secciones requeridas: SECCIÓN 1 (DUELOS con TODOS los ejercicios de head_to_head_results), SECCIÓN 2 (MATRIZ con TODOS los ${promptData.full_matrix_data.length} ejercicios), y VEREDICTO FINAL
+3. PARA LA SECCIÓN 2 (MATRIZ): 
+   - DEBES incluir EXACTAMENTE estas columnas: Ejercicio | ${allUserNames.join(' | ')}
+   - Cada fila DEBE tener valores para TODAS las columnas de usuarios (incluye "---" si no hay dato)
+   - NO omitas ninguna columna de usuario
+   - NO limites el número de filas, incluye TODOS los ejercicios
+4. Asegúrate de que el JSON esté completo y bien formado.`;
+
         const response = await generateWithFallback(
             ai, 
             REPORT_MODELS, 
-            `Genera el análisis completo: ${JSON.stringify(promptData)}`, 
+            userPrompt, 
             systemInstruction
         );
 

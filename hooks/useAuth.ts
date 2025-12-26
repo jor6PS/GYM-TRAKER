@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { User } from '../types';
 import { supabase, getCurrentProfile } from '../services/supabase';
 
@@ -18,15 +18,18 @@ export const useAuth = (): UseAuthReturn => {
   const [realAdminUser, setRealAdminUser] = useState<User | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [isRecoveryMode, setIsRecoveryMode] = useState(false);
+  const initialCheckDoneRef = useRef(false);
+  const isMountedRef = useRef(true);
 
   const fetchUserProfile = useCallback(async (userId: string) => {
+    if (!isMountedRef.current) return;
     try {
       const profile = await getCurrentProfile();
-      if (profile) {
+      if (profile && isMountedRef.current) {
         setCurrentUser(profile as User);
-      } else {
+      } else if (isMountedRef.current) {
         const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
+        if (user && isMountedRef.current) {
           setCurrentUser({
             id: user.id,
             email: user.email || '',
@@ -41,31 +44,45 @@ export const useAuth = (): UseAuthReturn => {
     } catch (e) {
       console.error('Error fetching user profile:', e);
     } finally {
-      setSessionLoading(false);
+      if (isMountedRef.current) {
+        setSessionLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
+    isMountedRef.current = true;
+    let isMounted = true;
+    
     const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        await fetchUserProfile(session.user.id);
-      } else {
-        setSessionLoading(false);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        initialCheckDoneRef.current = true;
+        if (session && isMounted) {
+          await fetchUserProfile(session.user.id);
+        } else if (isMounted) {
+          setSessionLoading(false);
+        }
+      } catch (error) {
+        console.error('Error checking session:', error);
+        initialCheckDoneRef.current = true;
+        if (isMounted) {
+          setSessionLoading(false);
+        }
       }
     };
 
     checkSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!isMounted || !initialCheckDoneRef.current) return;
+      
       if (event === 'PASSWORD_RECOVERY') {
         setIsRecoveryMode(true);
       }
       
       if (session) {
-        if (!currentUser) {
-          fetchUserProfile(session.user.id);
-        }
+        await fetchUserProfile(session.user.id);
       } else {
         setCurrentUser(null);
         setRealAdminUser(null);
@@ -73,8 +90,12 @@ export const useAuth = (): UseAuthReturn => {
       }
     });
 
-    return () => subscription.unsubscribe();
-  }, [currentUser, fetchUserProfile]);
+    return () => {
+      isMounted = false;
+      isMountedRef.current = false;
+      subscription.unsubscribe();
+    };
+  }, [fetchUserProfile]);
 
   const logout = useCallback(async () => {
     await supabase.auth.signOut();
