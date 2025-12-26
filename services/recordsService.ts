@@ -477,10 +477,10 @@ export const updateUserRecords = async (
         const existing = existingDailyMax[existingIndex];
         if (dayMax.max_weight_kg > existing.max_weight_kg ||
             (dayMax.max_weight_kg === existing.max_weight_kg && dayMax.max_reps > existing.max_reps)) {
-          existingDailyMax[existingIndex] = dayMax;
+          existingDailyMax[existingIndex] = { ...dayMax, date };
         }
       } else {
-        existingDailyMax.push(dayMax);
+        existingDailyMax.push({ ...dayMax, date });
       }
     });
     record.daily_max = existingDailyMax.sort((a, b) => b.date.localeCompare(a.date));
