@@ -120,15 +120,24 @@ export const updateUserRecords = async (
   const workoutId = workout.id;
 
   for (const exercise of workout.structured_data.exercises) {
+    // Validar que el ejercicio tenga nombre
+    if (!exercise.name) {
+      console.warn('Ejercicio sin nombre encontrado, saltando...', exercise);
+      continue;
+    }
+
     const exerciseId = getCanonicalId(exercise.name, catalog);
     const exerciseDef = catalog.find(e => e.id === exerciseId);
-    const exerciseType = exerciseDef?.type || 'strength';
+    const exerciseType = exerciseDef?.type || exercise.type || 'strength';
     const category = exerciseDef?.category || exercise.category || 'General';
     const isCalis = isCalisthenic(exerciseId);
     const isUnilateral = exercise.unilateral || false;
 
     // Solo procesamos ejercicios de fuerza
-    if (exerciseType !== 'strength') continue;
+    if (exerciseType !== 'strength') {
+      console.log(`Ejercicio ${exercise.name} es de tipo ${exerciseType}, saltando (solo procesamos 'strength')`);
+      continue;
+    }
     
     // Solo dips y pull-ups/dominadas se consideran bodyweight
     // Los ejercicios de core y otros NO se tratan como bodyweight
@@ -150,12 +159,12 @@ export const updateUserRecords = async (
     // Si existe un record, usarlo; si no, crear uno nuevo
     // IMPORTANTE: El total_volume_kg se acumula a lo largo de todos los workouts
     // PERO: Si este workout ya fue procesado, no debemos sumar su volumen de nuevo
-    // Para evitar duplicaciones, vamos a recalcular el volumen total desde cero
-    // Esto es más seguro aunque sea menos eficiente
+    // Para evitar duplicaciones, NO reseteamos el volumen total aquí, solo sumamos el volumen del workout actual
+    // El volumen total correcto se debe calcular con recalculateUserRecords
     let record: Partial<UserRecord> = existingRecord ? {
       ...existingRecord,
-      // Resetear el volumen total - lo recalcularemos desde cero
-      total_volume_kg: 0,
+      // NO resetear el volumen total aquí - mantener el valor existente y sumar el volumen del workout actual
+      // Esto evita perder el volumen total cuando se procesa un workout
     } : {
       user_id: workout.user_id,
       exercise_id: exerciseId,
@@ -192,6 +201,12 @@ export const updateUserRecords = async (
     };
 
     // Procesar cada set del ejercicio
+    // Verificar que el ejercicio tenga sets
+    if (!exercise.sets || exercise.sets.length === 0) {
+      console.warn(`Ejercicio ${exercise.name} (${exerciseId}) no tiene sets, saltando...`);
+      continue;
+    }
+
     for (const set of exercise.sets) {
       const weight = set.weight || 0;
       const reps = set.reps || 0;
@@ -396,13 +411,23 @@ export const updateUserRecords = async (
     // Por ahora, sumamos pero el usuario debe recalcular desde el admin panel si hay problemas
     record.total_volume_kg = (record.total_volume_kg || 0) + workoutVolume;
 
-    // Solo guardar si hay al menos un set procesado (reps > 0)
-    // Esto evita crear records vacíos
+    // Verificar si hay datos válidos para guardar
+    // Debe tener al menos un set procesado o ser un record existente
     const hasData = (record.max_reps && record.max_reps > 0) || 
                    (record.max_weight_kg && record.max_weight_kg > 0) ||
-                   (record.total_volume_kg && record.total_volume_kg > 0);
+                   (record.total_volume_kg && record.total_volume_kg > 0) ||
+                   (record.max_1rm_kg && record.max_1rm_kg > 0);
     
-    if (!hasData) return; // No hay datos para guardar
+    // Si no hay datos y es un record nuevo, no guardarlo (evitar records vacíos)
+    if (!hasData && !existingRecord) {
+      console.warn(`No hay datos válidos para el ejercicio ${exercise.name} (${exerciseId}), saltando guardado. Sets procesados: ${setsData.length}, workoutVolume: ${workoutVolume}`);
+      continue; // Continuar con el siguiente ejercicio en lugar de return
+    }
+    
+    // Asegurar que exercise_name esté definido
+    if (!record.exercise_name) {
+      record.exercise_name = exercise.name;
+    }
     
     // Guardar o actualizar el record
     if (existingRecord) {
@@ -412,7 +437,9 @@ export const updateUserRecords = async (
         .eq('id', existingRecord.id);
       
       if (updateError) {
-        console.error('Error updating record:', updateError);
+        console.error(`Error updating record para ${exercise.name} (${exerciseId}):`, updateError);
+      } else {
+        console.log(`✅ Record actualizado: ${exercise.name} (${exerciseId})`);
       }
     } else {
       const { error: insertError } = await supabase
@@ -420,7 +447,9 @@ export const updateUserRecords = async (
         .insert(record);
       
       if (insertError) {
-        console.error('Error inserting record:', insertError);
+        console.error(`Error inserting record para ${exercise.name} (${exerciseId}):`, insertError);
+      } else {
+        console.log(`✅ Record insertado: ${exercise.name} (${exerciseId})`);
       }
     }
   }
