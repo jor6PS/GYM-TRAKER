@@ -322,19 +322,19 @@ export const updateUserRecords = async (
 
     // Actualizar record con los valores calculados de este workout
     // Comparar con el record existente para mantener los mejores valores
-    const currentMaxWeight = record.max_weight_kg || 0;
+        const currentMaxWeight = record.max_weight_kg || 0;
     if (maxWeight > currentMaxWeight) {
       record.max_weight_kg = maxWeight;
       record.max_weight_reps = maxWeightReps;
-      record.max_weight_date = workoutDate;
-      record.max_weight_workout_id = workoutId;
-    }
+          record.max_weight_date = workoutDate;
+          record.max_weight_workout_id = workoutId;
+        }
 
     const currentMax1RM = record.max_1rm_kg || 0;
     if (best1RM > currentMax1RM) {
       record.max_1rm_kg = best1RM;
-      record.max_1rm_date = workoutDate;
-      record.max_1rm_workout_id = workoutId;
+          record.max_1rm_date = workoutDate;
+          record.max_1rm_workout_id = workoutId;
     }
 
     const currentMaxReps = record.max_reps || 0;
@@ -361,20 +361,25 @@ export const updateUserRecords = async (
     const finalMaxReps = Math.max(record.max_reps || 0, maxReps);
     const hasOnlyBodyweight = isBodyweightExercise && exerciseSets.every(s => (s.weight || 0) === 0);
     
-    let bestNearMax: { weight: number; reps: number } | null = null;
+    let bestNearMax: { weight: number; reps: number; date: string; workoutId: string } | null = null;
+    
+    // Guardar el existente para comparar después
+    const existingBestNearMax = existingRecord?.best_near_max_weight_kg && existingRecord?.best_near_max_reps ? {
+      weight: existingRecord.best_near_max_weight_kg,
+      reps: existingRecord.best_near_max_reps,
+      date: existingRecord.best_near_max_date || '',
+      workoutId: existingRecord.best_near_max_workout_id || ''
+    } : null;
     
     if (hasOnlyBodyweight && finalMaxReps > 0) {
       // Calistenia sin peso adicional: buscar series con repeticiones cercanas a max_reps
       let bestRepScore = -1;
       
       // Inicializar con la mejor serie existente si hay
-      if (existingRecord?.best_near_max_reps) {
-        const existingPercentage = finalMaxReps > 0 ? existingRecord.best_near_max_reps / finalMaxReps : 0;
+      if (existingBestNearMax) {
+        const existingPercentage = finalMaxReps > 0 ? existingBestNearMax.reps / finalMaxReps : 0;
         bestRepScore = existingPercentage * existingPercentage;
-        bestNearMax = {
-          weight: existingRecord.best_near_max_weight_kg || userWeight,
-          reps: existingRecord.best_near_max_reps
-        };
+        bestNearMax = existingBestNearMax;
       }
 
       for (const set of exerciseSets) {
@@ -391,27 +396,24 @@ export const updateUserRecords = async (
           if (score > bestRepScore || (score === bestRepScore && reps > (bestNearMax?.reps || 0))) {
             bestRepScore = score;
             const totalWeight = userWeight; // Para calistenia sin peso, siempre es el peso corporal
-            bestNearMax = { weight: totalWeight, reps: reps };
+            bestNearMax = { weight: totalWeight, reps: reps, date: workoutDate, workoutId: workoutId };
           }
         }
       }
     } else if (finalMaxWeight > 0) {
-      // Ejercicios normales o calistenia con peso adicional: buscar series con peso cercano al máximo
+      // Ejercicios normales o calistenia con peso adicional: buscar series con mejor esfuerzo relativo
+      // El esfuerzo se calcula usando el 1RM estimado, priorizando series con alto % del máximo y reps razonables
       let bestScore = -1;
       
+      // Calcular el 1RM máximo para usar como referencia (usar el máximo global actualizado)
+      const finalMaxWeightReps = record.max_weight_reps || maxWeightReps || 1;
+      const max1RM = finalMaxWeight > 0 ? calculate1RM(finalMaxWeight, finalMaxWeightReps) : 0;
+      
       // Inicializar con la mejor serie existente si hay
-      if (existingRecord?.best_near_max_weight_kg) {
-        const percentageOfMax = finalMaxWeight > 0 ? existingRecord.best_near_max_weight_kg / finalMaxWeight : 0;
-        let repFactor = 1.0;
-        const existingReps = existingRecord.best_near_max_reps || 0;
-        if (existingReps <= 6) repFactor = 1.0;
-        else if (existingReps <= 8) repFactor = 0.9;
-        else repFactor = 0.8;
-        bestScore = percentageOfMax * percentageOfMax * repFactor;
-        bestNearMax = {
-          weight: existingRecord.best_near_max_weight_kg,
-          reps: existingReps
-        };
+      if (existingBestNearMax && max1RM > 0) {
+        const existing1RM = calculate1RM(existingBestNearMax.weight, existingBestNearMax.reps);
+        bestScore = existing1RM / max1RM;
+        bestNearMax = existingBestNearMax;
       }
 
       for (const set of exerciseSets) {
@@ -419,47 +421,34 @@ export const updateUserRecords = async (
         const reps = set.reps || 0;
         const unit = set.unit || 'kg';
         
-        // Considerar series con 2-10 reps (rango razonable)
-        if (reps >= 2 && reps <= 10 && reps > 0) {
+        // Considerar series con 2-10 reps (rango razonable para esfuerzo cerca del máximo)
+        if (reps >= 2 && reps <= 10 && reps > 0 && max1RM > 0) {
           const realWeight = calculateRealWeight(weight, isUnilateral, unit);
           const totalWeight = isBodyweightExercise ? realWeight + userWeight : realWeight;
           
-          // Calcular porcentaje del máximo
-          const percentageOfMax = finalMaxWeight > 0 ? totalWeight / finalMaxWeight : 0;
-          
-          // Score: peso cercano al máximo con reps razonables
-          let repFactor = 1.0;
-          if (reps <= 6) {
-            repFactor = 1.0; // 2-6 reps: factor completo
-          } else if (reps <= 8) {
-            repFactor = 0.9; // 7-8 reps: ligeramente menos valor
-          } else {
-            repFactor = 0.8; // 9-10 reps: menos valor aún
-          }
-          
-          const score = percentageOfMax * percentageOfMax * repFactor;
+          // Calcular 1RM estimado de esta serie
+          const set1RM = calculate1RM(totalWeight, reps);
+          // Score: porcentaje del 1RM máximo (el 1RM estimado ya considera peso y reps)
+          // Esto prioriza series con alto 1RM estimado, que representa mejor esfuerzo relativo
+          const score = set1RM / max1RM;
           
           // Si el score es mejor, o si es igual pero tiene más peso absoluto
-          if (score > bestScore || (score === bestScore && totalWeight > (bestNearMax?.weight || 0))) {
+          if (score > bestScore || (Math.abs(score - bestScore) < 0.001 && totalWeight > (bestNearMax?.weight || 0))) {
             bestScore = score;
-            bestNearMax = { weight: totalWeight, reps: reps };
+            bestNearMax = { weight: totalWeight, reps: reps, date: workoutDate, workoutId: workoutId };
           }
         }
       }
     }
 
     // Actualizar best_near_max solo si encontramos una mejor serie
-    // Si no encontramos una mejor serie pero el máximo cambió, mantener el existente
-    // pero actualizar la fecha si el máximo se actualizó
     if (bestNearMax) {
       record.best_near_max_weight_kg = bestNearMax.weight;
       record.best_near_max_reps = bestNearMax.reps;
-      record.best_near_max_date = workoutDate;
-      record.best_near_max_workout_id = workoutId;
-    } else if (existingRecord?.best_near_max_weight_kg && maxWeight > currentMaxWeight) {
-      // Si el máximo cambió pero no encontramos una mejor serie cerca del máximo en este workout,
-      // mantener el existente pero podría necesitar recalcularse (se hará en recalculateUserRecords)
-      // Por ahora, mantener el existente
+      record.best_near_max_date = bestNearMax.date;
+      record.best_near_max_workout_id = bestNearMax.workoutId;
+    } else if (existingRecord?.best_near_max_weight_kg) {
+      // Si no encontramos ninguna serie válida, mantener el existente
       record.best_near_max_weight_kg = existingRecord.best_near_max_weight_kg;
       record.best_near_max_reps = existingRecord.best_near_max_reps;
       record.best_near_max_date = existingRecord.best_near_max_date;
@@ -496,7 +485,7 @@ export const updateUserRecords = async (
     if (!hasData && !existingRecord) {
       console.log(`  ⚠️ Record nuevo sin datos válidos para ${exerciseNameExact} (${exerciseId}), guardando record vacío`);
     }
-
+    
     // Guardar o actualizar el record
     if (existingRecord) {
       // Construir objeto de actualización explícitamente para asegurar que todos los campos se incluyan
@@ -604,7 +593,7 @@ export const recalculateUserRecords = async (
     .from('user_records')
     .delete()
     .eq('user_id', userId);
-  
+
   if (deleteError) {
     console.error(`Error eliminando records existentes para user_id ${userId}:`, deleteError);
     return;
@@ -660,7 +649,7 @@ export const recalculateUserRecords = async (
       
       // Inicializar o obtener el entry para este ejercicio
       if (!exerciseMap.has(exerciseId)) {
-        const category = exerciseDef?.category || exercise.category || 'General';
+      const category = exerciseDef?.category || exercise.category || 'General';
         const isCalis = isCalisthenic(canonicalId);
         
         exerciseMap.set(exerciseId, {
@@ -732,7 +721,7 @@ export const recalculateUserRecords = async (
         // Calcular peso real
         const realWeight = calculateRealWeight(weight, isUnilateral, unit);
         const totalWeight = isBodyweight ? realWeight + userWeight : realWeight;
-        
+
         // Calcular volumen del set
         const setVolume = calculateSetVolume(weight, reps, isUnilateral, isBodyweight, userWeight, unit);
         totalVolume += setVolume;
@@ -740,10 +729,10 @@ export const recalculateUserRecords = async (
         // Actualizar mejor serie individual (mayor volumen)
         if (setVolume > bestSingleSet.volume) {
           bestSingleSet = {
-            weight: totalWeight,
-            reps: reps,
-            volume: setVolume,
-            date: workoutDate,
+          weight: totalWeight,
+          reps: reps,
+          volume: setVolume,
+          date: workoutDate,
             workoutId
           };
         }
@@ -831,33 +820,29 @@ export const recalculateUserRecords = async (
           }
         }
       } else if (maxWeight > 0) {
-        // Ejercicios normales o calistenia con peso adicional: buscar series con peso cercano al máximo
+        // Ejercicios normales o calistenia con peso adicional: buscar series con mejor esfuerzo relativo
+        // El esfuerzo se calcula usando el 1RM estimado, priorizando series con alto % del máximo
         let bestScore = -1;
+        
+        // Calcular el 1RM máximo para usar como referencia
+        const max1RM = maxWeight > 0 ? calculate1RM(maxWeight, maxWeightReps || 1) : 0;
+        
         for (const set of sets) {
           const { weight, reps, unit, isUnilateral, userWeight, workoutDate, workoutId } = set;
           
-          // Considerar series con 2-10 reps (rango razonable)
-          if (reps >= 2 && reps <= 10 && reps > 0) {
+          // Considerar series con 2-10 reps (rango razonable para esfuerzo cerca del máximo)
+          if (reps >= 2 && reps <= 10 && reps > 0 && max1RM > 0) {
             const realWeight = calculateRealWeight(weight, isUnilateral, unit);
             const totalWeight = isBodyweight ? realWeight + userWeight : realWeight;
             
-            // Calcular porcentaje del máximo (0-1)
-            const percentageOfMax = maxWeight > 0 ? totalWeight / maxWeight : 0;
-            
-            // Score: peso cercano al máximo (mayor porcentaje) con reps razonables
-            let repFactor = 1.0;
-            if (reps <= 6) {
-              repFactor = 1.0; // 2-6 reps: factor completo
-            } else if (reps <= 8) {
-              repFactor = 0.9; // 7-8 reps: ligeramente menos valor
-            } else {
-              repFactor = 0.8; // 9-10 reps: menos valor aún
-            }
-            
-            const score = percentageOfMax * percentageOfMax * repFactor;
+            // Calcular 1RM estimado de esta serie
+            const set1RM = calculate1RM(totalWeight, reps);
+            // Score: porcentaje del 1RM máximo (el 1RM estimado ya considera peso y reps)
+            // Esto prioriza series con alto 1RM estimado, que representa mejor esfuerzo relativo
+            const score = set1RM / max1RM;
             
             // Si el score es mejor, o si es igual pero tiene más peso absoluto
-            if (score > bestScore || (score === bestScore && totalWeight > (bestNearMax?.weight || 0))) {
+            if (score > bestScore || (Math.abs(score - bestScore) < 0.001 && totalWeight > (bestNearMax?.weight || 0))) {
               bestScore = score;
               bestNearMax = { weight: totalWeight, reps: reps, date: workoutDate, workoutId };
             }
@@ -870,9 +855,9 @@ export const recalculateUserRecords = async (
         .map(([date, data]) => ({ date, ...data }))
         .sort((a, b) => b.date.localeCompare(a.date));
 
-      const record: Partial<UserRecord> = {
-        user_id: userId,
-        exercise_id: exerciseId,
+    const record: Partial<UserRecord> = {
+      user_id: userId,
+      exercise_id: exerciseId,
         exercise_name: exerciseName,
         max_weight_kg: maxWeight,
         max_weight_reps: maxWeightReps,
@@ -888,7 +873,7 @@ export const recalculateUserRecords = async (
         is_bodyweight: isBodyweight,
         category,
         exercise_type: exerciseType,
-        unit: 'kg',
+      unit: 'kg',
         best_single_set_weight_kg: bestSingleSet.weight > 0 ? bestSingleSet.weight : undefined,
         best_single_set_reps: bestSingleSet.reps > 0 ? bestSingleSet.reps : undefined,
         best_single_set_volume_kg: bestSingleSet.volume > 0 ? bestSingleSet.volume : undefined,
@@ -903,7 +888,7 @@ export const recalculateUserRecords = async (
 
       // Insertar el record
       const { error: insertError } = await supabase
-        .from('user_records')
+    .from('user_records')
         .insert(record);
 
       if (insertError) {
