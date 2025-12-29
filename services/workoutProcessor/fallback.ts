@@ -26,7 +26,8 @@ export const generateWithFallback = async (
   prompt: string, 
   systemInstruction?: string,
   responseSchema?: any,
-  inlineData?: any
+  inlineData?: any,
+  maxOutputTokens?: number
 ): Promise<any> => {
   let lastError;
 
@@ -35,7 +36,7 @@ export const generateWithFallback = async (
       const config: any = { 
         responseMimeType: "application/json", 
         temperature: 0.3, // Reducido para respuestas más rápidas y deterministas
-        maxOutputTokens: responseSchema ? 8192 : 4096 // Más tokens cuando hay schema (para análisis largos)
+        maxOutputTokens: maxOutputTokens || (responseSchema ? 8192 : 4096) // Permitir override, o usar defaults según schema
       };
       
       if (systemInstruction) config.systemInstruction = systemInstruction;
@@ -60,7 +61,39 @@ export const generateWithFallback = async (
 
       const response = await Promise.race([responsePromise, timeoutPromise]) as any;
 
-      return response;
+      // Extraer el texto de la respuesta de manera robusta
+      // La API de GoogleGenAI puede devolver el texto en diferentes estructuras
+      let responseText = '';
+      
+      // Intentar múltiples formas de extraer el texto
+      if (response?.text) {
+        responseText = response.text;
+      } else if (response?.candidates?.[0]?.content?.parts?.[0]?.text) {
+        responseText = response.candidates[0].content.parts[0].text;
+      } else if (response?.response?.text) {
+        responseText = response.response.text;
+      } else if (response?.response?.candidates?.[0]?.content?.parts?.[0]?.text) {
+        responseText = response.response.candidates[0].content.parts[0].text;
+      } else if (typeof response === 'string') {
+        responseText = response;
+      } else {
+        // Si no se puede extraer, intentar JSON.stringify como último recurso
+        console.warn(`⚠️ No se pudo extraer texto de la respuesta. Estructura:`, Object.keys(response || {}));
+        responseText = JSON.stringify(response);
+      }
+
+      // Log para debugging (solo primeros/last chars para no saturar)
+      if (responseText) {
+        const preview = responseText.length > 200 
+          ? `${responseText.substring(0, 100)}...${responseText.substring(responseText.length - 100)}`
+          : responseText;
+        console.log(`✅ Texto extraído (${responseText.length} chars):`, preview);
+      } else {
+        console.error(`❌ No se pudo extraer texto de la respuesta del modelo ${modelName}`);
+      }
+
+      // Devolver objeto con text para compatibilidad
+      return { text: responseText, raw: response };
 
     } catch (error: any) {
       console.warn(`⚠️ Fallo en modelo ${modelName}:`, error.message);

@@ -63,7 +63,8 @@ export const generateGlobalReport = async (
                     getUserTotalVolume(userId)
                 ]);
                 storedRecords = records;
-                totalVolume = storedVol; 
+                totalVolume = storedVol;
+                console.log(`[Crónicas] userId=${userId}: volumen total de BD (suma total_volume_kg de TODOS los records históricos)=${storedVol}kg, número de records=${records.length}`); 
             } catch (error) {
                 console.warn('Error loading stored records, using fallback calculation:', error);
             }
@@ -98,9 +99,9 @@ export const generateGlobalReport = async (
         }
 
         // 3. PROCESAMIENTO DE WORKOUTS (SINGLE PASS - Bucle Único)
-        // ✅ CORRECCIÓN: Siempre recalcular totalVolume desde workouts para asegurar que esté actualizado
-        // El valor de records puede estar desactualizado si hay nuevos workouts
-        totalVolume = 0; // Resetear para recalcular desde cero
+        // Para el volumen total: SIEMPRE usar el almacenado en BD (suma de total_volume_kg) si tenemos userId
+        // Si no hay userId, calcular desde workouts como fallback
+        // NO recalcular desde workouts porque el volumen almacenado en BD es la fuente de verdad
         const recentHistory: any[] = []; 
 
         for (const w of allWorkouts) {
@@ -149,9 +150,27 @@ export const generateGlobalReport = async (
                     }
                 }
 
-                // ✅ CORRECCIÓN: Siempre sumar al totalVolume (ya no depende de calcTotalFromScratch)
-                totalVolume += sessionExVolume;
-                if (isThisMonth) monthlyVolume += sessionExVolume;
+                // CRÍTICO: Si todos los entrenamientos son del mes actual, el volumen histórico 
+                // debería ser igual al volumen mensual (si no hay volumen previo de meses anteriores)
+                // totalVolume se obtiene de la BD (getUserTotalVolume) cuando hay userId
+                // que suma TODOS los total_volume_kg de TODOS los records (histórico completo)
+                // monthlyVolume se calcula sumando solo los workouts del mes actual
+                if (!userId) {
+                    totalVolume += sessionExVolume;
+                }
+                if (isThisMonth) {
+                    monthlyVolume += sessionExVolume;
+                }
+                
+                // Log detallado para debugging
+                if (isThisMonth) {
+                    console.log(`[Crónicas] Workout ${w.date}: ejercicio ${ex.name}, sessionExVolume=${sessionExVolume}kg, monthlyVolume acumulado=${monthlyVolume}kg`);
+                }
+                
+                // Log para debugging - solo para el primer ejercicio del primer workout del mes
+                if (isThisMonth && !userId) {
+                    console.log(`[Crónicas] Sin userId: calculando totalVolume desde workouts, sessionExVolume=${sessionExVolume}, monthlyVolume acumulado=${monthlyVolume}`);
+                }
 
                 if (isRecent) {
                     promptExercises.push({
@@ -243,6 +262,32 @@ export const generateGlobalReport = async (
             ...",
           "score": número 1-10
         }`;
+        
+        // Validación: Si todos los workouts son del mes actual, el volumen histórico debería ser igual al mensual
+        // (a menos que haya volumen previo de meses anteriores en los records)
+        const allWorkoutsThisMonth = allWorkouts.every(w => isSameMonth(new Date(w.date), now));
+        if (allWorkoutsThisMonth && Math.abs(totalVolume - monthlyVolume) > 0.01) {
+            console.warn(`[Crónicas] ⚠️ ADVERTENCIA: Todos los workouts son del mes actual pero los volúmenes no coinciden.`);
+            console.warn(`  - Esto puede indicar que hay records con volumen de meses anteriores o un error en el cálculo.`);
+            console.warn(`  - totalVolume (BD): ${Math.round(totalVolume)}kg`);
+            console.warn(`  - monthlyVolume (calculado): ${Math.round(monthlyVolume)}kg`);
+            console.warn(`  - Diferencia: ${Math.round(totalVolume - monthlyVolume)}kg`);
+            console.warn(`  - Si todos los entrenamientos son de este mes, usaremos el monthlyVolume como volumen histórico.`);
+            // Si todos los workouts son del mes actual, usar el monthlyVolume como totalVolume
+            // porque el volumen histórico debería ser igual al mensual
+            totalVolume = monthlyVolume;
+        }
+        
+        console.log(`[Crónicas] RESUMEN FINAL:`);
+        console.log(`  - Volumen histórico (suma de TODOS los total_volume_kg de TODOS los records): ${Math.round(totalVolume)}kg`);
+        console.log(`  - Volumen mensual (suma de workouts del mes actual): ${Math.round(monthlyVolume)}kg`);
+        if (Math.abs(totalVolume - monthlyVolume) < 0.01) {
+            console.log(`  ✅ Los volúmenes coinciden correctamente.`);
+        } else {
+            console.log(`  - Diferencia: ${Math.round(totalVolume - monthlyVolume)}kg (puede ser normal si hay entrenamientos de meses anteriores)`);
+        }
+        
+        console.log(`[Crónicas] Enviando a IA: totalVolume=${Math.round(totalVolume)}kg (${totalVolume}kg), monthlyVolume=${Math.round(monthlyVolume)}kg (${monthlyVolume}kg)`);
         
         const prompt = `Analiza mi rendimiento para optimizar mi progreso. 
         Biometría: Edad ${userAge} años, Peso Corporal ${currentWeight}kg, Altura ${userHeight}cm.
@@ -420,14 +465,30 @@ export const generateGroupAnalysis = async (
             };
 
             // Intentar obtener records almacenados si tenemos userId
+            // NOTA: Puede haber problemas de permisos RLS al intentar leer records de otros usuarios
+            // En ese caso, usaremos el volumen calculado desde workouts como fallback
             let storedRecords: any[] = [];
             let storedTotalVolume = 0;
+            let recordsFetchError = false;
+            
             if (user.userId) {
                 try {
                     storedRecords = await getUserRecords(user.userId);
                     storedTotalVolume = await getUserTotalVolume(user.userId);
-                } catch (error) {
-                    console.warn(`Error loading stored records for ${user.name}, using fallback:`, error);
+                    console.log(`[Arena] ✅ Records obtenidos para ${user.name} (${user.userId}): ${storedRecords.length} records, volumen total: ${storedTotalVolume}kg`);
+                } catch (error: any) {
+                    recordsFetchError = true;
+                    console.warn(`[Arena] ⚠️ Error loading stored records for ${user.name} (${user.userId}):`, error);
+                    console.warn(`  - Error message: ${error?.message || 'Unknown error'}`);
+                    console.warn(`  - Esto puede ser un problema de permisos RLS. Usando fallback: calcular desde workouts.`);
+                    // Si hay error (probablemente permisos), los arrays quedan vacíos y se usará el fallback
+                    storedRecords = [];
+                    storedTotalVolume = 0;
+                }
+                
+                // Verificar si se obtuvo volumen pero es 0 (puede indicar error de permisos)
+                if (!recordsFetchError && storedTotalVolume === 0 && storedRecords.length === 0) {
+                    console.warn(`[Arena] ⚠️ No se obtuvieron records para ${user.name} (${user.userId}) pero no hubo error. Puede ser un problema de permisos RLS.`);
                 }
             }
 
@@ -537,8 +598,23 @@ export const generateGroupAnalysis = async (
                 s.maxLifts[exerciseName] = exerciseData.bestSet;
             });
             
-            // Si tenemos volumen almacenado, usamos ese valor; de lo contrario usamos el calculado de workouts
-            s.totalVolume = storedTotalVolume > 0 ? storedTotalVolume : workoutVolume;
+            // Decidir qué volumen usar:
+            // 1. Si tenemos userId y se pudo obtener volumen de BD (storedTotalVolume > 0), usar ese
+            // 2. Si hay error de permisos o volumen es 0, usar volumen calculado desde workouts
+            // CRÍTICO: Si storedTotalVolume es 0 pero hay workouts con volumen, es probable que haya un problema de permisos RLS
+            // En ese caso, usar el volumen calculado desde workouts como fallback
+            if (user.userId && storedTotalVolume > 0) {
+                s.totalVolume = storedTotalVolume;
+                console.log(`[Arena] ✅ Usuario ${s.name}: usando volumen de BD (${storedTotalVolume}kg)`);
+            } else if (user.userId && (recordsFetchError || (storedTotalVolume === 0 && workoutVolume > 0))) {
+                // Probable problema de permisos RLS - usar volumen calculado desde workouts
+                s.totalVolume = workoutVolume;
+                console.warn(`[Arena] ⚠️ Usuario ${s.name}: no se pudo obtener volumen de BD (probablemente permisos RLS), usando volumen calculado desde workouts (${workoutVolume}kg)`);
+            } else {
+                // Sin userId o sin volumen en ningún lado
+                s.totalVolume = workoutVolume;
+                console.log(`[Arena] Usuario ${s.name}: usando volumen calculado desde workouts (${workoutVolume}kg) - sin userId o sin datos`);
+            }
 
             return s;
         }));
@@ -693,28 +769,51 @@ ${JSON.stringify(promptData.head_to_head_results, null, 2)}
 
 MATRIZ COMPLETA DE EJERCICIOS (${promptData.full_matrix_data.length} ejercicios realizados por CUALQUIER participante):
 Los usuarios son: ${allUserNames.join(', ')}
-${JSON.stringify(promptData.full_matrix_data.slice(0, 100), null, 2)}${promptData.full_matrix_data.length > 100 ? `\n... (${promptData.full_matrix_data.length - 100} ejercicios más con la misma estructura)` : ''}
+${JSON.stringify(promptData.full_matrix_data, null, 2)}
 
 INSTRUCCIONES CRÍTICAS:
 1. Genera un objeto JSON válido con campos: winner, loser (opcional), markdown_report
-2. En markdown_report, incluye TODAS las secciones requeridas: SECCIÓN 1 (DUELOS con TODOS los ejercicios de head_to_head_results), SECCIÓN 2 (MATRIZ con TODOS los ${promptData.full_matrix_data.length} ejercicios), y VEREDICTO FINAL
-3. PARA LA SECCIÓN 2 (MATRIZ): 
+2. El campo markdown_report DEBE estar en UNA SOLA LÍNEA usando \\n para saltos de línea
+3. En markdown_report, incluye TODAS las secciones requeridas: SECCIÓN 1 (DUELOS con TODOS los ejercicios de head_to_head_results), SECCIÓN 2 (MATRIZ con TODOS los ${promptData.full_matrix_data.length} ejercicios), y VEREDICTO FINAL
+4. PARA LA SECCIÓN 2 (MATRIZ): 
    - DEBES incluir EXACTAMENTE estas columnas: Ejercicio | ${allUserNames.join(' | ')}
    - Cada fila DEBE tener valores para TODAS las columnas de usuarios (incluye "---" si no hay dato)
    - NO omitas ninguna columna de usuario
-   - NO limites el número de filas, incluye TODOS los ejercicios
-4. Asegúrate de que el JSON esté completo y bien formado.`;
+   - Incluye TODOS los ${promptData.full_matrix_data.length} ejercicios sin excepción
+5. CRÍTICO: El JSON debe estar COMPLETO. Cierra todas las llaves y comillas. Escapa comillas dobles dentro de markdown_report usando \\"
+6. Si la respuesta es muy larga, acórtala pero MANTÉN el JSON válido y completo.`;
 
+        // Para análisis de arena, necesitamos más tokens (16384) para evitar truncamiento
+        // con muchos ejercicios - esto permite respuestas de hasta ~12,000 palabras
         const response = await generateWithFallback(
             ai, 
             REPORT_MODELS, 
             userPrompt, 
-            systemInstruction
+            systemInstruction,
+            undefined, // responseSchema
+            undefined, // inlineData
+            16384 // maxOutputTokens - aumentado significativamente para reportes largos
         );
 
         // Parsear JSON con manejo robusto de errores
         let aiRes: any;
-        let rawText = response.text || '{}';
+        
+        // Extraer texto de la respuesta de manera robusta
+        let rawText = '';
+        if (response?.text) {
+            rawText = response.text;
+        } else if (response?.raw?.text) {
+            rawText = response.raw.text;
+        } else if (response?.raw?.candidates?.[0]?.content?.parts?.[0]?.text) {
+            rawText = response.raw.candidates[0].content.parts[0].text;
+        } else if (typeof response === 'string') {
+            rawText = response;
+        } else {
+            console.error('❌ No se pudo extraer texto de la respuesta:', response);
+            rawText = '{}';
+        }
+        
+        console.log(`[Arena] Longitud de respuesta: ${rawText.length} caracteres`);
         let cleanedJson = cleanJson(rawText);
         let parseAttempts = 0;
         const maxAttempts = 5;

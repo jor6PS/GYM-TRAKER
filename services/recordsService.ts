@@ -130,8 +130,15 @@ export const getUserTotalVolume = async (userId: string): Promise<number> => {
     .eq('user_id', userId);
   
   if (error) {
-    console.error('Error fetching total volume:', error);
-    return 0;
+    console.error(`[getUserTotalVolume] Error fetching total volume for userId ${userId}:`, error);
+    // Si hay un error (probablemente permisos RLS), lanzar el error para que se maneje arriba
+    throw error;
+  }
+  
+  // Si no hay error pero data es null o undefined, puede indicar un problema de permisos
+  if (data === null || data === undefined) {
+    console.warn(`[getUserTotalVolume] data es null/undefined para userId ${userId} - posible problema de permisos RLS`);
+    throw new Error('No se pudo obtener datos - posible problema de permisos RLS');
   }
   
   return (data || []).reduce((sum, record) => sum + (record.total_volume_kg || 0), 0);
@@ -157,22 +164,27 @@ export const updateUserRecords = async (
   console.log(`📝 Procesando workout ${workoutId} (${workoutDate}) con ${workout.structured_data.exercises.length} ejercicios`);
 
   for (const exercise of workout.structured_data.exercises) {
-    if (!exercise.name) {
-      console.warn('Ejercicio sin nombre encontrado, saltando...', exercise);
-      continue;
-    }
+    // Declarar variables fuera del try para que estén disponibles en el catch
+    let exerciseNameExact = '';
+    let exerciseId = '';
+    
+    try {
+      if (!exercise.name) {
+        console.warn('Ejercicio sin nombre encontrado, saltando...', exercise);
+        continue;
+      }
 
-    // Usar el nombre exacto del ejercicio como ID único para diferenciar variantes
-    // (ej: "Curl de Bíceps (Barra)" vs "Curl de Bíceps (Mancuernas)" deben ser records diferentes)
-    const exerciseNameExact = exercise.name.trim();
+      // Usar el nombre exacto del ejercicio como ID único para diferenciar variantes
+      // (ej: "Curl de Bíceps (Barra)" vs "Curl de Bíceps (Mancuernas)" deben ser records diferentes)
+      exerciseNameExact = exercise.name.trim();
     
     // Buscar en el catálogo para obtener metadatos (category, type, etc.)
     // pero usar el nombre exacto como ID para preservar todas las variantes
     const canonicalId = getCanonicalId(exercise.name, catalog);
     const exerciseDef = catalog.find(e => e.id === canonicalId);
     
-    // Usar el nombre exacto como exercise_id para preservar todas las variantes
-    const exerciseId = exerciseNameExact;
+      // Usar el nombre exacto como exercise_id para preservar todas las variantes
+      exerciseId = exerciseNameExact;
     
     const exerciseType = exerciseDef?.type || exercise.type || 'strength';
     
@@ -245,7 +257,15 @@ export const updateUserRecords = async (
     // Procesar cada set del ejercicio
     const exerciseSets = exercise.sets || [];
     if (exerciseSets.length === 0) {
-      console.log(`  ⚠️ ${exerciseNameExact} no tiene sets`);
+      console.log(`  ⚠️ ${exerciseNameExact} no tiene sets - saltando ejercicio`);
+      continue; // Saltar este ejercicio si no tiene sets
+    }
+    
+    // Validar que haya al menos un set con reps > 0
+    const hasValidSets = exerciseSets.some(s => (s.reps || 0) > 0);
+    if (!hasValidSets) {
+      console.log(`  ⚠️ ${exerciseNameExact} no tiene sets válidos (todos con reps === 0) - saltando ejercicio`);
+      continue; // Saltar este ejercicio si no tiene sets válidos
     }
     
     for (const set of exerciseSets) {
@@ -455,8 +475,23 @@ export const updateUserRecords = async (
       record.best_near_max_workout_id = existingRecord.best_near_max_workout_id;
     }
 
-    // Actualizar volumen total (acumular)
-    record.total_volume_kg = (record.total_volume_kg || 0) + workoutVolume;
+    // CRÍTICO: Validar que haya datos válidos antes de procesar
+    // workoutVolume ya se calculó arriba, así que si es > 0, hay sets válidos
+    const hasValidData = workoutVolume > 0 || maxWeight > 0 || maxReps > 0 || best1RM > 0;
+    
+    // Si no hay datos válidos y no existe el record, saltar completamente
+    if (!hasValidData && !existingRecord) {
+      console.log(`  ⏭️ Saltando ${exerciseNameExact} (${exerciseId}): sin datos válidos para procesar (workoutVolume=${workoutVolume}, maxWeight=${maxWeight}, maxReps=${maxReps})`);
+      continue; // Saltar este ejercicio completamente
+    }
+
+    // Actualizar volumen total SOLO si hay volumen válido del workout
+    // Guardar el volumen anterior para poder revertir si falla el guardado
+    const previousVolume = record.total_volume_kg || 0;
+    if (workoutVolume > 0) {
+      record.total_volume_kg = previousVolume + workoutVolume;
+      console.log(`  📊 Acumulando volumen: ${workoutVolume}kg para ${exerciseNameExact} (${exerciseId}). Anterior: ${previousVolume}kg, Nuevo total: ${record.total_volume_kg}kg`);
+    }
 
     // Actualizar daily_max (combinar con existentes)
     const existingDailyMax = (record.daily_max || []) as Array<{ date: string; max_weight_kg: number; max_reps: number }>;
@@ -480,10 +515,10 @@ export const updateUserRecords = async (
                    (record.max_reps || 0) > 0 ||
                    (record.max_1rm_kg || 0) > 0;
     
-    // Siempre guardar el record, incluso si no tiene datos iniciales
-    // (puede tener datos en futuros workouts o puede ser un ejercicio registrado sin sets válidos aún)
+    // Si no hay datos válidos y no existe el record, no guardar
     if (!hasData && !existingRecord) {
-      console.log(`  ⚠️ Record nuevo sin datos válidos para ${exerciseNameExact} (${exerciseId}), guardando record vacío`);
+      console.log(`  ⚠️ Record nuevo sin datos válidos para ${exerciseNameExact} (${exerciseId}), NO guardando`);
+      continue; // Saltar este ejercicio completamente
     }
     
     // Guardar o actualizar el record
@@ -521,8 +556,12 @@ export const updateUserRecords = async (
       if (updateError) {
         console.error(`❌ Error updating record para ${exerciseNameExact} (${exerciseId}):`, updateError);
         console.error('Update data:', JSON.stringify(updateData, null, 2));
+        // CRÍTICO: Si falla el update, revertir el volumen acumulado en memoria
+        record.total_volume_kg = previousVolume;
+        console.error(`  🔄 Volumen revertido a ${previousVolume}kg debido al error de guardado`);
+        throw new Error(`Error al actualizar record: ${updateError.message}. El volumen NO se acumuló.`);
       } else {
-        console.log(`✅ Record actualizado: ${exerciseNameExact} (${exerciseId}) - user_id: ${record.user_id}, daily_max entries: ${(record.daily_max || []).length}`);
+        console.log(`✅ Record actualizado: ${exerciseNameExact} (${exerciseId}) - user_id: ${record.user_id}, volumen acumulado: ${workoutVolume}kg, total: ${updateData.total_volume_kg}kg`);
       }
     } else {
       // Asegurar que todos los campos requeridos estén presentes
@@ -565,9 +604,23 @@ export const updateUserRecords = async (
       if (insertError) {
         console.error(`❌ Error inserting record para ${exerciseNameExact} (${exerciseId}):`, insertError);
         console.error('Insert data:', JSON.stringify(insertData, null, 2));
+        // CRÍTICO: Si falla el insert, el volumen NO se debe acumular
+        // El volumen ya se acumuló en record.total_volume_kg, pero como falló el guardado, debemos revertir
+        // Sin embargo, como es un nuevo record, el volumen anterior era 0, así que no hay nada que revertir
+        // Pero lanzamos el error para que se maneje en el catch
+        throw new Error(`Error al insertar record: ${insertError.message}. El volumen NO se acumuló.`);
       } else {
-        console.log(`✅ Record insertado: ${exerciseNameExact} (${exerciseId}) - user_id: ${insertData.user_id}, total_volume: ${insertData.total_volume_kg}`);
+        console.log(`✅ Record insertado: ${exerciseNameExact} (${exerciseId}) - user_id: ${insertedData?.[0]?.user_id}, volumen: ${workoutVolume}kg, total: ${insertedData?.[0]?.total_volume_kg}kg`);
       }
+    }
+    } catch (exerciseError: any) {
+      // Si hay un error al procesar este ejercicio, loguearlo pero continuar con los demás
+      const errorExerciseName = exerciseNameExact || exercise?.name || 'desconocido';
+      const errorExerciseId = exerciseId || 'desconocido';
+      console.error(`❌ Error procesando ejercicio ${errorExerciseName} (${errorExerciseId}):`, exerciseError);
+      console.error(`   El volumen de este ejercicio NO se acumuló debido al error.`);
+      // Continuar con el siguiente ejercicio
+      continue;
     }
   }
 };
