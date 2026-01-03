@@ -555,9 +555,9 @@ export const updateUserRecords = async (
       continue; // Saltar este ejercicio completamente
     }
     
-    // Función helper para convertir strings vacíos a null en campos UUID
-    const sanitizeUUID = (value: string | undefined | null): string | undefined | null => {
-      if (!value || value.trim() === '') return null;
+    // Función helper para convertir strings vacíos a undefined en campos UUID
+    const sanitizeUUID = (value: string | undefined | null): string | undefined => {
+      if (!value || value.trim() === '') return undefined;
       return value;
     };
     
@@ -605,8 +605,8 @@ export const updateUserRecords = async (
       }
     } else {
       // Función helper para convertir strings vacíos a null en campos UUID
-      const sanitizeUUID = (value: string | undefined | null): string | undefined | null => {
-        if (!value || value.trim() === '') return null;
+      const sanitizeUUID = (value: string | undefined | null): string | undefined => {
+        if (!value || value.trim() === '') return undefined;
         return value;
       };
       
@@ -973,8 +973,8 @@ export const recalculateUserRecords = async (
         .sort((a, b) => b.date.localeCompare(a.date));
 
       // Función helper para convertir strings vacíos a null en campos UUID
-      const sanitizeUUID = (value: string | undefined | null): string | undefined | null => {
-        if (!value || value.trim() === '') return null;
+      const sanitizeUUID = (value: string | undefined | null): string | undefined => {
+        if (!value || value.trim() === '') return undefined;
         return value;
       };
       
@@ -1372,9 +1372,9 @@ export const recalculateExerciseRecord = async (
     .eq('exercise_id', exerciseId)
     .maybeSingle();
   
-  // Función helper para convertir strings vacíos a null en campos UUID
-  const sanitizeUUID = (value: string | undefined | null): string | undefined | null => {
-    if (!value || value.trim() === '') return null;
+  // Función helper para convertir strings vacíos a undefined en campos UUID
+  const sanitizeUUID = (value: string | undefined | null): string | undefined => {
+    if (!value || value.trim() === '') return undefined;
     return value;
   };
   

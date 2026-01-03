@@ -151,7 +151,7 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
               .select('*')
               .eq('user_id', userId)
               .eq('date', dateToSave)
-              .maybeSingle() as Promise<{ data: any; error: any }>,
+              .maybeSingle() as unknown as Promise<{ data: any; error: any }>,
             10000, // 10 segundos timeout para verificación
             'Timeout al verificar workout existente'
           );
@@ -213,7 +213,7 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
                 })
                 .eq('id', existingWorkoutInDb.id)
                 .select()
-                .single() as Promise<{ data: any; error: any }>,
+                .single() as unknown as Promise<{ data: any; error: any }>,
               15000, // 15 segundos timeout para actualización
               'Timeout al actualizar workout'
             );
@@ -238,7 +238,7 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
                 .from('workouts')
                 .select('*')
                 .eq('id', updatedWorkoutData.id)
-                .single() as Promise<{ data: any; error: any }>,
+                .single() as unknown as Promise<{ data: any; error: any }>,
               10000, // 10 segundos timeout para verificación
               'Timeout al verificar workout actualizado'
             );
@@ -294,7 +294,7 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
                   .from('workouts')
                   .select('*')
                   .eq('user_id', userId)
-                  .order('created_at', { ascending: true }) as Promise<{ data: any; error: any }>,
+                  .order('created_at', { ascending: true }) as unknown as Promise<{ data: any; error: any }>,
                 10000, // 10 segundos timeout para refresh
                 'Timeout al refrescar datos'
               );
@@ -320,7 +320,7 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
                 structured_data: data,
                 source: 'web',
                 user_weight: currentUserWeight || 80
-              }).select().single() as Promise<{ data: any; error: any }>,
+              }).select().single() as unknown as Promise<{ data: any; error: any }>,
               15000, // 15 segundos timeout para inserción
               'Timeout al insertar workout'
             );
@@ -370,7 +370,7 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
                 .from('workouts')
                 .select('*')
                 .eq('id', inserted.id)
-                .single() as Promise<{ data: any; error: any }>,
+                .single() as unknown as Promise<{ data: any; error: any }>,
               10000, // 10 segundos timeout para verificación
               'Timeout al verificar workout insertado'
             );
@@ -426,7 +426,7 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
                   .from('workouts')
                   .select('*')
                   .eq('user_id', userId)
-                  .order('created_at', { ascending: true }) as Promise<{ data: any; error: any }>,
+                  .order('created_at', { ascending: true }) as unknown as Promise<{ data: any; error: any }>,
                 10000, // 10 segundos timeout para refresh
                 'Timeout al refrescar datos'
               );
