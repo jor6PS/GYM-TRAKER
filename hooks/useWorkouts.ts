@@ -417,12 +417,31 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
     
     // CRÍTICO: Recalcular SOLO el record del ejercicio editado, no todos los records
     // Esto evita que se pierdan records de otros ejercicios si hay un error
+    // IMPORTANTE: Si el nombre del ejercicio cambió, recalcular ambos (antiguo y nuevo)
     if (userId && catalog && exercise.name) {
       try {
-        console.log(`📊 Recalculando record del ejercicio "${exercise.name}" después de editar...`);
-        const { recalculateExerciseRecord } = await import('../services/recordsService');
-        await recalculateExerciseRecord(userId, exercise.name.trim(), catalog);
-        console.log(`✅ Record del ejercicio "${exercise.name}" recalculado exitosamente`);
+        const oldExerciseName = workout.structured_data.exercises[exerciseIndex]?.name?.trim();
+        const newExerciseName = exercise.name.trim();
+        
+        // Si el nombre cambió, recalcular ambos records
+        if (oldExerciseName && oldExerciseName !== newExerciseName) {
+          console.log(`📊 El nombre del ejercicio cambió de "${oldExerciseName}" a "${newExerciseName}", recalculando ambos records...`);
+          const { recalculateExerciseRecord } = await import('../services/recordsService');
+          
+          // Recalcular el record del nombre antiguo (puede que ya no exista en workouts, pero mantener datos históricos)
+          await recalculateExerciseRecord(userId, oldExerciseName, catalog);
+          
+          // Recalcular el record del nombre nuevo
+          await recalculateExerciseRecord(userId, newExerciseName, catalog);
+          
+          console.log(`✅ Records recalculados para ambos nombres`);
+        } else {
+          // El nombre no cambió, solo recalcular el record del ejercicio
+          console.log(`📊 Recalculando record del ejercicio "${exercise.name}" después de editar...`);
+          const { recalculateExerciseRecord } = await import('../services/recordsService');
+          await recalculateExerciseRecord(userId, newExerciseName, catalog);
+          console.log(`✅ Record del ejercicio "${exercise.name}" recalculado exitosamente`);
+        }
       } catch (error) {
         console.error(`❌ Error recalculating record for exercise "${exercise.name}":`, error);
         // No lanzar el error para no bloquear la actualización del ejercicio

@@ -996,19 +996,27 @@ export const recalculateExerciseRecord = async (
   const exerciseNameExact = exerciseName.trim();
   const exerciseId = exerciseNameExact; // Usar nombre exacto como ID
   
-  // Filtrar solo los workouts que contienen este ejercicio
-  const relevantWorkouts = allWorkouts.filter(workout => 
-    workout.structured_data?.exercises?.some(ex => ex.name?.trim() === exerciseNameExact)
-  );
+  // CRÍTICO: Buscar records existentes que puedan corresponder a este ejercicio
+  // usando diferentes variaciones del nombre (normalización)
+  const normalizedSearchName = exerciseNameExact.toLowerCase().replace(/\s+/g, ' ').trim();
   
+  // Filtrar workouts que contienen este ejercicio (búsqueda más flexible)
+  const relevantWorkouts = allWorkouts.filter(workout => {
+    if (!workout.structured_data?.exercises) return false;
+    return workout.structured_data.exercises.some(ex => {
+      const exName = ex.name?.trim() || '';
+      const normalizedExName = exName.toLowerCase().replace(/\s+/g, ' ').trim();
+      // Comparación exacta o normalizada (sin diferenciar mayúsculas/minúsculas ni espacios múltiples)
+      return exName === exerciseNameExact || normalizedExName === normalizedSearchName;
+    });
+  });
+  
+  // CRÍTICO: Si no hay workouts con este ejercicio, NO eliminar el record
+  // El record puede tener datos históricos válidos que deben preservarse
+  // En su lugar, simplemente no hacer nada (el record se mantiene con sus datos actuales)
   if (relevantWorkouts.length === 0) {
-    console.log(`  ⚠️ No se encontraron workouts con el ejercicio "${exerciseName}", eliminando record si existe`);
-    // Si no hay workouts con este ejercicio, eliminar el record
-    await supabase
-      .from('user_records')
-      .delete()
-      .eq('user_id', userId)
-      .eq('exercise_id', exerciseId);
+    console.log(`  ⚠️ No se encontraron workouts con el ejercicio "${exerciseName}", manteniendo record existente`);
+    // NO eliminar el record - puede tener datos históricos válidos
     return;
   }
   
@@ -1047,7 +1055,10 @@ export const recalculateExerciseRecord = async (
     const workoutId = workout.id;
     
     for (const exercise of workout.structured_data.exercises) {
-      if (exercise.name?.trim() !== exerciseNameExact) continue;
+      const exName = exercise.name?.trim() || '';
+      const normalizedExName = exName.toLowerCase().replace(/\s+/g, ' ').trim();
+      // Comparación más flexible: exacta o normalizada
+      if (exName !== exerciseNameExact && normalizedExName !== normalizedSearchName) continue;
       
       const isUnilateral = exercise.unilateral || false;
       
@@ -1067,13 +1078,11 @@ export const recalculateExerciseRecord = async (
     }
   }
   
+  // CRÍTICO: Si no hay sets válidos, NO eliminar el record
+  // Puede tener datos históricos válidos de otros workouts
+  // En su lugar, simplemente salir sin hacer cambios
   if (sets.length === 0) {
-    console.log(`  ⚠️ El ejercicio "${exerciseName}" no tiene sets válidos, eliminando record si existe`);
-    await supabase
-      .from('user_records')
-      .delete()
-      .eq('user_id', userId)
-      .eq('exercise_id', exerciseId);
+    console.log(`  ⚠️ El ejercicio "${exerciseName}" no tiene sets válidos en los workouts encontrados, manteniendo record existente`);
     return;
   }
   

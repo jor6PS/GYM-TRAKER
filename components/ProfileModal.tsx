@@ -21,6 +21,7 @@ import { User as UserType, Workout } from '../types';
 import { uploadAvatar, updateUserProfile, updateUserPassword } from '../services/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
 import { usePWAInstall } from '../hooks/usePWAInstall';
+import { useScrollLock } from '../hooks/useScrollLock';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -50,6 +51,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  useScrollLock(isOpen);
   const apiKeyInitialized = useRef(false);
   const valuesInitialized = useRef(false);
   const lastUserId = useRef<string | null>(null);

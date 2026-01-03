@@ -7,6 +7,7 @@ import { useExercises } from '../contexts/ExerciseContext';
 import { format } from 'date-fns';
 import { getCanonicalId, normalizeText, getExerciseIcon } from '../utils';
 import { EditExerciseModal } from './EditExerciseModal';
+import { useScrollLock } from '../hooks/useScrollLock';
 
 interface UnifiedEntryModalProps {
   isOpen: boolean;
@@ -28,6 +29,8 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
   const [sessionExercises, setSessionExercises] = useState<Exercise[]>([]);
   const { t } = useLanguage();
   const { catalog } = useExercises();
+  
+  useScrollLock(isOpen);
 
   const [libSearch, setLibSearch] = useState('');
   const [selectedLibExercise, setSelectedLibExercise] = useState<string | null>(null);
@@ -37,7 +40,6 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
   const [isUnilateral, setIsUnilateral] = useState(false);
   const [editingItem, setEditingItem] = useState<{ index: number; data: Exercise } | null>(null);
 
-  useEffect(() => { if (isOpen) document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = ''; }; }, [isOpen]);
 
   const filteredLibrary = useMemo(() => {
       const term = normalizeText(libSearch);

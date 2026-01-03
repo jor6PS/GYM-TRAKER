@@ -4,6 +4,7 @@ import { X, Search, UserPlus, Check, XCircle, Users, Loader2, Palette, CheckCirc
 import { searchUsers, sendFriendRequest, getFriendships, respondToRequest } from '../services/supabase';
 import { Friend, User } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useScrollLock } from '../hooks/useScrollLock';
 
 interface SocialModalProps {
   isOpen: boolean;
@@ -24,22 +25,13 @@ export const SocialModal: React.FC<SocialModalProps> = ({ isOpen, onClose, curre
   const [requestStatus, setRequestStatus] = useState<string | null>(null);
   
   const { t } = useLanguage();
+  
+  useScrollLock(isOpen);
 
   useEffect(() => {
     if (isOpen) {
         fetchFriends();
     }
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
   }, [isOpen]);
 
   const fetchFriends = async () => {

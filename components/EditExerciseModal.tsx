@@ -5,6 +5,7 @@ import { Exercise, Set, MetricType } from '../types';
 import { getCanonicalId } from '../utils';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useExercises } from '../contexts/ExerciseContext';
+import { useScrollLock } from '../hooks/useScrollLock';
 
 interface EditExerciseModalProps {
   isOpen: boolean;
@@ -25,6 +26,8 @@ export const EditExerciseModal: React.FC<EditExerciseModalProps> = ({ isOpen, on
   });
   const [isUnilateral, setIsUnilateral] = useState(false);
   const [deleteSetIndex, setDeleteSetIndex] = useState<number | null>(null);
+  
+  useScrollLock(isOpen);
 
   const exerciseType: MetricType = useMemo(() => {
       if (!exercise) return 'strength';
@@ -39,17 +42,6 @@ export const EditExerciseModal: React.FC<EditExerciseModalProps> = ({ isOpen, on
       setIsUnilateral(exercise.unilateral || false);
     }
   }, [exercise, isOpen]);
-
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [isOpen]);
 
   if (!isOpen || !exercise) return null;
 

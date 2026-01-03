@@ -5,6 +5,7 @@ import { WorkoutPlan, Exercise } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useExercises } from '../contexts/ExerciseContext';
 import { normalizeText, getCanonicalId } from '../utils';
+import { useScrollLock } from '../hooks/useScrollLock';
 
 interface CreatePlanModalProps {
   isOpen: boolean;
@@ -25,6 +26,8 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
   const [newExSets, setNewExSets] = useState(3);
   const [newExReps, setNewExReps] = useState(10);
   const [newExWeight, setNewExWeight] = useState(0);
+  
+  useScrollLock(isOpen);
 
   useEffect(() => {
     if (isOpen) {
@@ -41,17 +44,6 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
       setNewExWeight(0);
     }
   }, [isOpen, initialPlan]);
-
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [isOpen]);
 
   const filteredExercises = useMemo(() => {
     const term = normalizeText(searchTerm);

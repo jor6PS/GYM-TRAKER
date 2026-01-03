@@ -9,6 +9,7 @@ import { useExercises } from '../contexts/ExerciseContext';
 import { getUserRecords, getUserTotalVolume, UserRecord } from '../services/recordsService';
 import { supabase } from '../services/supabase';
 import { isCalisthenic, calculateSetVolume } from '../services/workoutProcessor/helpers';
+import { useScrollLock } from '../hooks/useScrollLock';
 import {
   XAxis,
   YAxis,
@@ -82,6 +83,8 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
   const [error, setError] = useState<string | null>(null);
   const [bestNearMaxWorkout, setBestNearMaxWorkout] = useState<Workout | null>(null);
   const [bestNearMaxExerciseName, setBestNearMaxExerciseName] = useState<string>('');
+  
+  useScrollLock(isOpen);
   const { t } = useLanguage();
   const { catalog } = useExercises();
 
