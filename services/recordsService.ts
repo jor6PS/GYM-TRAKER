@@ -958,3 +958,312 @@ export const recalculateUserRecords = async (
 
   console.log(`✅ Recalculación mejorada completada para user_id: ${userId}`);
 };
+
+/**
+ * Recalcula SOLO el record de un ejercicio específico
+ * Útil cuando se edita un ejercicio para actualizar solo su record sin afectar otros
+ * 
+ * @param userId ID del usuario
+ * @param exerciseName Nombre exacto del ejercicio a recalcular
+ * @param workouts Todos los workouts del usuario (opcional, si no se proporciona se obtienen de BD)
+ * @param catalog Catálogo de ejercicios
+ */
+export const recalculateExerciseRecord = async (
+  userId: string,
+  exerciseName: string,
+  catalog: ExerciseDef[],
+  workouts?: Workout[]
+): Promise<void> => {
+  console.log(`🔄 Recalculando record del ejercicio "${exerciseName}" para user_id: ${userId}`);
+  
+  // Obtener workouts si no se proporcionaron
+  let allWorkouts = workouts;
+  if (!allWorkouts) {
+    const { data: workoutsData, error: fetchError } = await supabase
+      .from('workouts')
+      .select('*')
+      .eq('user_id', userId)
+      .order('date', { ascending: true });
+    
+    if (fetchError) {
+      console.error(`Error obteniendo workouts para recalcular ejercicio ${exerciseName}:`, fetchError);
+      throw new Error(`Error obteniendo workouts: ${fetchError.message}`);
+    }
+    
+    allWorkouts = (workoutsData || []) as Workout[];
+  }
+  
+  const exerciseNameExact = exerciseName.trim();
+  const exerciseId = exerciseNameExact; // Usar nombre exacto como ID
+  
+  // Filtrar solo los workouts que contienen este ejercicio
+  const relevantWorkouts = allWorkouts.filter(workout => 
+    workout.structured_data?.exercises?.some(ex => ex.name?.trim() === exerciseNameExact)
+  );
+  
+  if (relevantWorkouts.length === 0) {
+    console.log(`  ⚠️ No se encontraron workouts con el ejercicio "${exerciseName}", eliminando record si existe`);
+    // Si no hay workouts con este ejercicio, eliminar el record
+    await supabase
+      .from('user_records')
+      .delete()
+      .eq('user_id', userId)
+      .eq('exercise_id', exerciseId);
+    return;
+  }
+  
+  console.log(`  📋 Encontrados ${relevantWorkouts.length} workouts con el ejercicio "${exerciseName}"`);
+  
+  // Obtener metadatos del ejercicio
+  const canonicalId = getCanonicalId(exerciseName, catalog);
+  const exerciseDef = catalog.find(e => e.id === canonicalId);
+  const exerciseType = exerciseDef?.type || 'strength';
+  
+  if (exerciseType !== 'strength') {
+    console.log(`  ⏭️ Saltando ejercicio no-strength: ${exerciseName}`);
+    return;
+  }
+  
+  const category = exerciseDef?.category || 'General';
+  const isCalis = isCalisthenic(canonicalId);
+  const isBodyweight = isCalis;
+  
+  // Recopilar todos los sets de este ejercicio de todos los workouts relevantes
+  const sets: Array<{
+    workoutId: string;
+    workoutDate: string;
+    userWeight: number;
+    weight: number;
+    reps: number;
+    unit: string;
+    isUnilateral: boolean;
+  }> = [];
+  
+  for (const workout of relevantWorkouts) {
+    if (!workout.structured_data?.exercises) continue;
+    
+    const userWeight = workout.user_weight || 80;
+    const workoutDate = workout.date;
+    const workoutId = workout.id;
+    
+    for (const exercise of workout.structured_data.exercises) {
+      if (exercise.name?.trim() !== exerciseNameExact) continue;
+      
+      const isUnilateral = exercise.unilateral || false;
+      
+      for (const set of exercise.sets || []) {
+        if ((set.reps || 0) === 0) continue;
+        
+        sets.push({
+          workoutId,
+          workoutDate,
+          userWeight,
+          weight: set.weight || 0,
+          reps: set.reps || 0,
+          unit: set.unit || 'kg',
+          isUnilateral
+        });
+      }
+    }
+  }
+  
+  if (sets.length === 0) {
+    console.log(`  ⚠️ El ejercicio "${exerciseName}" no tiene sets válidos, eliminando record si existe`);
+    await supabase
+      .from('user_records')
+      .delete()
+      .eq('user_id', userId)
+      .eq('exercise_id', exerciseId);
+    return;
+  }
+  
+  // Calcular todos los máximos y volumen total (similar a recalculateUserRecords pero solo para este ejercicio)
+  let totalVolume = 0;
+  let bestSingleSet = { weight: 0, reps: 0, volume: 0, date: '', workoutId: '' };
+  let best1RM = 0;
+  let best1RMDate = '';
+  let best1RMWorkoutId = '';
+  let maxWeight = 0;
+  let maxWeightReps = 0;
+  let maxWeightDate = '';
+  let maxWeightWorkoutId = '';
+  let maxReps = 0;
+  let maxRepsDate = '';
+  let maxRepsWorkoutId = '';
+  const dailyMaxMap = new Map<string, { max_weight_kg: number; max_reps: number }>();
+  
+  for (const set of sets) {
+    const { weight, reps, unit, isUnilateral, userWeight, workoutDate, workoutId } = set;
+    
+    const realWeight = calculateRealWeight(weight, isUnilateral, unit);
+    const totalWeight = isBodyweight ? realWeight + userWeight : realWeight;
+    
+    const setVolume = calculateSetVolume(weight, reps, isUnilateral, isBodyweight, userWeight, unit);
+    totalVolume += setVolume;
+    
+    if (setVolume > bestSingleSet.volume) {
+      bestSingleSet = {
+        weight: totalWeight,
+        reps: reps,
+        volume: setVolume,
+        date: workoutDate,
+        workoutId
+      };
+    }
+    
+    const estimated1RM = calculate1RM(totalWeight, reps);
+    if (estimated1RM > best1RM) {
+      best1RM = estimated1RM;
+      best1RMDate = workoutDate;
+      best1RMWorkoutId = workoutId;
+    }
+    
+    if (reps === 1) {
+      if (totalWeight > maxWeight) {
+        maxWeight = totalWeight;
+        maxWeightReps = 1;
+        maxWeightDate = workoutDate;
+        maxWeightWorkoutId = workoutId;
+      }
+    } else {
+      if (maxWeightReps !== 1 && totalWeight > maxWeight) {
+        maxWeight = totalWeight;
+        maxWeightReps = reps;
+        maxWeightDate = workoutDate;
+        maxWeightWorkoutId = workoutId;
+      }
+    }
+    
+    if (isBodyweight && weight === 0) {
+      if (reps > maxReps) {
+        maxReps = reps;
+        maxRepsDate = workoutDate;
+        maxRepsWorkoutId = workoutId;
+        if (maxWeightReps !== 1) {
+          maxWeightReps = reps;
+        }
+      }
+    } else if (!isBodyweight) {
+      if (reps > maxReps) {
+        maxReps = reps;
+        maxRepsDate = workoutDate;
+        maxRepsWorkoutId = workoutId;
+      }
+    }
+    
+    const workoutDateOnly = workoutDate.split('T')[0];
+    const existingDayMax = dailyMaxMap.get(workoutDateOnly) || { max_weight_kg: 0, max_reps: 0 };
+    if (totalWeight > existingDayMax.max_weight_kg ||
+        (totalWeight === existingDayMax.max_weight_kg && reps > existingDayMax.max_reps)) {
+      dailyMaxMap.set(workoutDateOnly, { max_weight_kg: totalWeight, max_reps: reps });
+    }
+  }
+  
+  // Calcular mejor serie cerca del máximo
+  let bestNearMax: { weight: number; reps: number; date: string; workoutId: string } | null = null;
+  const hasOnlyBodyweight = isBodyweight && sets.every(s => s.weight === 0);
+  
+  if (hasOnlyBodyweight && maxReps > 0) {
+    let bestRepScore = -1;
+    for (const set of sets) {
+      const { weight, reps, workoutDate, workoutId, userWeight, isUnilateral, unit } = set;
+      if (weight === 0 && reps >= 2 && reps <= maxReps && reps > 0) {
+        const percentageOfMaxReps = maxReps > 0 ? reps / maxReps : 0;
+        const score = percentageOfMaxReps * percentageOfMaxReps;
+        if (score > bestRepScore || (score === bestRepScore && reps > (bestNearMax?.reps || 0))) {
+          bestRepScore = score;
+          const realWeight = calculateRealWeight(weight, isUnilateral, unit);
+          const totalWeight = isBodyweight ? realWeight + userWeight : realWeight;
+          bestNearMax = { weight: totalWeight, reps: reps, date: workoutDate, workoutId };
+        }
+      }
+    }
+  } else if (maxWeight > 0) {
+    let bestScore = -1;
+    const max1RM = maxWeight > 0 ? calculate1RM(maxWeight, maxWeightReps || 1) : 0;
+    
+    for (const set of sets) {
+      const { weight, reps, unit, isUnilateral, userWeight, workoutDate, workoutId } = set;
+      if (reps >= 2 && reps <= 10 && reps > 0 && max1RM > 0) {
+        const realWeight = calculateRealWeight(weight, isUnilateral, unit);
+        const totalWeight = isBodyweight ? realWeight + userWeight : realWeight;
+        const set1RM = calculate1RM(totalWeight, reps);
+        const score = set1RM / max1RM;
+        if (score > bestScore || (Math.abs(score - bestScore) < 0.001 && totalWeight > (bestNearMax?.weight || 0))) {
+          bestScore = score;
+          bestNearMax = { weight: totalWeight, reps: reps, date: workoutDate, workoutId };
+        }
+      }
+    }
+  }
+  
+  const dailyMaxArray = Array.from(dailyMaxMap.entries())
+    .map(([date, data]) => ({ date, ...data }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  
+  // Verificar si el record ya existe
+  const { data: existingRecord } = await supabase
+    .from('user_records')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('exercise_id', exerciseId)
+    .maybeSingle();
+  
+  const record: Partial<UserRecord> = {
+    user_id: userId,
+    exercise_id: exerciseId,
+    exercise_name: exerciseNameExact,
+    max_weight_kg: maxWeight,
+    max_weight_reps: maxWeightReps,
+    max_weight_date: maxWeightDate,
+    max_weight_workout_id: maxWeightWorkoutId,
+    max_1rm_kg: best1RM,
+    max_1rm_date: best1RMDate,
+    max_1rm_workout_id: best1RMWorkoutId,
+    total_volume_kg: totalVolume,
+    max_reps: maxReps,
+    max_reps_date: maxRepsDate,
+    max_reps_workout_id: maxRepsWorkoutId,
+    is_bodyweight: isBodyweight,
+    category,
+    exercise_type: exerciseType,
+    unit: 'kg',
+    best_single_set_weight_kg: bestSingleSet.weight > 0 ? bestSingleSet.weight : undefined,
+    best_single_set_reps: bestSingleSet.reps > 0 ? bestSingleSet.reps : undefined,
+    best_single_set_volume_kg: bestSingleSet.volume > 0 ? bestSingleSet.volume : undefined,
+    best_single_set_date: bestSingleSet.date || undefined,
+    best_single_set_workout_id: bestSingleSet.workoutId || undefined,
+    best_near_max_weight_kg: bestNearMax?.weight,
+    best_near_max_reps: bestNearMax?.reps,
+    best_near_max_date: bestNearMax?.date,
+    best_near_max_workout_id: bestNearMax?.workoutId,
+    daily_max: dailyMaxArray
+  };
+  
+  if (existingRecord) {
+    // Actualizar record existente
+    const { error: updateError } = await supabase
+      .from('user_records')
+      .update(record)
+      .eq('id', existingRecord.id);
+    
+    if (updateError) {
+      console.error(`❌ Error actualizando record para ${exerciseName}:`, updateError);
+      throw new Error(`Error actualizando record: ${updateError.message}`);
+    } else {
+      console.log(`✅ Record actualizado para ${exerciseName} - volumen: ${totalVolume}kg, máx: ${maxWeight}kg`);
+    }
+  } else {
+    // Insertar nuevo record
+    const { error: insertError } = await supabase
+      .from('user_records')
+      .insert(record);
+    
+    if (insertError) {
+      console.error(`❌ Error insertando record para ${exerciseName}:`, insertError);
+      throw new Error(`Error insertando record: ${insertError.message}`);
+    } else {
+      console.log(`✅ Record insertado para ${exerciseName} - volumen: ${totalVolume}kg, máx: ${maxWeight}kg`);
+    }
+  }
+};
