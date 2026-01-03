@@ -15,6 +15,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onViewAsUse
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isRecalculating, setIsRecalculating] = useState(false);
+  const [isCleaning, setIsCleaning] = useState(false);
   const [recalculationProgress, setRecalculationProgress] = useState({ current: 0, total: 0 });
   const { catalog } = useExercises();
 
@@ -138,6 +139,105 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onViewAsUse
     }
   };
 
+  const handleCleanEmptyUUIDs = async () => {
+    if (!confirm('¿Estás seguro de que quieres limpiar los campos UUID vacíos en todos los records? Esto convertirá strings vacíos a null.')) {
+      return;
+    }
+
+    setIsCleaning(true);
+
+    try {
+      console.log('🧹 Iniciando limpieza de UUIDs vacíos...');
+
+      // Obtener todos los records
+      const { data: allRecords, error: fetchError } = await supabase
+        .from('user_records')
+        .select('*');
+
+      if (fetchError) {
+        alert(`Error obteniendo records: ${fetchError.message}`);
+        setIsCleaning(false);
+        return;
+      }
+
+      if (!allRecords || allRecords.length === 0) {
+        alert('No hay records para limpiar.');
+        setIsCleaning(false);
+        return;
+      }
+
+      console.log(`📋 Encontrados ${allRecords.length} records para revisar`);
+
+      let cleaned = 0;
+      let errors = 0;
+
+      // Función helper para sanitizar UUID
+      const sanitizeUUID = (value: string | undefined | null): string | undefined | null => {
+        if (!value || value.trim() === '') return null;
+        return value;
+      };
+
+      // Procesar cada record
+      for (const record of allRecords) {
+        try {
+          // Verificar si tiene campos UUID vacíos que necesiten limpieza
+          const needsCleaning = 
+            (record.max_weight_workout_id === '' || record.max_weight_workout_id === '""') ||
+            (record.max_1rm_workout_id === '' || record.max_1rm_workout_id === '""') ||
+            (record.max_reps_workout_id === '' || record.max_reps_workout_id === '""') ||
+            (record.best_single_set_workout_id === '' || record.best_single_set_workout_id === '""') ||
+            (record.best_near_max_workout_id === '' || record.best_near_max_workout_id === '""');
+
+          if (needsCleaning) {
+            const updateData: any = {};
+            
+            // Solo actualizar los campos que necesitan limpieza
+            if (record.max_weight_workout_id === '' || record.max_weight_workout_id === '""') {
+              updateData.max_weight_workout_id = null;
+            }
+            if (record.max_1rm_workout_id === '' || record.max_1rm_workout_id === '""') {
+              updateData.max_1rm_workout_id = null;
+            }
+            if (record.max_reps_workout_id === '' || record.max_reps_workout_id === '""') {
+              updateData.max_reps_workout_id = null;
+            }
+            if (record.best_single_set_workout_id === '' || record.best_single_set_workout_id === '""') {
+              updateData.best_single_set_workout_id = null;
+            }
+            if (record.best_near_max_workout_id === '' || record.best_near_max_workout_id === '""') {
+              updateData.best_near_max_workout_id = null;
+            }
+
+            const { error: updateError } = await supabase
+              .from('user_records')
+              .update(updateData)
+              .eq('id', record.id);
+
+            if (updateError) {
+              console.error(`❌ Error limpiando record ${record.id}:`, updateError);
+              errors++;
+            } else {
+              cleaned++;
+              console.log(`✅ Record ${record.id} limpiado (${record.exercise_name})`);
+            }
+          }
+        } catch (error) {
+          errors++;
+          console.error(`Error procesando record ${record.id}:`, error);
+        }
+      }
+
+      alert(`✅ Limpieza completada!\n\nRecords limpiados: ${cleaned}\nErrores: ${errors}\nTotal revisados: ${allRecords.length}`);
+      console.log(`✅ Limpieza completada: ${cleaned} records limpiados, ${errors} errores`);
+
+    } catch (error: any) {
+      console.error('Error fatal en limpieza:', error);
+      alert(`Error: ${error.message}`);
+    } finally {
+      setIsCleaning(false);
+    }
+  };
+
   if (currentUser?.role !== 'admin') return null;
 
   return (
@@ -155,11 +255,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, onViewAsUse
       </div>
 
       <div className="p-4">
-        {/* Botón de Recalcular Records */}
-        <div className="mb-4">
+        {/* Botones de Administración */}
+        <div className="mb-4 space-y-2">
+          <button
+            onClick={handleCleanEmptyUUIDs}
+            disabled={isCleaning || isRecalculating}
+            className="w-full bg-yellow-600 hover:bg-yellow-700 disabled:bg-zinc-800 disabled:opacity-50 text-white font-black py-3 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg shadow-yellow-600/20 disabled:cursor-not-allowed"
+          >
+            {isCleaning ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Limpiando UUIDs vacíos...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-5 h-5" />
+                Limpiar UUIDs Vacíos
+              </>
+            )}
+          </button>
+
           <button
             onClick={handleRecalculateAllRecords}
-            disabled={isRecalculating}
+            disabled={isRecalculating || isCleaning}
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-800 disabled:opacity-50 text-white font-black py-3 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg shadow-blue-600/20 disabled:cursor-not-allowed"
           >
             {isRecalculating ? (

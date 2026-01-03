@@ -205,7 +205,16 @@ export const updateUserRecords = async (
     // Usar canonicalId para determinar si es calisténico (ya que se basa en el ID del catálogo)
     const isCalis = isCalisthenic(canonicalId);
     const isUnilateral = exercise.unilateral || false;
-    const isBodyweightExercise = isCalis;
+    
+    // Obtener los sets del ejercicio ANTES de usarlos para determinar si es bodyweight
+    const exerciseSets = exercise.sets || [];
+    
+    // CRÍTICO: Si el ejercicio tiene sets sin weight o con weight === 0, 
+    // y la categoría es Core/General, tratarlo como ejercicio de peso corporal
+    // Esto maneja casos como "Rueda Abdominal" que no están en la lista de calisténicos
+    const hasOnlyZeroWeightSets = exerciseSets.length > 0 && exerciseSets.every(s => !s.weight || s.weight === 0);
+    const isCoreOrGeneral = category === 'Core' || category === 'General';
+    const isBodyweightExercise = isCalis || (hasOnlyZeroWeightSets && isCoreOrGeneral && exerciseType === 'strength');
 
     // Obtener o crear el record existente
     const { data: existingRecord } = await supabase
@@ -255,7 +264,7 @@ export const updateUserRecords = async (
     const dailyMaxMap = new Map<string, { max_weight_kg: number; max_reps: number }>();
 
     // Procesar cada set del ejercicio
-    const exerciseSets = exercise.sets || [];
+    // exerciseSets ya está definido arriba
     if (exerciseSets.length === 0) {
       console.log(`  ⚠️ ${exerciseNameExact} no tiene sets - saltando ejercicio`);
       continue; // Saltar este ejercicio si no tiene sets
@@ -342,19 +351,19 @@ export const updateUserRecords = async (
 
     // Actualizar record con los valores calculados de este workout
     // Comparar con el record existente para mantener los mejores valores
-        const currentMaxWeight = record.max_weight_kg || 0;
+    const currentMaxWeight = record.max_weight_kg || 0;
     if (maxWeight > currentMaxWeight) {
       record.max_weight_kg = maxWeight;
       record.max_weight_reps = maxWeightReps;
-          record.max_weight_date = workoutDate;
-          record.max_weight_workout_id = workoutId;
-        }
+      record.max_weight_date = workoutDate;
+      record.max_weight_workout_id = workoutId;
+    }
 
     const currentMax1RM = record.max_1rm_kg || 0;
     if (best1RM > currentMax1RM) {
       record.max_1rm_kg = best1RM;
-          record.max_1rm_date = workoutDate;
-          record.max_1rm_workout_id = workoutId;
+      record.max_1rm_date = workoutDate;
+      record.max_1rm_workout_id = workoutId;
     }
 
     const currentMaxReps = record.max_reps || 0;
@@ -362,6 +371,29 @@ export const updateUserRecords = async (
       record.max_reps = maxReps;
       record.max_reps_date = workoutDate;
       record.max_reps_workout_id = workoutId;
+    }
+    
+    // CRÍTICO: Para ejercicios de peso corporal sin peso adicional, 
+    // asegurar que maxWeight sea al menos userWeight si hay repeticiones
+    // Esto garantiza que el record tenga datos válidos para guardar
+    if (isBodyweightExercise && maxReps > 0 && maxWeight === 0) {
+      // Si es ejercicio de peso corporal y no hay peso máximo registrado,
+      // establecer el peso máximo como userWeight (peso corporal)
+      record.max_weight_kg = userWeight;
+      record.max_weight_reps = maxReps;
+      record.max_weight_date = workoutDate;
+      record.max_weight_workout_id = workoutId;
+      // Actualizar maxWeight para que se use en las validaciones siguientes
+      maxWeight = userWeight;
+    }
+    
+    // CRÍTICO: Para ejercicios de peso corporal, asegurar que maxWeight sea al menos userWeight
+    // si hay repeticiones registradas (para que el record tenga datos válidos)
+    if (isBodyweightExercise && maxReps > 0 && (record.max_weight_kg || 0) === 0) {
+      record.max_weight_kg = userWeight;
+      record.max_weight_reps = maxReps;
+      record.max_weight_date = workoutDate;
+      record.max_weight_workout_id = workoutId;
     }
 
     // Actualizar mejor serie individual (si hay volumen)
@@ -510,10 +542,12 @@ export const updateUserRecords = async (
     record.daily_max = existingDailyMax.sort((a, b) => b.date.localeCompare(a.date));
 
     // Determinar si hay datos válidos (volumen > 0 o algún máximo > 0)
+    // CRÍTICO: Para ejercicios de peso corporal, maxReps > 0 es suficiente para considerar datos válidos
     const hasData = (record.total_volume_kg || 0) > 0 || 
                    (record.max_weight_kg || 0) > 0 || 
                    (record.max_reps || 0) > 0 ||
-                   (record.max_1rm_kg || 0) > 0;
+                   (record.max_1rm_kg || 0) > 0 ||
+                   (isBodyweightExercise && maxReps > 0); // Ejercicios de peso corporal con reps > 0 tienen datos válidos
     
     // Si no hay datos válidos y no existe el record, no guardar
     if (!hasData && !existingRecord) {
@@ -521,30 +555,36 @@ export const updateUserRecords = async (
       continue; // Saltar este ejercicio completamente
     }
     
+    // Función helper para convertir strings vacíos a null en campos UUID
+    const sanitizeUUID = (value: string | undefined | null): string | undefined | null => {
+      if (!value || value.trim() === '') return null;
+      return value;
+    };
+    
     // Guardar o actualizar el record
     if (existingRecord) {
       // Construir objeto de actualización explícitamente para asegurar que todos los campos se incluyan
       const updateData: Partial<UserRecord> = {
         max_weight_kg: record.max_weight_kg ?? 0,
         max_weight_reps: record.max_weight_reps ?? 0,
-        max_weight_date: record.max_weight_date,
-        max_weight_workout_id: record.max_weight_workout_id,
+        max_weight_date: record.max_weight_date || null,
+        max_weight_workout_id: sanitizeUUID(record.max_weight_workout_id),
         max_1rm_kg: record.max_1rm_kg ?? 0,
-        max_1rm_date: record.max_1rm_date,
-        max_1rm_workout_id: record.max_1rm_workout_id,
+        max_1rm_date: record.max_1rm_date || null,
+        max_1rm_workout_id: sanitizeUUID(record.max_1rm_workout_id),
         total_volume_kg: record.total_volume_kg ?? 0,
         max_reps: record.max_reps ?? 0,
-        max_reps_date: record.max_reps_date,
-        max_reps_workout_id: record.max_reps_workout_id,
+        max_reps_date: record.max_reps_date || null,
+        max_reps_workout_id: sanitizeUUID(record.max_reps_workout_id),
         best_single_set_weight_kg: record.best_single_set_weight_kg,
         best_single_set_reps: record.best_single_set_reps,
         best_single_set_volume_kg: record.best_single_set_volume_kg,
-        best_single_set_date: record.best_single_set_date,
-        best_single_set_workout_id: record.best_single_set_workout_id,
+        best_single_set_date: record.best_single_set_date || null,
+        best_single_set_workout_id: sanitizeUUID(record.best_single_set_workout_id),
         best_near_max_weight_kg: record.best_near_max_weight_kg,
         best_near_max_reps: record.best_near_max_reps,
-        best_near_max_date: record.best_near_max_date,
-        best_near_max_workout_id: record.best_near_max_workout_id,
+        best_near_max_date: record.best_near_max_date || null,
+        best_near_max_workout_id: sanitizeUUID(record.best_near_max_workout_id),
         daily_max: record.daily_max || []
       };
       
@@ -564,6 +604,12 @@ export const updateUserRecords = async (
         console.log(`✅ Record actualizado: ${exerciseNameExact} (${exerciseId}) - user_id: ${record.user_id}, volumen acumulado: ${workoutVolume}kg, total: ${updateData.total_volume_kg}kg`);
       }
     } else {
+      // Función helper para convertir strings vacíos a null en campos UUID
+      const sanitizeUUID = (value: string | undefined | null): string | undefined | null => {
+        if (!value || value.trim() === '') return null;
+        return value;
+      };
+      
       // Asegurar que todos los campos requeridos estén presentes
       const insertData: Partial<UserRecord> = {
         user_id: record.user_id!,
@@ -571,15 +617,15 @@ export const updateUserRecords = async (
         exercise_name: record.exercise_name!,
         max_weight_kg: record.max_weight_kg ?? 0,
         max_weight_reps: record.max_weight_reps ?? 0,
-        max_weight_date: record.max_weight_date,
-        max_weight_workout_id: record.max_weight_workout_id,
+        max_weight_date: record.max_weight_date || null,
+        max_weight_workout_id: sanitizeUUID(record.max_weight_workout_id),
         max_1rm_kg: record.max_1rm_kg ?? 0,
-        max_1rm_date: record.max_1rm_date,
-        max_1rm_workout_id: record.max_1rm_workout_id,
+        max_1rm_date: record.max_1rm_date || null,
+        max_1rm_workout_id: sanitizeUUID(record.max_1rm_workout_id),
         total_volume_kg: record.total_volume_kg ?? 0,
         max_reps: record.max_reps ?? 0,
-        max_reps_date: record.max_reps_date,
-        max_reps_workout_id: record.max_reps_workout_id,
+        max_reps_date: record.max_reps_date || null,
+        max_reps_workout_id: sanitizeUUID(record.max_reps_workout_id),
         is_bodyweight: record.is_bodyweight ?? false,
         category: record.category,
         exercise_type: record.exercise_type,
@@ -587,12 +633,12 @@ export const updateUserRecords = async (
         best_single_set_weight_kg: record.best_single_set_weight_kg,
         best_single_set_reps: record.best_single_set_reps,
         best_single_set_volume_kg: record.best_single_set_volume_kg,
-        best_single_set_date: record.best_single_set_date,
-        best_single_set_workout_id: record.best_single_set_workout_id,
+        best_single_set_date: record.best_single_set_date || null,
+        best_single_set_workout_id: sanitizeUUID(record.best_single_set_workout_id),
         best_near_max_weight_kg: record.best_near_max_weight_kg,
         best_near_max_reps: record.best_near_max_reps,
-        best_near_max_date: record.best_near_max_date,
-        best_near_max_workout_id: record.best_near_max_workout_id,
+        best_near_max_date: record.best_near_max_date || null,
+        best_near_max_workout_id: sanitizeUUID(record.best_near_max_workout_id),
         daily_max: record.daily_max || []
       };
       
@@ -705,6 +751,14 @@ export const recalculateUserRecords = async (
       const category = exerciseDef?.category || exercise.category || 'General';
         const isCalis = isCalisthenic(canonicalId);
         
+        // CRÍTICO: Si el ejercicio tiene sets sin weight o con weight === 0, 
+        // y la categoría es Core/General, tratarlo como ejercicio de peso corporal
+        // Esto maneja casos como "Rueda Abdominal" que no están en la lista de calisténicos
+        const exerciseSets = exercise.sets || [];
+        const hasOnlyZeroWeightSets = exerciseSets.every(s => !s.weight || s.weight === 0);
+        const isCoreOrGeneral = category === 'Core' || category === 'General';
+        const isBodyweight = isCalis || (hasOnlyZeroWeightSets && isCoreOrGeneral && exerciseType === 'strength');
+        
         exerciseMap.set(exerciseId, {
           exerciseName: exerciseNameExact,
           exerciseId,
@@ -713,7 +767,7 @@ export const recalculateUserRecords = async (
           exerciseDef,
           category,
           exerciseType,
-          isBodyweight: isCalis
+          isBodyweight
         });
       }
 
@@ -753,18 +807,19 @@ export const recalculateUserRecords = async (
       console.log(`  📋 Procesando ${exerciseName} con ${sets.length} sets de ${uniqueDays} días diferentes`);
 
       // Calcular todos los máximos y volumen total
+      // CRÍTICO: Inicializar campos UUID como null o undefined, nunca como strings vacíos
       let totalVolume = 0;
       let bestSingleSet = { weight: 0, reps: 0, volume: 0, date: '', workoutId: '' };
       let best1RM = 0;
-      let best1RMDate = '';
-      let best1RMWorkoutId = '';
+      let best1RMDate: string | null = null;
+      let best1RMWorkoutId: string | null = null;
       let maxWeight = 0;
       let maxWeightReps = 0;
-      let maxWeightDate = '';
-      let maxWeightWorkoutId = '';
+      let maxWeightDate: string | null = null;
+      let maxWeightWorkoutId: string | null = null;
       let maxReps = 0;
-      let maxRepsDate = '';
-      let maxRepsWorkoutId = '';
+      let maxRepsDate: string | null = null;
+      let maxRepsWorkoutId: string | null = null;
       const dailyMaxMap = new Map<string, { max_weight_kg: number; max_reps: number }>();
 
       // Procesar todos los sets
@@ -818,13 +873,22 @@ export const recalculateUserRecords = async (
         }
 
         // Actualizar máximo de repeticiones
+        // Para ejercicios de peso corporal sin peso adicional: actualizar max_reps y max_weight_reps juntos
         if (isBodyweight && weight === 0) {
           if (reps > maxReps) {
             maxReps = reps;
             maxRepsDate = workoutDate;
             maxRepsWorkoutId = workoutId;
-            if (maxWeightReps !== 1) {
-              maxWeightReps = reps; // Sincronizar porque el peso es siempre el mismo
+            // Para ejercicios de peso corporal, el peso máximo es siempre userWeight
+            // Sincronizar maxWeightReps con maxReps
+            if (maxWeightReps !== 1 || reps > maxReps) {
+              maxWeightReps = reps;
+              // Actualizar maxWeight si es necesario (para ejercicios de peso corporal, es userWeight)
+              if (maxWeight === 0 || totalWeight > maxWeight) {
+                maxWeight = totalWeight;
+                maxWeightDate = workoutDate;
+                maxWeightWorkoutId = workoutId;
+              }
             }
           }
         } else if (!isBodyweight) {
@@ -908,21 +972,45 @@ export const recalculateUserRecords = async (
         .map(([date, data]) => ({ date, ...data }))
         .sort((a, b) => b.date.localeCompare(a.date));
 
+      // Función helper para convertir strings vacíos a null en campos UUID
+      const sanitizeUUID = (value: string | undefined | null): string | undefined | null => {
+        if (!value || value.trim() === '') return null;
+        return value;
+      };
+      
+      // CRÍTICO: Para ejercicios de peso corporal sin peso adicional, 
+      // asegurar que maxWeight sea al menos el peso corporal si hay repeticiones
+      // Obtener el peso del usuario del primer set (todos los sets tienen el mismo userWeight)
+      const userWeightFromSet = sets.length > 0 ? sets[0].userWeight : 80;
+      let finalMaxWeight = maxWeight;
+      let finalMaxWeightReps = maxWeightReps;
+      let finalMaxWeightDate = maxWeightDate;
+      let finalMaxWeightWorkoutId = maxWeightWorkoutId;
+      
+      if (isBodyweight && maxReps > 0 && maxWeight === 0) {
+        // Si es ejercicio de peso corporal y no hay peso máximo registrado,
+        // establecer el peso máximo como userWeight (peso corporal)
+        finalMaxWeight = userWeightFromSet;
+        finalMaxWeightReps = maxReps;
+        finalMaxWeightDate = maxRepsDate;
+        finalMaxWeightWorkoutId = maxRepsWorkoutId;
+      }
+
     const record: Partial<UserRecord> = {
       user_id: userId,
       exercise_id: exerciseId,
         exercise_name: exerciseName,
-        max_weight_kg: maxWeight,
-        max_weight_reps: maxWeightReps,
-        max_weight_date: maxWeightDate,
-        max_weight_workout_id: maxWeightWorkoutId,
+        max_weight_kg: finalMaxWeight,
+        max_weight_reps: finalMaxWeightReps,
+        max_weight_date: finalMaxWeightDate || null,
+        max_weight_workout_id: sanitizeUUID(finalMaxWeightWorkoutId),
         max_1rm_kg: best1RM,
-        max_1rm_date: best1RMDate,
-        max_1rm_workout_id: best1RMWorkoutId,
+        max_1rm_date: best1RMDate || null,
+        max_1rm_workout_id: sanitizeUUID(best1RMWorkoutId),
         total_volume_kg: totalVolume,
         max_reps: maxReps,
-        max_reps_date: maxRepsDate,
-        max_reps_workout_id: maxRepsWorkoutId,
+        max_reps_date: maxRepsDate || null,
+        max_reps_workout_id: sanitizeUUID(maxRepsWorkoutId),
         is_bodyweight: isBodyweight,
         category,
         exercise_type: exerciseType,
@@ -930,12 +1018,12 @@ export const recalculateUserRecords = async (
         best_single_set_weight_kg: bestSingleSet.weight > 0 ? bestSingleSet.weight : undefined,
         best_single_set_reps: bestSingleSet.reps > 0 ? bestSingleSet.reps : undefined,
         best_single_set_volume_kg: bestSingleSet.volume > 0 ? bestSingleSet.volume : undefined,
-        best_single_set_date: bestSingleSet.date || undefined,
-        best_single_set_workout_id: bestSingleSet.workoutId || undefined,
+        best_single_set_date: bestSingleSet.date || null,
+        best_single_set_workout_id: sanitizeUUID(bestSingleSet.workoutId),
         best_near_max_weight_kg: bestNearMax?.weight,
         best_near_max_reps: bestNearMax?.reps,
-        best_near_max_date: bestNearMax?.date,
-        best_near_max_workout_id: bestNearMax?.workoutId,
+        best_near_max_date: bestNearMax?.date || null,
+        best_near_max_workout_id: sanitizeUUID(bestNearMax?.workoutId),
         daily_max: dailyMaxArray
       };
 
@@ -1011,12 +1099,36 @@ export const recalculateExerciseRecord = async (
     });
   });
   
-  // CRÍTICO: Si no hay workouts con este ejercicio, NO eliminar el record
-  // El record puede tener datos históricos válidos que deben preservarse
-  // En su lugar, simplemente no hacer nada (el record se mantiene con sus datos actuales)
+  // CRÍTICO: Si no hay workouts con este ejercicio, eliminar el record
+  // Ya que no hay datos válidos que mantener
   if (relevantWorkouts.length === 0) {
-    console.log(`  ⚠️ No se encontraron workouts con el ejercicio "${exerciseName}", manteniendo record existente`);
-    // NO eliminar el record - puede tener datos históricos válidos
+    console.log(`  ⚠️ No se encontraron workouts con el ejercicio "${exerciseName}", eliminando record`);
+    
+    // Obtener el record existente para eliminarlo
+    const { data: existingRecord } = await supabase
+      .from('user_records')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('exercise_id', exerciseId)
+      .maybeSingle();
+    
+    if (existingRecord) {
+      const { error: deleteError } = await supabase
+        .from('user_records')
+        .delete()
+        .eq('id', existingRecord.id);
+      
+      if (deleteError) {
+        console.error(`❌ Error eliminando record para ${exerciseName}:`, deleteError);
+        throw new Error(`Error eliminando record: ${deleteError.message}`);
+      } else {
+        console.log(`✅ Record eliminado para "${exerciseName}" (ya no hay workouts con este ejercicio)`);
+      }
+    } else {
+      console.log(`  ℹ️ No existe record para "${exerciseName}", nada que eliminar`);
+    }
+    
+    // No continuar con el recálculo ya que no hay workouts
     return;
   }
   
@@ -1034,7 +1146,6 @@ export const recalculateExerciseRecord = async (
   
   const category = exerciseDef?.category || 'General';
   const isCalis = isCalisthenic(canonicalId);
-  const isBodyweight = isCalis;
   
   // Recopilar todos los sets de este ejercicio de todos los workouts relevantes
   const sets: Array<{
@@ -1078,27 +1189,60 @@ export const recalculateExerciseRecord = async (
     }
   }
   
-  // CRÍTICO: Si no hay sets válidos, NO eliminar el record
-  // Puede tener datos históricos válidos de otros workouts
-  // En su lugar, simplemente salir sin hacer cambios
+  // CRÍTICO: Si el ejercicio tiene sets sin weight o con weight === 0, 
+  // y la categoría es Core/General, tratarlo como ejercicio de peso corporal
+  // Esto maneja casos como "Rueda Abdominal" que no están en la lista de calisténicos
+  const hasOnlyZeroWeightSets = sets.length > 0 && sets.every(s => s.weight === 0);
+  const isCoreOrGeneral = category === 'Core' || category === 'General';
+  const isBodyweight = isCalis || (hasOnlyZeroWeightSets && isCoreOrGeneral && exerciseType === 'strength');
+  
+  // CRÍTICO: Si no hay sets válidos, eliminar el record
+  // Ya que no hay datos válidos que mantener (los workouts existen pero no tienen sets válidos)
   if (sets.length === 0) {
-    console.log(`  ⚠️ El ejercicio "${exerciseName}" no tiene sets válidos en los workouts encontrados, manteniendo record existente`);
+    console.log(`  ⚠️ El ejercicio "${exerciseName}" no tiene sets válidos en los workouts encontrados, eliminando record`);
+    
+    // Verificar si existe el record
+    const { data: existingRecord } = await supabase
+      .from('user_records')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('exercise_id', exerciseId)
+      .maybeSingle();
+    
+    if (existingRecord) {
+      const { error: deleteError } = await supabase
+        .from('user_records')
+        .delete()
+        .eq('id', existingRecord.id);
+      
+      if (deleteError) {
+        console.error(`❌ Error eliminando record para ${exerciseName}:`, deleteError);
+        throw new Error(`Error eliminando record: ${deleteError.message}`);
+      } else {
+        console.log(`✅ Record eliminado para "${exerciseName}" (no tiene sets válidos)`);
+      }
+    } else {
+      console.log(`  ℹ️ No existe record para "${exerciseName}", nada que eliminar`);
+    }
+    
+    // No continuar con el recálculo ya que no hay sets válidos
     return;
   }
   
   // Calcular todos los máximos y volumen total (similar a recalculateUserRecords pero solo para este ejercicio)
+  // CRÍTICO: Inicializar campos UUID como null o undefined, nunca como strings vacíos
   let totalVolume = 0;
   let bestSingleSet = { weight: 0, reps: 0, volume: 0, date: '', workoutId: '' };
   let best1RM = 0;
-  let best1RMDate = '';
-  let best1RMWorkoutId = '';
+  let best1RMDate: string | null = null;
+  let best1RMWorkoutId: string | null = null;
   let maxWeight = 0;
   let maxWeightReps = 0;
-  let maxWeightDate = '';
-  let maxWeightWorkoutId = '';
+  let maxWeightDate: string | null = null;
+  let maxWeightWorkoutId: string | null = null;
   let maxReps = 0;
-  let maxRepsDate = '';
-  let maxRepsWorkoutId = '';
+  let maxRepsDate: string | null = null;
+  let maxRepsWorkoutId: string | null = null;
   const dailyMaxMap = new Map<string, { max_weight_kg: number; max_reps: number }>();
   
   for (const set of sets) {
@@ -1143,13 +1287,23 @@ export const recalculateExerciseRecord = async (
       }
     }
     
+    // Actualizar máximo de repeticiones
+    // Para ejercicios de peso corporal sin peso adicional: actualizar max_reps y max_weight_reps juntos
     if (isBodyweight && weight === 0) {
       if (reps > maxReps) {
         maxReps = reps;
         maxRepsDate = workoutDate;
         maxRepsWorkoutId = workoutId;
-        if (maxWeightReps !== 1) {
+        // Para ejercicios de peso corporal, el peso máximo es siempre userWeight
+        // Sincronizar maxWeightReps con maxReps
+        if (maxWeightReps !== 1 || reps > maxReps) {
           maxWeightReps = reps;
+          // Actualizar maxWeight si es necesario (para ejercicios de peso corporal, es userWeight)
+          if (maxWeight === 0 || totalWeight > maxWeight) {
+            maxWeight = totalWeight;
+            maxWeightDate = workoutDate;
+            maxWeightWorkoutId = workoutId;
+          }
         }
       }
     } else if (!isBodyweight) {
@@ -1218,21 +1372,45 @@ export const recalculateExerciseRecord = async (
     .eq('exercise_id', exerciseId)
     .maybeSingle();
   
+  // Función helper para convertir strings vacíos a null en campos UUID
+  const sanitizeUUID = (value: string | undefined | null): string | undefined | null => {
+    if (!value || value.trim() === '') return null;
+    return value;
+  };
+  
+  // CRÍTICO: Para ejercicios de peso corporal sin peso adicional, 
+  // asegurar que maxWeight sea al menos el peso corporal si hay repeticiones
+  // Obtener el peso del usuario del primer workout relevante
+  const userWeightFromWorkout = relevantWorkouts[0]?.user_weight || 80;
+  let finalMaxWeight = maxWeight;
+  let finalMaxWeightReps = maxWeightReps;
+  let finalMaxWeightDate = maxWeightDate;
+  let finalMaxWeightWorkoutId = maxWeightWorkoutId;
+  
+  if (isBodyweight && maxReps > 0 && maxWeight === 0) {
+    // Si es ejercicio de peso corporal y no hay peso máximo registrado,
+    // establecer el peso máximo como userWeight (peso corporal)
+    finalMaxWeight = userWeightFromWorkout;
+    finalMaxWeightReps = maxReps;
+    finalMaxWeightDate = maxRepsDate;
+    finalMaxWeightWorkoutId = maxRepsWorkoutId;
+  }
+  
   const record: Partial<UserRecord> = {
     user_id: userId,
     exercise_id: exerciseId,
     exercise_name: exerciseNameExact,
-    max_weight_kg: maxWeight,
-    max_weight_reps: maxWeightReps,
-    max_weight_date: maxWeightDate,
-    max_weight_workout_id: maxWeightWorkoutId,
+    max_weight_kg: finalMaxWeight,
+    max_weight_reps: finalMaxWeightReps,
+    max_weight_date: finalMaxWeightDate || null,
+    max_weight_workout_id: sanitizeUUID(finalMaxWeightWorkoutId),
     max_1rm_kg: best1RM,
-    max_1rm_date: best1RMDate,
-    max_1rm_workout_id: best1RMWorkoutId,
+    max_1rm_date: best1RMDate || null,
+    max_1rm_workout_id: sanitizeUUID(best1RMWorkoutId),
     total_volume_kg: totalVolume,
     max_reps: maxReps,
-    max_reps_date: maxRepsDate,
-    max_reps_workout_id: maxRepsWorkoutId,
+    max_reps_date: maxRepsDate || null,
+    max_reps_workout_id: sanitizeUUID(maxRepsWorkoutId),
     is_bodyweight: isBodyweight,
     category,
     exercise_type: exerciseType,
@@ -1240,12 +1418,12 @@ export const recalculateExerciseRecord = async (
     best_single_set_weight_kg: bestSingleSet.weight > 0 ? bestSingleSet.weight : undefined,
     best_single_set_reps: bestSingleSet.reps > 0 ? bestSingleSet.reps : undefined,
     best_single_set_volume_kg: bestSingleSet.volume > 0 ? bestSingleSet.volume : undefined,
-    best_single_set_date: bestSingleSet.date || undefined,
-    best_single_set_workout_id: bestSingleSet.workoutId || undefined,
+    best_single_set_date: bestSingleSet.date || null,
+    best_single_set_workout_id: sanitizeUUID(bestSingleSet.workoutId),
     best_near_max_weight_kg: bestNearMax?.weight,
     best_near_max_reps: bestNearMax?.reps,
-    best_near_max_date: bestNearMax?.date,
-    best_near_max_workout_id: bestNearMax?.workoutId,
+    best_near_max_date: bestNearMax?.date || null,
+    best_near_max_workout_id: sanitizeUUID(bestNearMax?.workoutId),
     daily_max: dailyMaxArray
   };
   
