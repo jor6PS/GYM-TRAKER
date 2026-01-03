@@ -379,8 +379,45 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
   }, [userId, fetchData]);
 
   const confirmDeleteWorkout = useCallback(async (workoutId: string, catalog?: ExerciseDef[]) => {
+    console.log(`🗑️ Iniciando eliminación de workout ID: ${workoutId}`);
+    
+    // Guardar referencia al workout antes de intentar eliminarlo (por si necesitamos revertir)
+    const workoutToDelete = workouts.find((w: Workout) => w.id === workoutId);
+    
+    // CRÍTICO: Primero intentar eliminar de la BD, luego actualizar estado local
+    const { error: deleteError } = await supabase
+      .from('workouts')
+      .delete()
+      .eq('id', workoutId);
+    
+    if (deleteError) {
+      console.error('❌ Error al eliminar workout de BD:', deleteError);
+      throw new Error(`Error al eliminar workout: ${deleteError.message}`);
+    }
+    
+    console.log(`✅ Workout eliminado de BD. Verificando eliminación...`);
+    
+    // CRÍTICO: Verificar que realmente se eliminó de la BD
+    const { data: verifyDelete, error: verifyError } = await supabase
+      .from('workouts')
+      .select('id')
+      .eq('id', workoutId)
+      .maybeSingle();
+    
+    if (verifyError && verifyError.code !== 'PGRST116') {
+      console.error('❌ Error al verificar eliminación:', verifyError);
+      throw new Error(`Error al verificar eliminación: ${verifyError.message}`);
+    }
+    
+    if (verifyDelete) {
+      console.error('❌ ERROR CRÍTICO: El workout todavía existe en BD después de eliminar');
+      throw new Error('El workout no se eliminó correctamente de la base de datos');
+    }
+    
+    console.log(`✅ Verificación exitosa: workout eliminado de BD`);
+    
+    // Solo ahora actualizar el estado local
     setWorkouts((prev: Workout[]) => prev.filter((w: Workout) => w.id !== workoutId));
-    await supabase.from('workouts').delete().eq('id', workoutId);
     
     // Recalcular records después de eliminar workout
     // Nota: Esto requiere recalculación completa, se puede optimizar en el futuro
@@ -397,9 +434,15 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
         }
       } catch (error) {
         console.error('Error recalculating records after workout deletion:', error);
+        // No lanzar error aquí, ya que el workout se eliminó correctamente
       }
     }
-  }, [userId]);
+    
+    // Forzar re-fetch para asegurar sincronización completa
+    await fetchData();
+    
+    console.log(`✅ Eliminación completada exitosamente para workout ID: ${workoutId}`);
+  }, [userId, workouts, fetchData]);
 
   const confirmDeletePlan = useCallback(async (planId: string) => {
     setPlans((prev: WorkoutPlan[]) => prev.filter((p: WorkoutPlan) => p.id !== planId));

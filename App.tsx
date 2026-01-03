@@ -211,9 +211,13 @@ function App() {
     setDeleteWorkoutId(null); // Cerrar el modal inmediatamente
     try {
       await baseConfirmDeleteWorkout(workoutIdToDelete, catalog);
-    } catch (error) {
-      console.error('Error deleting workout:', error);
-      // El modal ya está cerrado, pero podríamos mostrar un error si es necesario
+      console.log('✅ Workout eliminado exitosamente');
+    } catch (error: any) {
+      console.error('❌ Error eliminando workout:', error);
+      // Mostrar error al usuario (podrías usar un toast o alert aquí)
+      alert(`Error al eliminar el registro: ${error.message || 'Error desconocido'}`);
+      // Forzar recarga de datos para sincronizar estado
+      // El estado local podría estar desincronizado si falló
     }
   }, [deleteWorkoutId, baseConfirmDeleteWorkout, catalog]);
 
