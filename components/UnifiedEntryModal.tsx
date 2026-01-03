@@ -27,6 +27,8 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>('library');
   const [sessionExercises, setSessionExercises] = useState<Exercise[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const { t } = useLanguage();
   const { catalog } = useExercises();
   
@@ -203,7 +205,76 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                             ))}
                         </div>
                     )}
-                    {sessionExercises.length > 0 && <div className="pt-4 mt-auto border-t border-white/10"><button onClick={() => { onWorkoutProcessed({ exercises: sessionExercises }); setSessionExercises([]); onClose(); }} className="w-full bg-primary text-black font-black py-4 rounded-xl shadow-glow text-xs uppercase flex items-center justify-center gap-2"><Save className="w-5 h-5" /> {t('save_session')}</button></div>}
+                    {sessionExercises.length > 0 && (
+                      <div className="pt-4 mt-auto border-t border-white/10 space-y-3">
+                        {saveError && (
+                          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-red-400 text-xs font-bold">
+                            {saveError}
+                          </div>
+                        )}
+                        <button 
+                          onClick={async () => {
+                            setIsSaving(true);
+                            setSaveError(null);
+                            try {
+                              // Validar antes de guardar
+                              const validExercises = sessionExercises.filter(ex => {
+                                if (!ex.name || !ex.name.trim()) {
+                                  console.warn(`⚠️ Ejercicio sin nombre detectado:`, ex);
+                                  return false;
+                                }
+                                if (!ex.sets || !Array.isArray(ex.sets) || ex.sets.length === 0) {
+                                  console.warn(`⚠️ Ejercicio "${ex.name}" sin sets`);
+                                  return false;
+                                }
+                                const hasValidSets = ex.sets.some(set => (set.reps || 0) > 0);
+                                if (!hasValidSets) {
+                                  console.warn(`⚠️ Ejercicio "${ex.name}" sin sets válidos (todas las reps son 0)`);
+                                }
+                                return hasValidSets;
+                              });
+                              
+                              if (validExercises.length === 0) {
+                                throw new Error('Los ejercicios no tienen series válidas. Añade repeticiones a las series antes de guardar.');
+                              }
+                              
+                              console.log(`💾 Intentando guardar ${validExercises.length} ejercicios válidos...`);
+                              
+                              // Esperar a que el guardado se complete
+                              await onWorkoutProcessed({ exercises: validExercises });
+                              
+                              console.log(`✅ Sesión guardada exitosamente`);
+                              
+                              // Solo limpiar y cerrar si el guardado fue exitoso
+                              setSessionExercises([]);
+                              setSaveError(null);
+                              setIsSaving(false);
+                              onClose();
+                            } catch (error: any) {
+                              console.error('❌ Error al guardar sesión:', error);
+                              const errorMessage = error?.message || 'Error al guardar la sesión. Por favor, intenta de nuevo.';
+                              setSaveError(errorMessage);
+                              setIsSaving(false);
+                              // NO cerrar el modal si hay error para que el usuario vea el mensaje
+                            }
+                          }}
+                          disabled={isSaving}
+                          className="w-full bg-primary text-black font-black py-4 rounded-xl shadow-glow text-xs uppercase flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isSaving ? (
+                            <>
+                              <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                              {t('saving') || 'Guardando...'}
+                            </>
+                          ) : (
+                            <>
+                              <Save className="w-5 h-5" /> 
+                              {t('save_session')}
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
                 </div>
             )}
 

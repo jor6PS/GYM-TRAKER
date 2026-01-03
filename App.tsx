@@ -183,13 +183,22 @@ function App() {
 
   // Handlers
   const handleWorkoutProcessed = useCallback(async (rawData: WorkoutData) => {
-    if (!currentUser) return;
-    await baseHandleWorkoutProcessed(
-      rawData,
-      selectedDate,
-      currentUser.weight || 80,
-      catalog
-    );
+    if (!currentUser) {
+      throw new Error('Usuario no autenticado');
+    }
+    
+    try {
+      await baseHandleWorkoutProcessed(
+        rawData,
+        selectedDate,
+        currentUser.weight || 80,
+        catalog
+      );
+    } catch (error: any) {
+      console.error('Error al procesar workout:', error);
+      // Re-lanzar el error para que el componente que llama pueda manejarlo
+      throw error;
+    }
   }, [currentUser, selectedDate, catalog, baseHandleWorkoutProcessed]);
 
   const handleToggleFriend = useCallback(async (friendId: string, friendName: string, color: string) => {

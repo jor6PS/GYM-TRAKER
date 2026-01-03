@@ -77,13 +77,24 @@ export const useAuth = (): UseAuthReturn => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!isMounted || !initialCheckDoneRef.current) return;
       
+      console.log('🔐 Auth state changed:', event);
+      
       if (event === 'PASSWORD_RECOVERY') {
         setIsRecoveryMode(true);
+      }
+      
+      if (event === 'SIGNED_OUT') {
+        console.log('🚪 Usuario cerró sesión, limpiando estado...');
+        setCurrentUser(null);
+        setRealAdminUser(null);
+        setSessionLoading(false);
+        return;
       }
       
       if (session) {
         await fetchUserProfile(session.user.id);
       } else {
+        // Si no hay sesión pero no es un SIGNED_OUT explícito, también limpiar
         setCurrentUser(null);
         setRealAdminUser(null);
         setSessionLoading(false);
@@ -98,9 +109,28 @@ export const useAuth = (): UseAuthReturn => {
   }, [fetchUserProfile]);
 
   const logout = useCallback(async () => {
-    await supabase.auth.signOut();
-    setCurrentUser(null);
-    setRealAdminUser(null);
+    try {
+      console.log('🚪 Iniciando cierre de sesión...');
+      
+      // CRÍTICO: Limpiar estados inmediatamente para una respuesta visual rápida
+      setCurrentUser(null);
+      setRealAdminUser(null);
+      setSessionLoading(false); // Establecer a false para que muestre LoginScreen inmediatamente
+      
+      // Hacer signOut de Supabase - esto disparará el evento SIGNED_OUT en onAuthStateChange
+      const { error } = await supabase.auth.signOut();
+      
+      if (error) {
+        console.error('❌ Error al cerrar sesión:', error);
+        // Aun así, el estado ya está limpiado arriba
+      } else {
+        console.log('✅ Sesión cerrada exitosamente en Supabase');
+        // El evento SIGNED_OUT en onAuthStateChange manejará cualquier limpieza adicional
+      }
+    } catch (error) {
+      console.error('❌ Error inesperado al cerrar sesión:', error);
+      // El estado ya está limpiado arriba, así que la UI debería actualizarse
+    }
   }, []);
 
   return {

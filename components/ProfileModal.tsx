@@ -342,7 +342,21 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                         {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
                         GUARDAR CONFIGURACIÓN
                     </button>
-                    <button onClick={onLogout} className="w-full bg-zinc-900 text-zinc-500 py-3 rounded-xl text-[10px] font-black uppercase hover:text-red-500 transition-colors flex items-center justify-center gap-2 tracking-[0.2em]"><LogOut className="w-4 h-4" /> CERRAR SESIÓN</button>
+                    <button 
+                      onClick={async () => {
+                        try {
+                          await onLogout();
+                          onClose(); // Cerrar el modal después del logout
+                        } catch (error) {
+                          console.error('Error al cerrar sesión:', error);
+                          // Cerrar el modal de todas formas
+                          onClose();
+                        }
+                      }}
+                      className="w-full bg-zinc-900 text-zinc-500 py-3 rounded-xl text-[10px] font-black uppercase hover:text-red-500 transition-colors flex items-center justify-center gap-2 tracking-[0.2em]"
+                    >
+                      <LogOut className="w-4 h-4" /> CERRAR SESIÓN
+                    </button>
                 </div>
             </div>
         </div>

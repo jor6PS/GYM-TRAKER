@@ -53,6 +53,25 @@ export const sanitizeWorkoutData = (data: WorkoutData, catalog: ExerciseDef[]): 
     
     if (data.exercises) {
         data.exercises.forEach(ex => {
+            // CRÍTICO: Validar que el ejercicio tenga nombre
+            if (!ex.name || !ex.name.trim()) {
+                console.warn('⚠️ Ejercicio sin nombre detectado, saltando:', ex);
+                return;
+            }
+            
+            // CRÍTICO: Validar que tenga sets
+            if (!ex.sets || !Array.isArray(ex.sets) || ex.sets.length === 0) {
+                console.warn(`⚠️ Ejercicio "${ex.name}" sin sets, saltando`);
+                return;
+            }
+            
+            // CRÍTICO: Validar que al menos un set tenga reps > 0
+            const hasValidSets = ex.sets.some(set => (set.reps || 0) > 0);
+            if (!hasValidSets) {
+                console.warn(`⚠️ Ejercicio "${ex.name}" sin sets válidos (todas las reps son 0), saltando`);
+                return;
+            }
+            
             const id = getCanonicalId(ex.name, catalog);
             const def = catalog.find(d => d.id === id);
             

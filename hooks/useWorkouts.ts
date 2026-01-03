@@ -90,12 +90,37 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
     currentUserWeight: number,
     catalog: ExerciseDef[]
   ) => {
-    if (!userId) return;
+    if (!userId) {
+      throw new Error('Usuario no autenticado. Por favor, inicia sesión.');
+    }
     
-    const data = sanitizeWorkoutData(rawData, catalog);
+    // CRÍTICO: Validar que haya ejercicios antes de procesar
+    if (!rawData.exercises || rawData.exercises.length === 0) {
+      throw new Error('No hay ejercicios para guardar. Añade al menos un ejercicio antes de guardar.');
+    }
+    
+    // CRÍTICO: Validar que todos los ejercicios tengan sets válidos
+    const validExercises = rawData.exercises.filter(ex => {
+      if (!ex.name || !ex.name.trim()) return false;
+      if (!ex.sets || !Array.isArray(ex.sets) || ex.sets.length === 0) return false;
+      // Validar que al menos un set tenga reps > 0
+      const hasValidSets = ex.sets.some(set => (set.reps || 0) > 0);
+      return hasValidSets;
+    });
+    
+    if (validExercises.length === 0) {
+      throw new Error('Los ejercicios no tienen series válidas. Asegúrate de que cada ejercicio tenga al menos una serie con repeticiones.');
+    }
+    
+    if (validExercises.length < rawData.exercises.length) {
+      console.warn(`⚠️ Se filtraron ${rawData.exercises.length - validExercises.length} ejercicios sin sets válidos`);
+    }
+    
+    const data = sanitizeWorkoutData({ ...rawData, exercises: validExercises }, catalog);
+    
+    // Validación final después de sanitizar
     if (!data.exercises || data.exercises.length === 0) {
-      console.warn('⚠️ No hay ejercicios para guardar');
-      return;
+      throw new Error('Error al procesar los ejercicios. Intenta de nuevo.');
     }
     
     const dateToSave = format(selectedDate, 'yyyy-MM-dd');
@@ -130,16 +155,21 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
       });
       
       if (exercisesToAdd.length === 0) {
-        console.log(`✅ Todos los ejercicios ya están en el workout. No se guardará duplicado.`);
+        console.log(`ℹ️ Todos los ejercicios ya están en el workout. Actualizando estado local.`);
         // Actualizar el estado local con los datos de la BD
         setWorkouts((prev: Workout[]) => {
           const existing = prev.find((w: Workout) => w.id === existingWorkoutInDb.id);
           if (!existing) {
             return [...prev, existingWorkoutInDb as Workout];
           }
-          return prev;
+          // Actualizar el workout existente con los datos más recientes de la BD
+          return prev.map((w: Workout) => 
+            w.id === existingWorkoutInDb.id ? (existingWorkoutInDb as Workout) : w
+          );
         });
-        return; // No guardar duplicados
+        // No es un error, simplemente no hay nada nuevo que agregar
+        // No retornar error para que el modal se cierre normalmente
+        return;
       }
       
       console.log(`➕ Agregando ${exercisesToAdd.length} ejercicios nuevos (${data.exercises.length - exercisesToAdd.length} ya existían)`);
@@ -212,6 +242,27 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
         console.error('❌ Error updating records:', error);
         // El workout ya está guardado, así que el error en records no debe bloquear
         // pero es crítico loguearlo para debugging
+        // NO lanzar el error para no bloquear el guardado exitoso del workout
+      }
+      
+      console.log(`✅ Proceso de actualización completado exitosamente. Workout ID: ${verifiedWorkout.id}`);
+      
+      // CRÍTICO: Forzar refresh de datos desde BD para asegurar consistencia
+      try {
+        const { data: refreshedWorkouts, error: refreshError } = await supabase
+          .from('workouts')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: true });
+        
+        if (!refreshError && refreshedWorkouts) {
+          console.log(`🔄 Refrescando estado local desde BD después de actualizar. Workouts encontrados: ${refreshedWorkouts.length}`);
+          setWorkouts(refreshedWorkouts as Workout[]);
+        } else if (refreshError) {
+          console.error('⚠️ Error al refrescar workouts desde BD:', refreshError);
+        }
+      } catch (refreshErr) {
+        console.error('⚠️ Error al refrescar datos:', refreshErr);
       }
     } else {
       console.log(`➕ Creando nuevo workout para ${dateToSave}...`);
@@ -278,9 +329,15 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
         // Verificar que no esté ya en la lista (por si acaso)
         const existing = prev.find((w: Workout) => w.id === verifiedWorkout.id);
         if (!existing) {
+          console.log(`✅ Workout agregado al estado local. ID: ${verifiedWorkout.id}`);
           return [...prev, verifiedWorkout as Workout];
+        } else {
+          // Si ya existe, actualizarlo con los datos confirmados de BD
+          console.log(`✅ Workout actualizado en estado local. ID: ${verifiedWorkout.id}`);
+          return prev.map((w: Workout) => 
+            w.id === verifiedWorkout.id ? (verifiedWorkout as Workout) : w
+          );
         }
-        return prev;
       });
       
       // Actualizar records con el workout completo (es nuevo, no hay duplicación)
@@ -293,9 +350,33 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
         console.error('❌ Error updating records:', error);
         // El workout ya está guardado, así que el error en records no debe bloquear
         // pero es crítico loguearlo para debugging
+        // NO lanzar el error para no bloquear el guardado exitoso del workout
+      }
+      
+      console.log(`✅ Proceso de guardado completado exitosamente. Workout ID: ${verifiedWorkout.id}`);
+      
+      // CRÍTICO: Forzar refresh de datos desde BD para asegurar consistencia
+      // Esto garantiza que el estado local refleja exactamente lo que hay en BD
+      try {
+        const { data: refreshedWorkouts, error: refreshError } = await supabase
+          .from('workouts')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: true });
+        
+        if (!refreshError && refreshedWorkouts) {
+          console.log(`🔄 Refrescando estado local desde BD. Workouts encontrados: ${refreshedWorkouts.length}`);
+          setWorkouts(refreshedWorkouts as Workout[]);
+        } else if (refreshError) {
+          console.error('⚠️ Error al refrescar workouts desde BD:', refreshError);
+          // No lanzar error porque el workout ya se guardó correctamente
+        }
+      } catch (refreshErr) {
+        console.error('⚠️ Error al refrescar datos:', refreshErr);
+        // No lanzar error porque el workout ya se guardó correctamente
       }
     }
-  }, [userId, workouts]);
+  }, [userId, fetchData]);
 
   const confirmDeleteWorkout = useCallback(async (workoutId: string, catalog?: ExerciseDef[]) => {
     setWorkouts((prev: Workout[]) => prev.filter((w: Workout) => w.id !== workoutId));
