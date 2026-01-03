@@ -54,6 +54,81 @@ export const generateGlobalReport = async (
         const globalMaxMap = new Map<string, { val: number, unit: string, isBW: boolean }>();
         const monthlyMaxMap = new Map<string, { val: number, unit: string, isBW: boolean }>();
 
+        // OPTIMIZACIÓN: Crear índices del catálogo para búsquedas O(1)
+        const catalogById = new Map<string, ExerciseDef>();
+        const catalogByNormalizedEs = new Map<string, ExerciseDef>();
+        const normalizedNameCache = new Map<string, string>();
+        
+        for (const ex of catalog) {
+            catalogById.set(ex.id, ex);
+            if (ex.es) {
+                const normalized = ex.es.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+                catalogByNormalizedEs.set(normalized, ex);
+                normalizedNameCache.set(ex.id, normalized);
+            }
+        }
+
+        // OPTIMIZACIÓN: Cache para getCanonicalId
+        const canonicalIdCache = new Map<string, string>();
+        const getCanonicalIdCached = (name: string): string => {
+            const cacheKey = name.trim().toLowerCase();
+            if (canonicalIdCache.has(cacheKey)) {
+                return canonicalIdCache.get(cacheKey)!;
+            }
+            
+            const normalized = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+            
+            // Búsqueda exacta
+            const exact = catalogByNormalizedEs.get(normalized);
+            if (exact) {
+                canonicalIdCache.set(cacheKey, exact.id);
+                return exact.id;
+            }
+            
+            // Búsqueda por prefijo
+            for (const [normEs, exDef] of catalogByNormalizedEs.entries()) {
+                if (normEs.startsWith(normalized)) {
+                    canonicalIdCache.set(cacheKey, exDef.id);
+                    return exDef.id;
+                }
+            }
+            
+            // Búsqueda parcial
+            for (const [normEs, exDef] of catalogByNormalizedEs.entries()) {
+                if (normEs.includes(normalized)) {
+                    canonicalIdCache.set(cacheKey, exDef.id);
+                    return exDef.id;
+                }
+            }
+            
+            canonicalIdCache.set(cacheKey, name.trim());
+            return name.trim();
+        };
+
+        // OPTIMIZACIÓN: Cache para getLocalizedName
+        const localizedNameCache = new Map<string, string>();
+        const getLocalizedNameCached = (idOrName: string): string => {
+            if (localizedNameCache.has(idOrName)) {
+                return localizedNameCache.get(idOrName)!;
+            }
+            
+            const match = catalogById.get(idOrName);
+            const result = match?.es || (idOrName.charAt(0).toUpperCase() + idOrName.slice(1));
+            localizedNameCache.set(idOrName, result);
+            return result;
+        };
+
+        // OPTIMIZACIÓN: Cache para isCalisthenic
+        const calisthenicCache = new Map<string, boolean>();
+        const isCalisthenicCached = (id: string): boolean => {
+            if (calisthenicCache.has(id)) {
+                return calisthenicCache.get(id)!;
+            }
+            const result = isCalisthenic(id);
+            calisthenicCache.set(id, result);
+            return result;
+        };
+
         // 1. OBTENCIÓN DE DATOS HISTÓRICOS (OPTIMIZADO)
         let storedRecords: any[] = [];
         if (userId) {
@@ -64,16 +139,16 @@ export const generateGlobalReport = async (
                 ]);
                 storedRecords = records;
                 totalVolume = storedVol;
-                console.log(`[Crónicas] userId=${userId}: volumen total de BD (suma total_volume_kg de TODOS los records históricos)=${storedVol}kg, número de records=${records.length}`); 
+                console.log(`[Crónicas] userId=${userId}: volumen total de BD=${storedVol}kg, records=${records.length}`); 
             } catch (error) {
                 console.warn('Error loading stored records, using fallback calculation:', error);
             }
         }
 
-        // 2. PROCESAMIENTO DE RECORDS PARA MÁXIMOS
+        // 2. PROCESAMIENTO DE RECORDS PARA MÁXIMOS (OPTIMIZADO)
         if (storedRecords.length > 0) {
             for (const record of storedRecords) {
-                const displayName = getLocalizedName(record.exercise_id, catalog);
+                const displayName = getLocalizedNameCached(record.exercise_id);
                 const val = record.is_bodyweight ? record.max_reps : record.max_weight_kg;
                 const unit = record.unit || 'kg';
                 const isBW = record.is_bodyweight;
@@ -98,11 +173,14 @@ export const generateGlobalReport = async (
             }
         }
 
-        // 3. PROCESAMIENTO DE WORKOUTS (SINGLE PASS - Bucle Único)
+        // 3. PROCESAMIENTO DE WORKOUTS (OPTIMIZADO - SINGLE PASS)
         // Para el volumen total: SIEMPRE usar el almacenado en BD (suma de total_volume_kg) si tenemos userId
         // Si no hay userId, calcular desde workouts como fallback
         // NO recalcular desde workouts porque el volumen almacenado en BD es la fuente de verdad
-        const recentHistory: any[] = []; 
+        const recentHistory: any[] = [];
+        
+        // OPTIMIZACIÓN: Cache para parsing de structured_data
+        const parsedWorkoutCache = new Map<Workout, any>();
 
         for (const w of allWorkouts) {
             const wDate = new Date(w.date);
@@ -110,24 +188,31 @@ export const generateGlobalReport = async (
             const isRecent = isAfter(wDate, lookbackDate);
 
             const historicUserWeight = w.user_weight || currentWeight;
-            const workoutData = safeParseWorkout(w.structured_data);
+            
+            // OPTIMIZACIÓN: Cachear parsing de structured_data
+            let workoutData = parsedWorkoutCache.get(w);
+            if (!workoutData) {
+                workoutData = safeParseWorkout(w.structured_data);
+                parsedWorkoutCache.set(w, workoutData);
+            }
             
             if (!workoutData.exercises || !Array.isArray(workoutData.exercises)) continue;
 
             const promptExercises: any[] = [];
 
             for (const ex of workoutData.exercises) {
-                const id = getCanonicalId(ex.name, catalog);
-                const exerciseDef = catalog.find(e => e.id === id);
+                // OPTIMIZACIÓN: Usar funciones cacheadas
+                const id = getCanonicalIdCached(ex.name || '');
+                const exerciseDef = catalogById.get(id);
                 const exerciseType = exerciseDef?.type || 'strength';
                 
                 if (exerciseType !== 'strength') continue;
                 
-                const isCalis = isCalisthenic(id);
+                const isCalis = isCalisthenicCached(id);
                 const isUnilateral = ex.unilateral || false;
                 let sessionExVolume = 0;
 
-                // Array detallado de sets para enviar a la IA (NO simplificado)
+                // Array detallado de sets para enviar a la IA (NO simplificado - MANTENER TODOS LOS DATOS)
                 const setsDetail: any[] = [];
 
                 for (const s of ex.sets) {
@@ -160,16 +245,6 @@ export const generateGlobalReport = async (
                 }
                 if (isThisMonth) {
                     monthlyVolume += sessionExVolume;
-                }
-                
-                // Log detallado para debugging
-                if (isThisMonth) {
-                    console.log(`[Crónicas] Workout ${w.date}: ejercicio ${ex.name}, sessionExVolume=${sessionExVolume}kg, monthlyVolume acumulado=${monthlyVolume}kg`);
-                }
-                
-                // Log para debugging - solo para el primer ejercicio del primer workout del mes
-                if (isThisMonth && !userId) {
-                    console.log(`[Crónicas] Sin userId: calculando totalVolume desde workouts, sessionExVolume=${sessionExVolume}, monthlyVolume acumulado=${monthlyVolume}`);
                 }
 
                 if (isRecent) {
@@ -267,27 +342,13 @@ export const generateGlobalReport = async (
         // (a menos que haya volumen previo de meses anteriores en los records)
         const allWorkoutsThisMonth = allWorkouts.every(w => isSameMonth(new Date(w.date), now));
         if (allWorkoutsThisMonth && Math.abs(totalVolume - monthlyVolume) > 0.01) {
-            console.warn(`[Crónicas] ⚠️ ADVERTENCIA: Todos los workouts son del mes actual pero los volúmenes no coinciden.`);
-            console.warn(`  - Esto puede indicar que hay records con volumen de meses anteriores o un error en el cálculo.`);
-            console.warn(`  - totalVolume (BD): ${Math.round(totalVolume)}kg`);
-            console.warn(`  - monthlyVolume (calculado): ${Math.round(monthlyVolume)}kg`);
-            console.warn(`  - Diferencia: ${Math.round(totalVolume - monthlyVolume)}kg`);
-            console.warn(`  - Si todos los entrenamientos son de este mes, usaremos el monthlyVolume como volumen histórico.`);
+            console.warn(`[Crónicas] ⚠️ Volúmenes no coinciden. Total: ${Math.round(totalVolume)}kg, Mensual: ${Math.round(monthlyVolume)}kg`);
             // Si todos los workouts son del mes actual, usar el monthlyVolume como totalVolume
             // porque el volumen histórico debería ser igual al mensual
             totalVolume = monthlyVolume;
         }
         
-        console.log(`[Crónicas] RESUMEN FINAL:`);
-        console.log(`  - Volumen histórico (suma de TODOS los total_volume_kg de TODOS los records): ${Math.round(totalVolume)}kg`);
-        console.log(`  - Volumen mensual (suma de workouts del mes actual): ${Math.round(monthlyVolume)}kg`);
-        if (Math.abs(totalVolume - monthlyVolume) < 0.01) {
-            console.log(`  ✅ Los volúmenes coinciden correctamente.`);
-        } else {
-            console.log(`  - Diferencia: ${Math.round(totalVolume - monthlyVolume)}kg (puede ser normal si hay entrenamientos de meses anteriores)`);
-        }
-        
-        console.log(`[Crónicas] Enviando a IA: totalVolume=${Math.round(totalVolume)}kg (${totalVolume}kg), monthlyVolume=${Math.round(monthlyVolume)}kg (${monthlyVolume}kg)`);
+        console.log(`[Crónicas] Enviando a IA: totalVolume=${Math.round(totalVolume)}kg, monthlyVolume=${Math.round(monthlyVolume)}kg`);
         
         const prompt = `Analiza mi rendimiento para optimizar mi progreso. 
         Biometría: Edad ${userAge} años, Peso Corporal ${currentWeight}kg, Altura ${userHeight}cm.
