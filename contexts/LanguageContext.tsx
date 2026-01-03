@@ -9,6 +9,7 @@ const translations = {
     error: "Error",
     cancel: "Cancelar",
     save: "Guardar",
+    saving: "Guardando...",
     delete: "Eliminar",
     edit: "Editar",
     abort: "Abortar",
