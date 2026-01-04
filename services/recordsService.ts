@@ -121,7 +121,8 @@ export const getUserRecords = async (userId: string): Promise<UserRecord[]> => {
 };
 
 /**
- * Obtiene el volumen total de un usuario (suma de todos los total_volume_kg)
+ * Obtiene el volumen total de un usuario sumando todos los total_volume_kg de la tabla user_records
+ * Equivalente a: SELECT SUM(total_volume_kg) FROM user_records WHERE user_id = userId
  */
 export const getUserTotalVolume = async (userId: string): Promise<number> => {
   const { data, error } = await supabase
@@ -131,17 +132,17 @@ export const getUserTotalVolume = async (userId: string): Promise<number> => {
   
   if (error) {
     console.error(`[getUserTotalVolume] Error fetching total volume for userId ${userId}:`, error);
-    // Si hay un error (probablemente permisos RLS), lanzar el error para que se maneje arriba
     throw error;
   }
   
-  // Si no hay error pero data es null o undefined, puede indicar un problema de permisos
   if (data === null || data === undefined) {
     console.warn(`[getUserTotalVolume] data es null/undefined para userId ${userId} - posible problema de permisos RLS`);
     throw new Error('No se pudo obtener datos - posible problema de permisos RLS');
   }
   
-  return (data || []).reduce((sum, record) => sum + (record.total_volume_kg || 0), 0);
+  const totalVolume = (data || []).reduce((sum, record) => sum + (record.total_volume_kg || 0), 0);
+  console.log(`[getUserTotalVolume] Volumen total para userId ${userId}: ${Math.round(totalVolume)}kg (suma de ${data.length} records)`);
+  return totalVolume;
 };
 
 /**

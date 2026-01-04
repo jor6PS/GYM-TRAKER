@@ -129,6 +129,19 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
     }
   }, [isOpen, userId, useStoredRecords]);
 
+  // Recargar volumen total cuando cambien los workouts (para reflejar actualizaciones en tiempo real)
+  useEffect(() => {
+    if (isOpen && userId && useStoredRecords) {
+      getUserTotalVolume(userId)
+        .then(volume => {
+          setTotalVolume(volume || 0);
+        })
+        .catch(error => {
+          console.error('Error reloading total volume:', error);
+        });
+    }
+  }, [workouts, isOpen, userId, useStoredRecords]);
+
   useEffect(() => {
     if (isOpen) {
         if (initialExercise && typeof initialExercise === 'string' && catalog && catalog.length > 0) {
@@ -215,43 +228,18 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
 
   const globalStats = useMemo(() => {
     try {
-      const uniqueDays = new Set(workouts.map(w => w.date)).size;
+      if (!workouts || workouts.length === 0) {
+        return {
+          totalVolume: "0 kg",
+          daysTrained: 0
+        };
+      }
+
+      const uniqueDays = new Set(workouts.map(w => w.date.split('T')[0])).size;
       
-      // ✅ CORRECCIÓN: Siempre recalcular desde workouts para asegurar que esté actualizado
-      // El valor de records puede estar desactualizado si hay nuevos workouts
-      let volumeKg = 0;
-      
-      workouts.forEach(w => {
-        // Validar que el workout tenga datos válidos
-        if (!w?.structured_data?.exercises || !Array.isArray(w.structured_data.exercises)) {
-          return; // Saltar workouts sin datos válidos
-        }
-        
-        const historicWeight = w.user_weight || 80;
-        const workoutData = w.structured_data;
-        
-        workoutData.exercises.forEach(ex => {
-          if (!ex || !ex.name || typeof ex.name !== 'string') return;
-          const id = getCanonicalId(ex.name, catalog);
-          const exerciseDef = catalog.find(e => e.id === id);
-          const exerciseType = exerciseDef?.type || 'strength';
-          
-          // Solo procesar ejercicios de fuerza (igual que en recordsService)
-          if (exerciseType !== 'strength') return;
-          
-          const isBodyweightExercise = isCalisthenic(id);
-          const isUnilateral = ex.unilateral || false;
-          
-          ex.sets.forEach(s => {
-            const reps = s.reps || 0;
-            if (reps === 0) return;
-            
-            // Usar la misma función calculateSetVolume que se usa en recordsService
-            const setVolume = calculateSetVolume(reps, s.weight, s.unit, historicWeight, isBodyweightExercise, isUnilateral);
-            volumeKg += setVolume;
-          });
-        });
-      });
+      // Usar el totalVolume obtenido de getUserTotalVolume (suma de total_volume_kg de user_records)
+      // Este valor viene de la tabla user_records y se actualiza cuando se guardan workouts
+      const volumeKg = totalVolume || 0;
 
       return {
           totalVolume: Math.round(volumeKg).toLocaleString('es-ES') + " kg",
@@ -264,7 +252,7 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
         daysTrained: 0
       };
     }
-  }, [workouts, catalog]);
+  }, [workouts, totalVolume]);
 
   const selectedExerciseType: MetricType = useMemo(() => {
       if (!selectedExerciseId) return 'strength';
