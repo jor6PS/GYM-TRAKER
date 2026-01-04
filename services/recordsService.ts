@@ -204,18 +204,15 @@ export const updateUserRecords = async (
     
     const category = exerciseDef?.category || exercise.category || 'General';
     // Usar canonicalId para determinar si es calisténico (ya que se basa en el ID del catálogo)
+    // Solo ejercicios que están explícitamente en la lista de calisténicos se consideran de peso corporal
     const isCalis = isCalisthenic(canonicalId);
     const isUnilateral = exercise.unilateral || false;
     
-    // Obtener los sets del ejercicio ANTES de usarlos para determinar si es bodyweight
+    // Obtener los sets del ejercicio ANTES de usarlos
     const exerciseSets = exercise.sets || [];
     
-    // CRÍTICO: Si el ejercicio tiene sets sin weight o con weight === 0, 
-    // y la categoría es Core/General, tratarlo como ejercicio de peso corporal
-    // Esto maneja casos como "Rueda Abdominal" que no están en la lista de calisténicos
-    const hasOnlyZeroWeightSets = exerciseSets.length > 0 && exerciseSets.every(s => !s.weight || s.weight === 0);
-    const isCoreOrGeneral = category === 'Core' || category === 'General';
-    const isBodyweightExercise = isCalis || (hasOnlyZeroWeightSets && isCoreOrGeneral && exerciseType === 'strength');
+    // Solo considerar ejercicio de peso corporal si está en la lista de calisténicos
+    const isBodyweightExercise = isCalis;
 
     // Obtener o crear el record existente
     const { data: existingRecord } = await supabase
@@ -752,13 +749,9 @@ export const recalculateUserRecords = async (
       const category = exerciseDef?.category || exercise.category || 'General';
         const isCalis = isCalisthenic(canonicalId);
         
-        // CRÍTICO: Si el ejercicio tiene sets sin weight o con weight === 0, 
-        // y la categoría es Core/General, tratarlo como ejercicio de peso corporal
-        // Esto maneja casos como "Rueda Abdominal" que no están en la lista de calisténicos
+        // Solo ejercicios que están explícitamente en la lista de calisténicos se consideran de peso corporal
         const exerciseSets = exercise.sets || [];
-        const hasOnlyZeroWeightSets = exerciseSets.every(s => !s.weight || s.weight === 0);
-        const isCoreOrGeneral = category === 'Core' || category === 'General';
-        const isBodyweight = isCalis || (hasOnlyZeroWeightSets && isCoreOrGeneral && exerciseType === 'strength');
+        const isBodyweight = isCalis;
         
         exerciseMap.set(exerciseId, {
           exerciseName: exerciseNameExact,
@@ -1190,12 +1183,8 @@ export const recalculateExerciseRecord = async (
     }
   }
   
-  // CRÍTICO: Si el ejercicio tiene sets sin weight o con weight === 0, 
-  // y la categoría es Core/General, tratarlo como ejercicio de peso corporal
-  // Esto maneja casos como "Rueda Abdominal" que no están en la lista de calisténicos
-  const hasOnlyZeroWeightSets = sets.length > 0 && sets.every(s => s.weight === 0);
-  const isCoreOrGeneral = category === 'Core' || category === 'General';
-  const isBodyweight = isCalis || (hasOnlyZeroWeightSets && isCoreOrGeneral && exerciseType === 'strength');
+  // Solo ejercicios que están explícitamente en la lista de calisténicos se consideran de peso corporal
+  const isBodyweight = isCalis;
   
   // CRÍTICO: Si no hay sets válidos, eliminar el record
   // Ya que no hay datos válidos que mantener (los workouts existen pero no tienen sets válidos)

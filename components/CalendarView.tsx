@@ -98,11 +98,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           const isCalis = isCalisthenic(canonicalId);
           const isUnilateral = exercise.unilateral || false;
           
-          // Determinar si es ejercicio de peso corporal
-          const category = exerciseDef?.category || exercise.category || 'General';
-          const hasOnlyZeroWeightSets = exercise.sets.every(s => !s.weight || s.weight === 0);
-          const isCoreOrGeneral = category === 'Core' || category === 'General';
-          const isBodyweightExercise = isCalis || (hasOnlyZeroWeightSets && isCoreOrGeneral && exerciseType === 'strength');
+          // Solo ejercicios que están explícitamente en la lista de calisténicos se consideran de peso corporal
+          const isBodyweightExercise = isCalis;
           
           // Calcular volumen de cada set
           for (const set of exercise.sets) {
