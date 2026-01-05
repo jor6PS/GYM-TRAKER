@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 // 1. Añadimos el icono 'Info'
-import { X, Swords, Crown, Loader2, Scale, Activity, Zap, AlertTriangle, FileText, Target, Info } from 'lucide-react';
+import { X, Swords, Crown, Loader2, Scale, Zap, AlertTriangle, FileText, Target, Info } from 'lucide-react';
 import { generateGroupAnalysis } from '../services/workoutProcessor';
 import { Workout, User } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -53,15 +53,34 @@ const DossierRenderer = ({ text }: { text: string }) => {
         i++;
       }
       if (tableRows.length > 0) {
-        const isMatrix = tableRows[0].length > 3; 
+        const isMatrix = tableRows[0].length > 3;
+        // Calcular ancho mínimo basado en el número de columnas para asegurar espacio suficiente
+        // Aumentamos el ancho mínimo por columna para que el scroll sea necesario más temprano
+        const numColumns = tableRows[0].length;
+        const minWidth = isMatrix ? Math.max(700, numColumns * 150) : 'auto';
+        const minWidthStyle = typeof minWidth === 'number' ? `${minWidth}px` : minWidth;
+        
         elements.push(
-          <div key={`table-${i}`} className="my-4 w-full overflow-hidden rounded-xl border border-white/10 bg-black/40 shadow-lg flex flex-col">
-            <div className={`${isMatrix ? "overflow-x-auto custom-scrollbar" : "w-full"} w-full`}>
-                <table className={`w-full text-left border-collapse ${isMatrix ? 'min-w-[520px]' : 'table-fixed'}`}>
+          <div key={`table-${i}`} className="my-4 w-full rounded-xl border border-white/10 bg-black/40 shadow-lg overflow-hidden relative group">
+            {/* Indicador visual de scroll horizontal para matrices */}
+            {isMatrix && (
+              <div className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-black/90 via-black/50 to-transparent pointer-events-none z-10 opacity-100 transition-opacity rounded-r-xl"></div>
+            )}
+            <div 
+              className={isMatrix ? "overflow-x-auto w-full" : "w-full"}
+              style={isMatrix ? { 
+                WebkitOverflowScrolling: 'touch',
+                scrollbarWidth: 'auto',
+                scrollbarColor: 'rgba(212, 255, 0, 0.7) rgba(0, 0, 0, 0.3)',
+                overflowX: 'auto',
+                overflowY: 'visible'
+              } : {}}
+            >
+                <table className={`text-left border-collapse ${isMatrix ? '' : 'w-full table-fixed'}`} style={isMatrix ? { width: minWidthStyle, minWidth: minWidthStyle } : { width: '100%' }}>
                 <thead>
                     <tr className="bg-white/5 border-b border-white/10">
                     {tableRows[0].map((cell, idx) => (
-                        <th key={idx} className="px-3 py-2.5 font-black text-primary uppercase tracking-widest bg-zinc-900/50 text-[10px] whitespace-nowrap border-r border-white/5 last:border-0">
+                        <th key={idx} className="px-4 py-2.5 font-black text-primary uppercase tracking-widest bg-zinc-900/50 text-[10px] whitespace-nowrap border-r border-white/5 last:border-0" style={{ minWidth: idx === 0 ? '140px' : '120px' }}>
                             {cell}
                         </th>
                     ))}
@@ -71,7 +90,7 @@ const DossierRenderer = ({ text }: { text: string }) => {
                     {tableRows.slice(1).map((row, rowIdx) => (
                     <tr key={rowIdx} className="hover:bg-white/5 transition-colors group">
                         {row.map((cell, cellIdx) => (
-                        <td key={cellIdx} className={`px-3 py-2 font-mono text-zinc-300 border-r border-white/5 last:border-0 text-[10px] leading-tight align-middle ${cellIdx === 0 ? 'font-bold text-white whitespace-nowrap bg-zinc-900/20' : 'whitespace-pre-wrap break-words text-center min-w-[96px]'}`}>
+                        <td key={cellIdx} className={`px-4 py-2 font-mono text-zinc-300 border-r border-white/5 last:border-0 text-[10px] leading-tight align-middle ${cellIdx === 0 ? 'font-bold text-white whitespace-nowrap bg-zinc-900/20 sticky left-0 z-0' : 'whitespace-nowrap text-center'}`} style={cellIdx === 0 ? { minWidth: '140px' } : { minWidth: '120px' }}>
                             {cell === '---' || cell === '' ? <span className="opacity-10">-</span> : renderFormattedText(cell)}
                         </td>
                         ))}
@@ -415,43 +434,17 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
 
                     {/* --- AI TACTICAL REPORT --- */}
                     {analysis.markdown_body && (
-                        <div className="bg-zinc-900/30 border border-white/5 rounded-3xl p-5 relative overflow-hidden backdrop-blur-sm">
+                        <div className="bg-zinc-900/30 border border-white/5 rounded-3xl p-5 relative backdrop-blur-sm overflow-visible">
                             <div className="flex items-center gap-2 mb-4 border-b border-white/5 pb-2">
                                 <FileText className="w-4 h-4 text-primary" />
                                 <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Tactical Analysis</h3>
                             </div>
-                            <DossierRenderer text={analysis.markdown_body} />
+                            <div className="overflow-visible">
+                                <DossierRenderer text={analysis.markdown_body} />
+                            </div>
                         </div>
                     )}
                     
-                    {/* VOLUME GRAPH */}
-                    <div className="bg-zinc-900/30 border border-white/5 rounded-3xl p-6 relative overflow-hidden backdrop-blur-sm">
-                        <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-6 flex items-center gap-2">
-                            <Activity className="w-3 h-3 text-purple-400" /> Volume Dominance
-                        </h3>
-                        <div className="space-y-5">
-                            {analysis.volume_table.map((vol: any, idx: number) => {
-                                const maxVol = analysis.volume_table[0].total_volume_kg || 1;
-                                const percentage = (vol.total_volume_kg / maxVol) * 100;
-                                const color = getColor(vol.name);
-                                return (
-                                    <div key={idx} className="relative group">
-                                        <div className="flex justify-between items-end mb-2 text-xs relative z-10">
-                                            <span className="font-bold text-white flex items-center gap-3">
-                                                <div className="w-2 h-2 rounded-full shadow-[0_0_10px_currentColor]" style={{ backgroundColor: color, color: color }}></div>
-                                                {vol.name}
-                                            </span>
-                                            <span className="font-mono text-zinc-400 group-hover:text-white transition-colors">{vol.total_volume_kg.toLocaleString()} kg</span>
-                                        </div>
-                                        <div className="h-2 w-full bg-black/60 rounded-full overflow-hidden border border-white/5">
-                                            <div className="h-full rounded-full transition-all duration-1000 ease-out shadow-[0_0_15px_rgba(0,0,0,0.5)]" style={{ width: `${percentage}%`, backgroundColor: color }}></div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-
                     <div className="pb-8 text-center">
                         <p className="text-[9px] text-zinc-700 font-mono uppercase tracking-[0.3em]">Arena Engine v2.1 (Matrix)</p>
                     </div>

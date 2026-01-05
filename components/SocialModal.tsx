@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Search, UserPlus, Check, XCircle, Users, Loader2, Palette, CheckCircle2, Clock } from 'lucide-react';
-import { searchUsers, sendFriendRequest, getFriendships, respondToRequest } from '../services/supabase';
+import { X, Search, UserPlus, Check, XCircle, Users, Loader2, Palette, CheckCircle2, Clock, Trash2 } from 'lucide-react';
+import { searchUsers, sendFriendRequest, getFriendships, respondToRequest, removeFriendship } from '../services/supabase';
 import { Friend, User } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useScrollLock } from '../hooks/useScrollLock';
@@ -23,6 +23,7 @@ export const SocialModal: React.FC<SocialModalProps> = ({ isOpen, onClose, curre
   const [searchResults, setSearchResults] = useState<{ id: string, name: string, avatar_url?: string }[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [requestStatus, setRequestStatus] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   
   const { t } = useLanguage();
   
@@ -37,8 +38,10 @@ export const SocialModal: React.FC<SocialModalProps> = ({ isOpen, onClose, curre
   const fetchFriends = async () => {
     setIsLoading(true);
     const data = await getFriendships();
+    console.log('[fetchFriends] Amigos obtenidos:', data.length, data.map(f => ({ id: f.id, name: f.name, status: f.status })));
     setFriends(data);
     setIsLoading(false);
+    return data;
   };
 
   const handleSearch = async (e: React.FormEvent) => {
@@ -65,6 +68,80 @@ export const SocialModal: React.FC<SocialModalProps> = ({ isOpen, onClose, curre
   const handleResponse = async (id: string, response: 'accepted' | 'rejected') => {
       await respondToRequest(id, response);
       fetchFriends();
+  };
+
+  const handleRemoveFriend = async (friendId: string, friendName: string) => {
+      if (!confirm(`¿Estás seguro de que quieres eliminar a ${friendName} de tu Crew? Esta acción desvinculará completamente la amistad.`)) {
+          return;
+      }
+      
+      try {
+          setIsLoading(true);
+          console.log('[handleRemoveFriend] Intentando eliminar amistad con:', friendId);
+          
+          // Si el amigo estaba activo, desactivarlo ANTES de eliminar (mientras todavía tenemos la referencia)
+          const wasActive = activeFriends.includes(friendId);
+          const friend = acceptedFriends.find(f => f.id === friendId);
+          let friendColor = '';
+          
+          if (wasActive && friend) {
+              friendColor = FRIEND_COLORS[acceptedFriends.indexOf(friend) % FRIEND_COLORS.length];
+              console.log('[handleRemoveFriend] Desactivando amigo antes de eliminar...');
+              onToggleFriend(friendId, friendName, friendColor);
+          }
+          
+          // Eliminar la amistad
+          try {
+              await removeFriendship(friendId);
+              console.log('[handleRemoveFriend] Amistad eliminada exitosamente');
+          } catch (removeError: any) {
+              console.error('[handleRemoveFriend] Error durante eliminación:', removeError);
+              // Si el error menciona RLS, dar un mensaje más claro
+              if (removeError.message && removeError.message.includes('RLS')) {
+                  setRequestStatus(`Error: Problema de permisos. Verifica las políticas RLS en Supabase.`);
+                  setTimeout(() => setRequestStatus(null), 6000);
+                  return;
+              }
+              throw removeError;
+          }
+          
+          // Esperar un momento antes de recargar para asegurar que la BD se actualice
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // Recargar lista de amigos
+          const updatedFriends = await fetchFriends();
+          console.log('[handleRemoveFriend] Lista actualizada. Amigos restantes:', updatedFriends.length);
+          
+          // Asegurar que el amigo eliminado no esté en la lista
+          const friendStillInList = updatedFriends.find(f => f.id === friendId);
+          if (friendStillInList) {
+              console.error('[handleRemoveFriend] ❌ CRÍTICO: El amigo todavía está en la lista después de eliminar!', friendStillInList);
+              // Forzar eliminación del estado local como medida de emergencia
+              setFriends(prevFriends => {
+                  const filtered = prevFriends.filter(f => f.id !== friendId);
+                  console.log('[handleRemoveFriend] Estado local actualizado. Amigos antes:', prevFriends.length, 'después:', filtered.length);
+                  return filtered;
+              });
+              setRequestStatus(`⚠️ Advertencia: ${friendName} eliminado localmente, pero puede aparecer al recargar. Verifica permisos RLS en Supabase.`);
+              setTimeout(() => setRequestStatus(null), 6000);
+          } else {
+              setRequestStatus(`${friendName} eliminado de tu Crew`);
+              setTimeout(() => setRequestStatus(null), 3000);
+          }
+          
+          // Forzar re-render del componente
+          setRefreshKey(prev => prev + 1);
+          
+          setRequestStatus(`${friendName} eliminado de tu Crew`);
+          setTimeout(() => setRequestStatus(null), 3000);
+      } catch (e: any) {
+          console.error('[handleRemoveFriend] Error al eliminar amigo:', e);
+          const errorMessage = e.message || 'Error desconocido al eliminar el amigo';
+          setRequestStatus(`Error: ${errorMessage}`);
+          setTimeout(() => setRequestStatus(null), 5000);
+      } finally {
+          setIsLoading(false);
+      }
   };
 
   if (!isOpen) return null;
@@ -109,9 +186,14 @@ export const SocialModal: React.FC<SocialModalProps> = ({ isOpen, onClose, curre
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-background">
+            {requestStatus && activeTab === 'friends' && (
+                <div className="mb-3 text-[10px] text-center text-primary font-mono bg-primary/10 p-2 rounded-lg border border-primary/20 animate-in slide-in-from-top-1">
+                    {requestStatus.toUpperCase()}
+                </div>
+            )}
             
             {activeTab === 'friends' && (
-                <div className="space-y-3">
+                <div key={refreshKey} className="space-y-3">
                     {acceptedFriends.length === 0 ? (
                         <div className="text-center py-10 text-subtext text-xs italic">
                             <p>Tu lista está vacía. Busca a tus amigos por nombre.</p>
@@ -122,32 +204,46 @@ export const SocialModal: React.FC<SocialModalProps> = ({ isOpen, onClose, curre
                             const color = FRIEND_COLORS[idx % FRIEND_COLORS.length];
 
                             return (
-                                <div key={friend.id} className="flex items-center justify-between p-3 bg-surfaceHighlight/50 rounded-xl border border-white/5">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border border-white/10 shadow-inner">
+                                <div key={friend.id} className="flex items-center justify-between p-3 bg-surfaceHighlight/50 rounded-xl border border-white/5 group">
+                                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                                        <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border border-white/10 shadow-inner shrink-0">
                                             {friend.avatar_url ? <img src={friend.avatar_url} className="w-full h-full object-cover" /> : <span className="font-black text-zinc-500 uppercase">{friend.name.charAt(0)}</span>}
                                         </div>
-                                        <div>
-                                            <div className="font-bold text-text text-sm italic">{friend.name}</div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="font-bold text-text text-sm italic truncate">{friend.name}</div>
                                             <div className="text-[9px] text-zinc-500 font-mono uppercase tracking-tighter">Gym Bro</div>
                                         </div>
                                     </div>
                                     
-                                    <button 
-                                        onClick={() => onToggleFriend(friend.id, friend.name, color)}
-                                        className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all border ${
-                                            isActive 
-                                            ? 'bg-black text-white border-white/20' 
-                                            : 'bg-transparent text-zinc-500 border-white/5 hover:bg-white/5'
-                                        }`}
-                                        style={isActive ? { borderColor: color, color: color } : {}}
-                                    >
-                                        {isActive ? (
-                                            <div className="flex items-center gap-1.5">
-                                                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }}></div> Activo
-                                            </div>
-                                        ) : 'Ver'}
-                                    </button>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <button 
+                                            onClick={() => onToggleFriend(friend.id, friend.name, color)}
+                                            className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all border ${
+                                                isActive 
+                                                ? 'bg-black text-white border-white/20' 
+                                                : 'bg-transparent text-zinc-500 border-white/5 hover:bg-white/5'
+                                            }`}
+                                            style={isActive ? { borderColor: color, color: color } : {}}
+                                            disabled={isLoading}
+                                        >
+                                            {isActive ? (
+                                                <div className="flex items-center gap-1.5">
+                                                    <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }}></div> Activo
+                                                </div>
+                                            ) : 'Ver'}
+                                        </button>
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleRemoveFriend(friend.id, friend.name);
+                                            }}
+                                            className="p-2 rounded-lg text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-all border border-red-500/10 hover:border-red-500/30 opacity-70 group-hover:opacity-100 disabled:opacity-50"
+                                            title="Eliminar amigo"
+                                            disabled={isLoading}
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
                                 </div>
                             );
                         })

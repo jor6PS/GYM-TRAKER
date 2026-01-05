@@ -155,7 +155,17 @@ export const getFriendships = async (): Promise<Friend[]> => {
         .select(`id, status, user_id, friend_id`)
         .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`);
     
-    if (error || !data) return [];
+    if (error) {
+        console.error('[getFriendships] Error obteniendo amistades:', error);
+        return [];
+    }
+    
+    if (!data) {
+        console.warn('[getFriendships] No se obtuvieron datos');
+        return [];
+    }
+    
+    console.log('[getFriendships] Relaciones encontradas:', data.length, data.map(f => ({ id: f.id, user_id: f.user_id, friend_id: f.friend_id, status: f.status })));
 
     const friendPromises = data.map(async (f: any) => {
         const otherId = f.user_id === user.id ? f.friend_id : f.user_id;
@@ -182,7 +192,9 @@ export const getFriendships = async (): Promise<Friend[]> => {
         }
     });
 
-    return Array.from(uniqueMap.values());
+    const finalFriends = Array.from(uniqueMap.values());
+    console.log('[getFriendships] Amigos finales después de deduplicar:', finalFriends.length, finalFriends.map(f => ({ id: f.id, name: f.name, status: f.status })));
+    return finalFriends;
 };
 
 export const getPendingRequestsCount = async (): Promise<number> => {
@@ -196,6 +208,105 @@ export const getPendingRequestsCount = async (): Promise<number> => {
 export const respondToRequest = async (friendshipId: string, status: 'accepted' | 'rejected') => {
     const { error } = await supabase.from('friendships').update({ status }).eq('id', friendshipId);
     if (error) throw error;
+};
+
+/**
+ * Elimina completamente una amistad, desvinculando a ambos usuarios.
+ * Busca y elimina la relación independientemente de quién sea user_id o friend_id.
+ */
+export const removeFriendship = async (friendId: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Not logged in");
+
+    console.log('[removeFriendship] Buscando amistad entre usuario:', user.id, 'y amigo:', friendId);
+
+    // Buscar la relación en cualquier dirección (user_id o friend_id)
+    // Usamos el mismo formato que en sendFriendRequest
+    const { data: friendships, error: findError } = await supabase
+        .from('friendships')
+        .select('id, user_id, friend_id, status')
+        .or(`and(user_id.eq.${user.id},friend_id.eq.${friendId}),and(user_id.eq.${friendId},friend_id.eq.${user.id})`);
+
+    if (findError) {
+        console.error('[removeFriendship] Error buscando amistad:', findError);
+        throw findError;
+    }
+
+    console.log('[removeFriendship] Relaciones encontradas:', friendships?.length || 0, friendships?.map(f => ({ id: f.id, user_id: f.user_id, friend_id: f.friend_id, status: f.status })));
+
+    if (!friendships || friendships.length === 0) {
+        console.warn('[removeFriendship] No se encontró la amistad entre', user.id, 'y', friendId);
+        throw new Error("Amistad no encontrada");
+    }
+
+    // Eliminar todas las relaciones encontradas (por si hay duplicados)
+    const friendshipIds = friendships.map(f => f.id);
+    console.log('[removeFriendship] Eliminando relaciones con IDs:', friendshipIds);
+    
+    let deletedCount = 0;
+    // Intentar eliminar cada relación individualmente para asegurar que funcione
+    for (const friendshipId of friendshipIds) {
+        console.log(`[removeFriendship] Intentando eliminar relación ${friendshipId}...`);
+        const { error: deleteError, data: deleteResult, count } = await supabase
+            .from('friendships')
+            .delete({ count: 'exact' })
+            .eq('id', friendshipId)
+            .select();
+
+        if (deleteError) {
+            console.error(`[removeFriendship] Error eliminando amistad ${friendshipId}:`, deleteError);
+            throw deleteError;
+        }
+
+        if (deleteResult && deleteResult.length > 0) {
+            deletedCount += deleteResult.length;
+            console.log(`[removeFriendship] ✅ Relación ${friendshipId} eliminada. Resultado:`, deleteResult);
+        } else {
+            const errorMsg = `⚠️ No se eliminó ninguna fila para ${friendshipId}. Esto sugiere un problema de permisos RLS en Supabase.`;
+            console.warn(`[removeFriendship] ${errorMsg}`);
+            // No lanzamos error aquí para intentar eliminar todas las relaciones posibles
+            // Pero verificaremos después si realmente se eliminaron
+        }
+    }
+    
+    console.log(`[removeFriendship] Total de relaciones eliminadas: ${deletedCount} de ${friendshipIds.length}`);
+    
+    // Esperar un momento para que la base de datos se actualice
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // Verificar que realmente se eliminaron - hacer múltiples intentos si es necesario
+    let verifyAttempts = 0;
+    let verifyData: any[] = [];
+    
+    while (verifyAttempts < 3) {
+        const { data: checkData, error: verifyError } = await supabase
+            .from('friendships')
+            .select('id, user_id, friend_id, status')
+            .or(`and(user_id.eq.${user.id},friend_id.eq.${friendId}),and(user_id.eq.${friendId},friend_id.eq.${user.id})`);
+        
+        if (verifyError) {
+            console.error(`[removeFriendship] Error verificando eliminación (intento ${verifyAttempts + 1}):`, verifyError);
+        } else {
+            verifyData = checkData || [];
+            console.log(`[removeFriendship] Verificación (intento ${verifyAttempts + 1}): relaciones restantes:`, verifyData.length);
+            if (verifyData.length === 0) {
+                console.log('[removeFriendship] ✅ Verificación exitosa: la relación fue eliminada correctamente');
+                break;
+            }
+        }
+        
+        if (verifyAttempts < 2) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        verifyAttempts++;
+    }
+    
+    if (verifyData.length > 0) {
+        console.error('[removeFriendship] ❌ ERROR: Todavía existen relaciones después de intentar eliminar:', verifyData);
+        throw new Error(`La relación no se eliminó correctamente. Relaciones restantes: ${verifyData.length}. Puede ser un problema de permisos RLS en Supabase.`);
+    }
+    
+    return true;
 };
 
 export const getFriendWorkouts = async (friendIds: string[]) => {
