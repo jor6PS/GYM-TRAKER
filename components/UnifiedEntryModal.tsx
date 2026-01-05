@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { X, Save, Clock, History, Edit3, ArrowRight, Search, Plus, Dumbbell, ChevronRight, Trash2, Layers, Activity, Pencil, Sparkles, Zap } from 'lucide-react';
+import { X, Save, Clock, History, Edit3, ArrowRight, Search, Plus, Dumbbell, ChevronRight, Trash2, Layers, Activity, Pencil, Sparkles, Zap, CheckCircle } from 'lucide-react';
 import type { WorkoutData, Exercise, Workout, Set, MetricType, WorkoutPlan } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useExercises } from '../contexts/ExerciseContext';
@@ -41,7 +41,40 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
   const [setsConfig, setSetsConfig] = useState<Set[]>([{ reps: 10, weight: 0, unit: 'kg' }]);
   const [isUnilateral, setIsUnilateral] = useState(false);
   const [editingItem, setEditingItem] = useState<{ index: number; data: Exercise } | null>(null);
+  const [pendingExercises, setPendingExercises] = useState<{ exercises: Exercise[]; source: 'routine' | 'history'; sourceName?: string } | null>(null);
 
+  // Recuperar backup de ejercicios al abrir el modal si existe
+  useEffect(() => {
+    if (isOpen) {
+      try {
+        const backupKey = 'workout_session_backup';
+        const backup = sessionStorage.getItem(backupKey);
+        if (backup) {
+          const parsed = JSON.parse(backup);
+          // Restaurar ejercicios si el backup es reciente (menos de 1 hora) y no hay ejercicios actualmente
+          if (parsed.exercises && Array.isArray(parsed.exercises) && parsed.exercises.length > 0) {
+            if (Date.now() - parsed.timestamp < 3600000) {
+              // Solo restaurar si realmente no hay ejercicios
+              setSessionExercises((prev) => {
+                if (prev.length === 0) {
+                  setActiveTab('overview');
+                  setSaveError('Se recuperaron ejercicios guardados temporalmente. Puedes intentar guardar de nuevo.');
+                  console.log(`✅ Recuperados ${parsed.exercises.length} ejercicios del backup al abrir el modal`);
+                  return parsed.exercises;
+                }
+                return prev;
+              });
+            } else {
+              // Limpiar backup antiguo
+              sessionStorage.removeItem(backupKey);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('⚠️ Error al recuperar backup:', e);
+      }
+    }
+  }, [isOpen]);
 
   const filteredLibrary = useMemo(() => {
       const term = normalizeText(libSearch);
@@ -93,11 +126,26 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                  <div className="flex items-center gap-3"><div className="text-xs font-mono text-zinc-500">{sessionExercises.length} {t('added')}</div><button onClick={onClose} className="p-1 text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button></div>
             </div>
             <div className="flex gap-1">
-                {['library', 'routines', 'overview', 'history'].map(tab => (
-                    <button key={tab} onClick={() => setActiveTab(tab as Tab)} className={`flex-1 py-3 text-[10px] font-black uppercase rounded-t-lg transition-all border-t border-x ${activeTab === tab ? 'bg-zinc-900 border-white/10 text-primary border-b-black translate-y-[1px]' : 'bg-transparent border-transparent text-zinc-600 hover:text-zinc-400'}`}>
-                        {t(tab as any)} {tab === 'overview' && sessionExercises.length > 0 && <span className="bg-primary text-black text-[9px] px-1 rounded-full">{sessionExercises.length}</span>}
-                    </button>
-                ))}
+                {['library', 'routines', 'history', 'overview'].map(tab => {
+                    const isOverview = tab === 'overview';
+                    return (
+                        <button 
+                            key={tab} 
+                            onClick={() => setActiveTab(tab as Tab)} 
+                            className={`flex-1 py-3 text-[10px] font-black uppercase rounded-t-lg transition-all border-t border-x ${
+                                isOverview 
+                                    ? activeTab === tab 
+                                        ? 'bg-zinc-900 border-yellow-400/30 text-yellow-400 border-b-black translate-y-[1px]' 
+                                        : 'bg-transparent border-transparent text-yellow-500/80 hover:text-yellow-400'
+                                    : activeTab === tab 
+                                        ? 'bg-zinc-900 border-white/10 text-primary border-b-black translate-y-[1px]' 
+                                        : 'bg-transparent border-transparent text-zinc-600 hover:text-zinc-400'
+                            }`}
+                        >
+                            {t(tab as any)} {tab === 'overview' && sessionExercises.length > 0 && <span className="bg-yellow-400 text-black text-[9px] px-1 rounded-full">{sessionExercises.length}</span>}
+                        </button>
+                    );
+                })}
             </div>
         </div>
 
@@ -165,7 +213,10 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                     <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar">
                         {plans.map((plan) => (
                             <div key={plan.id} className="w-full bg-black border border-white/10 p-4 rounded-xl flex items-center justify-between group">
-                                <button onClick={() => setSessionExercises([...sessionExercises, ...plan.exercises.map(e => ({ ...e, sets: e.sets.map(s => ({ ...s })) }))])} className="flex-1 text-left">
+                                <button onClick={() => {
+                                    const exercisesToAdd = plan.exercises.map(e => ({ ...e, sets: e.sets.map(s => ({ ...s })) }));
+                                    setPendingExercises({ exercises: exercisesToAdd, source: 'routine', sourceName: plan.name });
+                                }} className="flex-1 text-left">
                                     <div className="text-white font-bold text-sm group-hover:text-yellow-400 transition-colors">{plan.name}</div>
                                     <div className="text-[10px] text-zinc-500 mt-1 uppercase font-mono tracking-widest">{plan.exercises.length} Ejercicios</div>
                                 </button>
@@ -216,6 +267,18 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                           onClick={async () => {
                             setIsSaving(true);
                             setSaveError(null);
+                            
+                            // Guardar backup en sessionStorage ANTES de intentar guardar
+                            const backupKey = 'workout_session_backup';
+                            try {
+                              sessionStorage.setItem(backupKey, JSON.stringify({
+                                exercises: sessionExercises,
+                                timestamp: Date.now()
+                              }));
+                            } catch (e) {
+                              console.warn('⚠️ No se pudo guardar backup en sessionStorage:', e);
+                            }
+                            
                             try {
                               // Validar antes de guardar
                               const validExercises = sessionExercises.filter(ex => {
@@ -245,6 +308,13 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                               
                               console.log(`✅ Sesión guardada exitosamente`);
                               
+                              // Limpiar backup solo si el guardado fue exitoso
+                              try {
+                                sessionStorage.removeItem(backupKey);
+                              } catch (e) {
+                                // Ignorar errores al limpiar
+                              }
+                              
                               // Solo limpiar y cerrar si el guardado fue exitoso
                               setSessionExercises([]);
                               setSaveError(null);
@@ -252,7 +322,30 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                               onClose();
                             } catch (error: any) {
                               console.error('❌ Error al guardar sesión:', error);
-                              const errorMessage = error?.message || 'Error al guardar la sesión. Por favor, intenta de nuevo.';
+                              
+                              // Si es un error de timeout, ofrecer recuperar el backup
+                              const isTimeout = error?.message?.includes('Timeout') || error?.message?.includes('timeout');
+                              let errorMessage = error?.message || 'Error al guardar la sesión. Por favor, intenta de nuevo.';
+                              
+                              if (isTimeout) {
+                                errorMessage += ' Tus ejercicios están guardados temporalmente. Puedes intentar guardar de nuevo sin perderlos.';
+                                
+                                // Intentar recuperar backup si existe
+                                try {
+                                  const backup = sessionStorage.getItem(backupKey);
+                                  if (backup) {
+                                    const parsed = JSON.parse(backup);
+                                    // Restaurar ejercicios si el backup es reciente (menos de 1 hora)
+                                    if (parsed.exercises && Date.now() - parsed.timestamp < 3600000) {
+                                      setSessionExercises(parsed.exercises);
+                                      console.log('✅ Ejercicios recuperados del backup');
+                                    }
+                                  }
+                                } catch (e) {
+                                  console.warn('⚠️ No se pudo recuperar backup:', e);
+                                }
+                              }
+                              
                               setSaveError(errorMessage);
                               setIsSaving(false);
                               // NO cerrar el modal si hay error para que el usuario vea el mensaje
@@ -280,11 +373,70 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
 
             {activeTab === 'history' && (
                 <div className="space-y-3 h-full overflow-y-auto custom-scrollbar">
-                    {pastWorkouts.slice(0, 10).map((h, i) => <button key={i} onClick={() => setSessionExercises([...sessionExercises, ...h.structured_data.exercises.map(e => ({ ...e, sets: e.sets.map(s => ({ ...s })) }))])} className="w-full bg-black border border-white/10 hover:border-blue-400/30 p-4 rounded-xl text-left transition-all group"><div className="flex justify-between items-center mb-2"><div className="text-[10px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2"><Clock className="w-3 h-3" /> {format(new Date(h.date), 'dd MMM yyyy')}</div><ArrowRight className="w-4 h-4 text-zinc-700 group-hover:text-blue-400" /></div><div className="text-[10px] text-zinc-500 font-mono line-clamp-2 uppercase tracking-wide">{h.structured_data.exercises.map(e => e.name).join(', ')}</div></button>)}
+                    {pastWorkouts.slice(0, 10).map((h, i) => (
+                        <button 
+                            key={i} 
+                            onClick={() => {
+                                const exercisesToAdd = h.structured_data.exercises.map(e => ({ ...e, sets: e.sets.map(s => ({ ...s })) }));
+                                setPendingExercises({ exercises: exercisesToAdd, source: 'history', sourceName: format(new Date(h.date), 'dd MMM yyyy') });
+                            }} 
+                            className="w-full bg-black border border-white/10 hover:border-blue-400/30 p-4 rounded-xl text-left transition-all group"
+                        >
+                            <div className="flex justify-between items-center mb-2">
+                                <div className="text-[10px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2">
+                                    <Clock className="w-3 h-3" /> {format(new Date(h.date), 'dd MMM yyyy')}
+                                </div>
+                                <ArrowRight className="w-4 h-4 text-zinc-700 group-hover:text-blue-400" />
+                            </div>
+                            <div className="text-[10px] text-zinc-500 font-mono line-clamp-2 uppercase tracking-wide">{h.structured_data.exercises.map(e => e.name).join(', ')}</div>
+                        </button>
+                    ))}
                 </div>
             )}
         </div>
       </div>
+      
+      {/* Modal de confirmación para ejercicios añadidos desde Rutina/Historia */}
+      {pendingExercises && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-6 bg-black/95 backdrop-blur-xl animate-in fade-in duration-300">
+          <div className="bg-surface border border-primary/30 p-8 rounded-[2.5rem] max-w-md w-full text-center space-y-6 shadow-2xl scale-in-center">
+            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto border border-primary/20">
+              <CheckCircle className="w-8 h-8 text-primary" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-xl font-black text-white italic uppercase tracking-tight">
+                {pendingExercises.source === 'routine' ? 'Añadir Rutina' : 'Añadir desde Historia'}
+              </h3>
+              <p className="text-zinc-400 text-sm leading-relaxed">
+                {pendingExercises.source === 'routine' ? (
+                  <>¿Añadir <span className="text-primary font-bold">{pendingExercises.sourceName}</span> con <span className="text-primary font-bold">{pendingExercises.exercises.length} ejercicios</span> a tu sesión?</>
+                ) : (
+                  <>¿Añadir <span className="text-primary font-bold">{pendingExercises.exercises.length} ejercicios</span> del entrenamiento del <span className="text-primary font-bold">{pendingExercises.sourceName}</span> a tu sesión?</>
+                )}
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 pt-2">
+              <button 
+                onClick={() => {
+                  setSessionExercises([...sessionExercises, ...pendingExercises.exercises]);
+                  setPendingExercises(null);
+                  setActiveTab('overview');
+                }} 
+                className="w-full py-4 bg-primary text-black font-black rounded-2xl text-sm uppercase shadow-lg shadow-primary/20 active:scale-95 transition-all"
+              >
+                Aceptar
+              </button>
+              <button 
+                onClick={() => setPendingExercises(null)} 
+                className="w-full py-4 bg-zinc-900 text-zinc-500 font-black rounded-2xl text-sm uppercase hover:text-zinc-300 transition-colors"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {editingItem && <EditExerciseModal isOpen={!!editingItem} onClose={() => setEditingItem(null)} exercise={editingItem.data} onSave={(upd) => { const n = [...sessionExercises]; n[editingItem.index] = upd; setSessionExercises(n); setEditingItem(null); }} />}
     </div>
   );

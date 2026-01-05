@@ -51,8 +51,10 @@ interface HistoryPoint {
   secondaryValue?: number; 
   unit: string;
   reps?: number;
+  weight?: number; // Peso de la mejor serie
   label: string; 
-  isBodyweight: boolean; 
+  isBodyweight: boolean;
+  allSets?: Array<{ weight: number; reps: number; unit: string }>; // Todas las series del día
 }
 
 const calculate1RM = (weight: number, reps: number) => {
@@ -421,15 +423,44 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
       selectedRecord.daily_max.forEach((dayMax: { date: string; max_weight_kg: number; max_reps: number }) => {
         if (!dayMax.date) return;
         
+        // Obtener todas las series del día desde los workouts
+        const workoutForDate = workouts.find(w => w.date.split('T')[0] === dayMax.date);
+        let allSets: Array<{ weight: number; reps: number; unit: string }> = [];
+        
+        if (workoutForDate?.structured_data?.exercises) {
+          const exerciseData = workoutForDate.structured_data.exercises.find(e => {
+            if (!e || !e.name) return false;
+            return getCanonicalId(e.name, catalog) === selectedExerciseId;
+          });
+          
+          if (exerciseData?.sets) {
+            const isUnilateral = exerciseData.unilateral || false;
+            allSets = exerciseData.sets
+              .filter(set => (set.reps || 0) > 0) // Solo series con reps > 0
+              .map(set => {
+                const weight = set.weight || 0;
+                const realWeight = isUnilateral ? weight * 2 : weight;
+                return {
+                  weight: realWeight,
+                  reps: set.reps || 0,
+                  unit: set.unit || unit
+                };
+              });
+          }
+        }
+        
+        const maxWeight = dayMax.max_weight_kg || 0;
+        const maxReps = dayMax.max_reps || 0;
         let primaryVal = 0, secondaryVal = 0, label = "";
         
-        if (isBW) {
-          primaryVal = dayMax.max_reps || 0;
-          label = `${primaryVal} reps`;
+        // Siempre mostrar peso × reps cuando haya peso, o solo reps si no hay peso
+        if (maxWeight > 0) {
+          primaryVal = maxWeight;
+          label = `${maxWeight}${unit} × ${maxReps} reps`;
+          secondaryVal = calculate1RM(maxWeight, maxReps);
         } else {
-          primaryVal = dayMax.max_weight_kg || 0;
-          secondaryVal = calculate1RM(primaryVal, dayMax.max_reps || 0);
-          label = `${primaryVal}${unit}`;
+          primaryVal = maxReps;
+          label = `${maxReps} reps`;
         }
         
         history.push({
@@ -437,9 +468,11 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
           value: primaryVal,
           secondaryValue: secondaryVal,
           unit: unit,
-          reps: dayMax.max_reps || 0,
+          reps: maxReps,
+          weight: maxWeight,
           label,
-          isBodyweight: isBW
+          isBodyweight: isBW,
+          allSets
         });
       });
       
@@ -448,7 +481,7 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
     
     // Fallback: calcular desde workouts (método antiguo mejorado)
     const history: HistoryPoint[] = [];
-    const dayMaxMap = new Map<string, { max_weight_kg: number; max_reps: number; unit: string; isBW: boolean; date: string }>();
+    const dayMaxMap = new Map<string, { max_weight_kg: number; max_reps: number; unit: string; isBW: boolean; date: string; allSets?: Array<{ weight: number; reps: number; unit: string }> }>();
     
     workouts.forEach(workout => {
         // Validar que el workout tenga datos válidos
@@ -463,13 +496,21 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
         
         if (exerciseData) {
           const workoutDateOnly = workout.date.split('T')[0];
-          let dayMax = dayMaxMap.get(workoutDateOnly) || { max_weight_kg: 0, max_reps: 0, unit: 'kg', isBW: false, date: workoutDateOnly };
+          let dayMax = dayMaxMap.get(workoutDateOnly) || { max_weight_kg: 0, max_reps: 0, unit: 'kg', isBW: false, date: workoutDateOnly, allSets: [] };
+          
+          const isUnilateral = exerciseData.unilateral || false;
           
           exerciseData.sets.forEach(set => {
             const weight = set.weight || 0;
             const reps = set.reps || 0;
             const unit = set.unit || 'kg';
-            const isUnilateral = exerciseData.unilateral || false;
+            
+            // Guardar todas las series válidas
+            if (reps > 0) {
+              const realWeight = isUnilateral ? weight * 2 : weight;
+              if (!dayMax.allSets) dayMax.allSets = [];
+              dayMax.allSets.push({ weight: realWeight, reps, unit });
+            }
             
             if (selectedExerciseType === 'cardio') {
               // Para cardio, usar tiempo
@@ -497,18 +538,21 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
     
     // Convertir el mapa a array de HistoryPoint
     dayMaxMap.forEach((dayMax, date) => {
+      const maxWeight = dayMax.max_weight_kg || 0;
+      const maxReps = dayMax.max_reps || 0;
       let primaryVal = 0, secondaryVal = 0, label = "";
       
       if (selectedExerciseType === 'cardio') {
         primaryVal = dayMax.max_reps; // Para cardio, max_reps almacena minutos
         label = `${Math.floor(primaryVal)}:${String(Math.round((primaryVal % 1) * 60)).padStart(2, '0')}`;
-      } else if (dayMax.isBW) {
-        primaryVal = dayMax.max_reps;
-        label = `${primaryVal} reps`;
+      } else if (maxWeight > 0) {
+        // Siempre mostrar peso × reps cuando haya peso
+        primaryVal = maxWeight;
+        label = `${maxWeight}${dayMax.unit} × ${maxReps} reps`;
+        secondaryVal = calculate1RM(maxWeight, maxReps);
       } else {
-        primaryVal = dayMax.max_weight_kg;
-        secondaryVal = calculate1RM(primaryVal, dayMax.max_reps);
-        label = `${primaryVal}${dayMax.unit}`;
+        primaryVal = maxReps;
+        label = `${maxReps} reps`;
       }
       
       history.push({
@@ -516,9 +560,11 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
         value: primaryVal,
         secondaryValue: secondaryVal,
         unit: dayMax.unit,
-        reps: dayMax.max_reps,
+        reps: maxReps,
+        weight: maxWeight,
         label,
-        isBodyweight: dayMax.isBW
+        isBodyweight: dayMax.isBW,
+        allSets: dayMax.allSets
       });
     });
     
@@ -749,13 +795,24 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
                          <h4 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-4">Historial de Progresión</h4>
                          {/* Fix: exerciseHistory is now explicitly typed as HistoryPoint[], so .map is valid */}
                          {exerciseHistory.slice().reverse().map((h, i) => (
-                             <div key={i} className="flex items-center justify-between p-4 bg-zinc-900/40 border border-white/5 rounded-2xl">
-                                 <div className="flex items-center gap-4">
-                                     <div className="text-xs font-mono text-zinc-600 font-bold">{format(new Date(h.date), 'dd/MM/yy')}</div>
-                                     <div className="text-sm font-bold text-white">{h.label}</div>
+                             <div key={i} className="flex flex-col gap-2 p-4 bg-zinc-900/40 border border-white/5 rounded-2xl">
+                                 <div className="flex items-center justify-between">
+                                     <div className="flex items-center gap-4">
+                                         <div className="text-xs font-mono text-zinc-600 font-bold">{format(new Date(h.date), 'dd/MM/yy')}</div>
+                                         <div className="text-sm font-bold text-white">{h.label}</div>
+                                     </div>
+                                     {h.secondaryValue && h.secondaryValue > 0 && selectedExerciseType !== 'cardio' && (
+                                         <div className="text-[10px] font-mono text-primary font-bold bg-primary/5 px-2 py-1 rounded border border-primary/10">1RM Est: {Math.round(h.secondaryValue)}kg</div>
+                                     )}
                                  </div>
-                                 {h.secondaryValue && h.secondaryValue > 0 && (
-                                     <div className="text-[10px] font-mono text-primary font-bold bg-primary/5 px-2 py-1 rounded border border-primary/10">1RM Est: {h.secondaryValue}kg</div>
+                                 {h.allSets && h.allSets.length > 0 && (
+                                     <div className="flex flex-wrap gap-1.5 mt-1">
+                                         {h.allSets.map((set, idx) => (
+                                             <div key={idx} className="text-[9px] font-mono text-zinc-500 bg-zinc-800/50 px-2 py-0.5 rounded border border-zinc-700/30">
+                                                 {set.weight > 0 ? `${set.weight}${set.unit}×${set.reps}` : `${set.reps} reps`}
+                                             </div>
+                                         ))}
+                                     </div>
                                  )}
                              </div>
                          ))}

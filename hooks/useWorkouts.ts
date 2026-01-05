@@ -133,7 +133,7 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
       throw new Error('Error al procesar los ejercicios. Intenta de nuevo.');
     }
     
-    const SAVE_TIMEOUT_MS = 30000; // 30 segundos timeout para el guardado completo
+    const SAVE_TIMEOUT_MS = 60000; // 60 segundos timeout para el guardado completo (aumentado para sesiones largas)
     
     try {
       // Wrapper para timeout general del proceso
@@ -145,21 +145,47 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
           // CRÍTICO: Verificar en la BD si ya existe un workout para esta fecha antes de guardar
           // Esto previene duplicados si hay problemas de conexión
           console.log(`🔍 Verificando workout existente para fecha: ${dateToSave}...`);
-          const queryResult = await withTimeout(
+          
+          // Primero, verificar solo existencia (más rápido)
+          const existsCheck = await withTimeout(
             supabase
               .from('workouts')
-              .select('*')
+              .select('id')
               .eq('user_id', userId)
               .eq('date', dateToSave)
               .maybeSingle() as unknown as Promise<{ data: any; error: any }>,
-            10000, // 10 segundos timeout para verificación
+            25000, // 25 segundos timeout para verificación (aumentado para sesiones largas)
             'Timeout al verificar workout existente'
           );
-          const { data: existingWorkoutInDb, error: fetchError } = queryResult;
+          
+          let existingWorkoutInDb = null;
+          let fetchError = existsCheck.error;
+          
+          // Si existe, obtener los datos completos
+          if (existsCheck.data && !existsCheck.error) {
+            console.log(`📋 Workout existente encontrado (ID: ${existsCheck.data.id}), obteniendo datos completos...`);
+            const fullQueryResult = await withTimeout(
+              supabase
+                .from('workouts')
+                .select('*')
+                .eq('id', existsCheck.data.id)
+                .single() as unknown as Promise<{ data: any; error: any }>,
+              20000, // 20 segundos timeout para obtener datos completos
+              'Timeout al obtener datos completos del workout existente'
+            );
+            existingWorkoutInDb = fullQueryResult.data;
+            if (fullQueryResult.error) {
+              fetchError = fullQueryResult.error;
+            }
+          }
           
           if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 = no rows returned, es normal
             console.error('❌ Error al verificar workout existente en BD:', fetchError);
-            // Continuar de todas formas, pero loguear el error
+            // Si es un timeout, lanzar error más descriptivo
+            if (fetchError.message?.includes('Timeout') || fetchError.message?.includes('timeout')) {
+              throw new Error('La verificación del workout tardó demasiado. Esto puede ocurrir con muchos ejercicios o conexión lenta. Por favor, intenta guardar de nuevo. Tus ejercicios se han guardado temporalmente y no se perderán.');
+            }
+            // Para otros errores, continuar de todas formas pero loguear
           }
           
           if (existingWorkoutInDb) {
@@ -214,7 +240,7 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
                 .eq('id', existingWorkoutInDb.id)
                 .select()
                 .single() as unknown as Promise<{ data: any; error: any }>,
-              15000, // 15 segundos timeout para actualización
+              25000, // 25 segundos timeout para actualización (aumentado para sesiones largas)
               'Timeout al actualizar workout'
             );
             const { data: updatedWorkoutData, error: updateError } = updateResult;
@@ -239,7 +265,7 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
                 .select('*')
                 .eq('id', updatedWorkoutData.id)
                 .single() as unknown as Promise<{ data: any; error: any }>,
-              10000, // 10 segundos timeout para verificación
+              20000, // 20 segundos timeout para verificación (aumentado)
               'Timeout al verificar workout actualizado'
             );
             const { data: verifiedWorkout, error: verifyError } = verifyResult;
@@ -321,7 +347,7 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
                 source: 'web',
                 user_weight: currentUserWeight || 80
               }).select().single() as unknown as Promise<{ data: any; error: any }>,
-              15000, // 15 segundos timeout para inserción
+              25000, // 25 segundos timeout para inserción (aumentado para sesiones largas)
               'Timeout al insertar workout'
             );
             const { data: inserted, error: insertError } = insertResult;
@@ -371,7 +397,7 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
                 .select('*')
                 .eq('id', inserted.id)
                 .single() as unknown as Promise<{ data: any; error: any }>,
-              10000, // 10 segundos timeout para verificación
+              20000, // 20 segundos timeout para verificación (aumentado)
               'Timeout al verificar workout insertado'
             );
             const { data: verifiedWorkout, error: verifyError } = verifyInsertResult;
