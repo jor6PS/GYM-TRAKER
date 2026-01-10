@@ -17,6 +17,7 @@ interface UseModalsReturn {
   showSocialModal: boolean;
   showArenaModal: boolean;
   showAdminModal: boolean;
+  showNotificationsModal: boolean;
   
   // Modal actions
   openUnifiedEntry: () => void;
@@ -35,6 +36,8 @@ interface UseModalsReturn {
   closeArenaModal: () => void;
   openAdminModal: () => void;
   closeAdminModal: () => void;
+  openNotificationsModal: () => void;
+  closeNotificationsModal: () => void;
   
   // Editing states
   editingPlan: WorkoutPlan | null;
@@ -62,6 +65,7 @@ export const useModals = (): UseModalsReturn => {
   const [showSocialModal, setShowSocialModal] = useState(false);
   const [showArenaModal, setShowArenaModal] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
+  const [showNotificationsModal, setShowNotificationsModal] = useState(false);
   
   const [editingPlan, setEditingPlan] = useState<WorkoutPlan | null>(null);
   const [editingExercise, setEditingExercise] = useState<EditingExercise | null>(null);
@@ -107,6 +111,9 @@ export const useModals = (): UseModalsReturn => {
   const openAdminModal = useCallback(() => setShowAdminModal(true), []);
   const closeAdminModal = useCallback(() => setShowAdminModal(false), []);
 
+  const openNotificationsModal = useCallback(() => setShowNotificationsModal(true), []);
+  const closeNotificationsModal = useCallback(() => setShowNotificationsModal(false), []);
+
   return {
     showUnifiedEntry,
     showPRModal,
@@ -116,6 +123,7 @@ export const useModals = (): UseModalsReturn => {
     showSocialModal,
     showArenaModal,
     showAdminModal,
+    showNotificationsModal,
     openUnifiedEntry,
     closeUnifiedEntry,
     openPRModal,
@@ -132,6 +140,8 @@ export const useModals = (): UseModalsReturn => {
     closeArenaModal,
     openAdminModal,
     closeAdminModal,
+    openNotificationsModal,
+    closeNotificationsModal,
     editingPlan,
     setEditingPlan,
     editingExercise,

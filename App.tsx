@@ -19,6 +19,7 @@ import { useWorkouts } from './hooks/useWorkouts';
 import { useFriends } from './hooks/useFriends';
 import { useModals } from './hooks/useModals';
 import { useGroupedWorkouts } from './hooks/useGroupedWorkouts';
+import { useNotifications } from './hooks/useNotifications';
 import { Pencil, EyeOff, Activity, Swords, Trash2, Loader2, AlertTriangle, Move } from 'lucide-react';
 
 const UnifiedEntryModal = lazy(() => import('./components/UnifiedEntryModal').then(module => ({ default: module.UnifiedEntryModal })));
@@ -29,6 +30,7 @@ const ProfileModal = lazy(() => import('./components/ProfileModal').then(module 
 const MonthlySummaryModal = lazy(() => import('./components/MonthlySummaryModal').then(module => ({ default: module.MonthlySummaryModal })));
 const SocialModal = lazy(() => import('./components/SocialModal').then(module => ({ default: module.SocialModal })));
 const ArenaModal = lazy(() => import('./components/ArenaModal').then(module => ({ default: module.ArenaModal })));
+const NotificationsModal = lazy(() => import('./components/NotificationsModal').then(module => ({ default: module.NotificationsModal })));
 import { AdminPanel } from './components/AdminPanel';
 
 export default function AppWrapper() {
@@ -69,6 +71,16 @@ function App() {
   // Friends hook
   const { activeFriends, friendsWorkouts, toggleFriend } = useFriends();
   
+  // Notifications hook
+  const {
+    notifications,
+    unreadCount,
+    markAsRead,
+    markAllAsRead,
+    clearNotifications,
+    checkForNewNotifications
+  } = useNotifications();
+  
   // Modals hook
   const {
     showUnifiedEntry,
@@ -78,6 +90,7 @@ function App() {
     showMonthlySummary,
     showSocialModal,
     showArenaModal,
+    showNotificationsModal,
     openUnifiedEntry,
     closeUnifiedEntry,
     openPRModal,
@@ -92,6 +105,8 @@ function App() {
     closeSocialModal,
     openArenaModal,
     closeArenaModal,
+    openNotificationsModal,
+    closeNotificationsModal,
     editingPlan,
     setEditingPlan,
     editingExercise,
@@ -119,6 +134,13 @@ function App() {
     selectedDate,
     currentUser
   );
+
+  // Check for new notifications when friends workouts change
+  useEffect(() => {
+    if (activeFriends.length > 0 && friendsWorkouts.length > 0) {
+      checkForNewNotifications(friendsWorkouts, activeFriends);
+    }
+  }, [friendsWorkouts, activeFriends, checkForNewNotifications]);
 
   // Procesar workouts existentes para actualizar records si el usuario no tiene records
   // Usar useRef para evitar procesar múltiples veces
@@ -310,12 +332,14 @@ function App() {
       <AppHeader 
         currentUser={currentUser} 
         pendingRequestsCount={pendingRequestsCount} 
-        activeFriendsCount={activeFriends.length} 
+        activeFriendsCount={activeFriends.length}
+        unreadNotificationsCount={unreadCount}
         onOpenSocial={openSocialModal} 
         onOpenPR={openPRModal} 
-        onOpenMonthly={openMonthlySummary} 
+        onOpenMonthly={openMonthlySummary}
+        onOpenNotifications={openNotificationsModal}
         onOpenProfile={openProfileModal}
-onOpenAdmin={undefined}
+        onOpenAdmin={undefined}
       />
 
       <main className="max-w-md mx-auto px-4 pt-24 space-y-6">
@@ -680,6 +704,19 @@ onOpenAdmin={undefined}
               }))
             ]} 
           />
+        )}
+        {showNotificationsModal && (
+          <Suspense fallback={<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>}>
+            <NotificationsModal
+              isOpen={showNotificationsModal}
+              onClose={closeNotificationsModal}
+              notifications={notifications}
+              unreadCount={unreadCount}
+              onMarkAsRead={markAsRead}
+              onMarkAllAsRead={markAllAsRead}
+              onClear={clearNotifications}
+            />
+          </Suspense>
         )}
       </Suspense>
     </div>

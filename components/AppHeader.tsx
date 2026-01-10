@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Users, Trophy, Sparkles, Shield } from 'lucide-react';
+import { Users, Trophy, Sparkles, Shield, Bell } from 'lucide-react';
 import { AppLogo } from '../utils';
 import { User } from '../types';
 
@@ -8,9 +8,11 @@ interface AppHeaderProps {
   currentUser: User;
   pendingRequestsCount: number;
   activeFriendsCount: number;
+  unreadNotificationsCount: number;
   onOpenSocial: () => void;
   onOpenPR: () => void;
   onOpenMonthly: () => void;
+  onOpenNotifications: () => void;
   onOpenProfile: () => void;
   onOpenAdmin?: () => void;
 }
@@ -19,9 +21,11 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   currentUser,
   pendingRequestsCount,
   activeFriendsCount,
+  unreadNotificationsCount,
   onOpenSocial,
   onOpenPR,
   onOpenMonthly,
+  onOpenNotifications,
   onOpenProfile,
   onOpenAdmin
 }) => {
@@ -63,6 +67,16 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surfaceHighlight transition-colors text-subtext hover:text-yellow-400"
             >
               <Sparkles className="w-5 h-5" />
+            </button>
+
+            <button 
+              onClick={onOpenNotifications}
+              className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surfaceHighlight transition-colors text-subtext hover:text-purple-400 relative"
+            >
+              <Bell className="w-5 h-5" />
+              {unreadNotificationsCount > 0 && (
+                <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-purple-500 rounded-full border-2 border-surface animate-pulse"></span>
+              )}
             </button>
 
             {currentUser.role === 'admin' && onOpenAdmin && (

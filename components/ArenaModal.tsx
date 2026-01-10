@@ -81,11 +81,14 @@ const DossierRenderer = ({ text }: { text: string }) => {
                     {tableRows[0].map((cell, idx) => (
                         <th 
                           key={idx} 
-                          className={`px-4 py-2.5 font-black text-primary uppercase tracking-widest text-[10px] whitespace-nowrap border-r border-white/5 last:border-0 ${
-                            idx === 0 && isMatrix ? '' : ''
+                          className={`py-2.5 font-black text-primary uppercase tracking-widest text-[10px] border-r border-white/5 last:border-0 ${
+                            idx === 0 && isMatrix 
+                              ? 'px-2 sm:px-4 whitespace-normal break-words' 
+                              : 'px-4 whitespace-nowrap'
                           }`} 
                           style={{ 
-                            minWidth: idx === 0 ? '140px' : '120px',
+                            minWidth: idx === 0 && isMatrix ? '90px' : idx === 0 ? '140px' : '120px',
+                            maxWidth: idx === 0 && isMatrix ? '110px' : undefined,
                             ...(idx === 0 && isMatrix ? { 
                               position: 'sticky',
                               left: 0,
@@ -110,13 +113,16 @@ const DossierRenderer = ({ text }: { text: string }) => {
                         {row.map((cell, cellIdx) => (
                         <td 
                           key={cellIdx} 
-                          className={`px-4 py-2 font-mono text-zinc-300 border-r border-white/5 last:border-0 text-[10px] leading-tight align-middle ${
-                            cellIdx === 0 
-                              ? 'font-bold text-white whitespace-nowrap' 
-                              : 'whitespace-nowrap text-center'
+                          className={`py-2 font-mono text-zinc-300 border-r border-white/5 last:border-0 text-[10px] leading-tight align-middle ${
+                            cellIdx === 0 && isMatrix
+                              ? 'px-2 sm:px-4 font-bold text-white whitespace-normal break-words'
+                              : cellIdx === 0
+                              ? 'px-4 font-bold text-white whitespace-nowrap'
+                              : 'px-4 whitespace-nowrap text-center'
                           }`} 
                           style={{ 
-                            minWidth: cellIdx === 0 ? '140px' : '120px',
+                            minWidth: cellIdx === 0 && isMatrix ? '90px' : cellIdx === 0 ? '140px' : '120px',
+                            maxWidth: cellIdx === 0 && isMatrix ? '110px' : undefined,
                             ...(cellIdx === 0 && isMatrix ? { 
                               position: 'sticky',
                               left: 0,
