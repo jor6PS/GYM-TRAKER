@@ -216,7 +216,11 @@ export default defineConfig(({ mode }) => {
             if (id.includes('services/workoutProcessor') || id.includes('workoutProcessor/')) {
               return 'services-ai';
             }
-          }
+          },
+          // Optimizar nombres de chunks para mejor caché
+          chunkFileNames: 'assets/[name]-[hash].js',
+          entryFileNames: 'assets/[name]-[hash].js',
+          assetFileNames: 'assets/[name]-[hash].[ext]',
         }
       },
       // Aumentar límite de advertencia pero mantener optimización
@@ -224,9 +228,9 @@ export default defineConfig(({ mode }) => {
       // Optimizar para producción
       minify: 'esbuild', // Más rápido que terser, produce bundles más pequeños
       sourcemap: false, // Desactivar sourcemaps en producción para reducir tamaño
-      // Optimizar para producción
       target: 'esnext',
       cssCodeSplit: true, // Separar CSS por chunk
+      reportCompressedSize: true, // Mostrar tamaños comprimidos en build
     },
   };
 });
