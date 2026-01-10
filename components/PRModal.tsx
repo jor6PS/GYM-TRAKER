@@ -49,9 +49,9 @@ const ChartWrapper: React.FC<{ exerciseHistory: any[], chartColor: string }> = (
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
-        <XAxis dataKey="date" tickFormatter={(val) => format(new Date(val), 'dd/MM')} stroke="#333" fontSize={10} fontWeight="bold" tickLine={false} axisLine={false} dy={10}/>
+        <XAxis dataKey="date" tickFormatter={(val: any) => format(new Date(val), 'dd/MM')} stroke="#333" fontSize={10} fontWeight="bold" tickLine={false} axisLine={false} dy={10}/>
         <YAxis stroke="#333" fontSize={10} fontWeight="bold" tickLine={false} axisLine={false}/>
-        <Tooltip contentStyle={{ backgroundColor: '#000', border: '1px solid #333', borderRadius: '12px', fontSize: '12px', color: '#fff' }} labelFormatter={(label) => format(new Date(label), 'MMM do, yyyy')}/>
+        <Tooltip contentStyle={{ backgroundColor: '#000', border: '1px solid #333', borderRadius: '12px', fontSize: '12px', color: '#fff' }} labelFormatter={(label: any) => format(new Date(label), 'MMM do, yyyy')}/>
         <Area type="monotone" dataKey="value" stroke={chartColor} strokeWidth={4} fillOpacity={1} fill="url(#colorValue)"/>
       </AreaChart>
     </ResponsiveContainer>
