@@ -50,14 +50,9 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         registerType: 'autoUpdate',
         injectRegister: 'auto',
+        strategies: 'generateSW',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'maskable-icon-512x512.png'],
-        devOptions: {
-          // Desactivar service worker en desarrollo para evitar conflictos con WebSocket HMR de Vite
-          enabled: false,
-          type: 'module'
-        },
         // 1. MANIFEST.JSON CONFIGURATION
-        // Usamos el manifest de public/manifest.webmanifest (formato correcto, sin líneas en blanco)
         manifest: {
           name: 'GymTracker AI',
           short_name: 'Gym.AI',
@@ -73,31 +68,31 @@ export default defineConfig(({ mode }) => {
           lang: 'es',
           icons: [
             {
-              src: '/pwa-192x192.png',
+              src: 'pwa-192x192.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any'
             },
             {
-              src: '/pwa-192x192.png',
-              sizes: '144x144',
-              type: 'image/png',
-              purpose: 'any'
-            },
-            {
-              src: '/pwa-512x512.png',
+              src: 'pwa-512x512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any'
             },
             {
-              src: '/maskable-icon-512x512.png',
+              src: 'apple-touch-icon.png',
+              sizes: '180x180',
+              type: 'image/png',
+              purpose: 'any'
+            },
+            {
+              src: 'maskable-icon-512x512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable'
             },
             {
-              src: '/pwa-192x192.png',
+              src: 'pwa-192x192.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'maskable'
@@ -106,11 +101,9 @@ export default defineConfig(({ mode }) => {
         },
         // 2. SERVICE WORKER CONFIGURATION (Network First Strategy)
         workbox: {
-          // Desactivar logging verbose de Workbox
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff,woff2}'],
           cleanupOutdatedCaches: true,
-          // Ignorar peticiones de red en precache (evita mensajes de "Precaching did not find a match")
           navigateFallback: null,
-          // Configurar estrategias de caché
           runtimeCaching: [
             {
               // Páginas HTML: NetworkFirst para evitar contenido obsoleto
@@ -127,7 +120,6 @@ export default defineConfig(({ mode }) => {
             },
             {
               // Supabase API: Siempre ir a la red (NetworkOnly) - NO cachear
-              // Esto evita que Workbox intente cachear peticiones a la API y reduzca los mensajes de consola
               urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
               handler: 'NetworkOnly'
             },
@@ -156,6 +148,11 @@ export default defineConfig(({ mode }) => {
               }
             }
           ]
+        },
+        devOptions: {
+          // Desactivar service worker en desarrollo para evitar conflictos con WebSocket HMR de Vite
+          enabled: false,
+          type: 'module'
         }
       })
     ],
