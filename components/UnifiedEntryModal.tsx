@@ -43,6 +43,42 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
   const [editingItem, setEditingItem] = useState<{ index: number; data: Exercise } | null>(null);
   const [pendingExercises, setPendingExercises] = useState<{ exercises: Exercise[]; source: 'routine' | 'history'; sourceName?: string } | null>(null);
 
+  // Backup automático de ejercicios cada vez que cambian
+  useEffect(() => {
+    if (sessionExercises.length > 0) {
+      try {
+        const backupKey = 'workout_session_backup';
+        sessionStorage.setItem(backupKey, JSON.stringify({
+          exercises: sessionExercises,
+          timestamp: Date.now()
+        }));
+        console.log(`💾 Backup automático guardado: ${sessionExercises.length} ejercicios`);
+      } catch (e) {
+        console.warn('⚠️ Error al guardar backup automático:', e);
+      }
+    }
+  }, [sessionExercises]);
+
+  // Backup periódico cada 30 segundos mientras el modal está abierto
+  useEffect(() => {
+    if (!isOpen || sessionExercises.length === 0) return;
+    
+    const intervalId = setInterval(() => {
+      try {
+        const backupKey = 'workout_session_backup';
+        sessionStorage.setItem(backupKey, JSON.stringify({
+          exercises: sessionExercises,
+          timestamp: Date.now()
+        }));
+        console.log(`💾 Backup periódico guardado: ${sessionExercises.length} ejercicios`);
+      } catch (e) {
+        console.warn('⚠️ Error al guardar backup periódico:', e);
+      }
+    }, 30000); // Cada 30 segundos
+
+    return () => clearInterval(intervalId);
+  }, [isOpen, sessionExercises]);
+
   // Recuperar backup de ejercicios al abrir el modal si existe
   useEffect(() => {
     if (isOpen) {
@@ -51,21 +87,24 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
         const backup = sessionStorage.getItem(backupKey);
         if (backup) {
           const parsed = JSON.parse(backup);
-          // Restaurar ejercicios si el backup es reciente (menos de 1 hora) y no hay ejercicios actualmente
+          // Restaurar ejercicios si el backup existe y no hay ejercicios actualmente
+          // El tiempo de expiración es ahora de 30 días (muy largo para mantener persistencia)
+          const MAX_BACKUP_AGE = 30 * 24 * 60 * 60 * 1000; // 30 días
           if (parsed.exercises && Array.isArray(parsed.exercises) && parsed.exercises.length > 0) {
-            if (Date.now() - parsed.timestamp < 3600000) {
+            if (Date.now() - parsed.timestamp < MAX_BACKUP_AGE) {
               // Solo restaurar si realmente no hay ejercicios
               setSessionExercises((prev) => {
                 if (prev.length === 0) {
                   setActiveTab('overview');
-                  setSaveError('Se recuperaron ejercicios guardados temporalmente. Puedes intentar guardar de nuevo.');
-                  console.log(`✅ Recuperados ${parsed.exercises.length} ejercicios del backup al abrir el modal`);
+                  setSaveError(null); // No mostrar error, es normal recuperar el backup
+                  console.log(`✅ Recuperados ${parsed.exercises.length} ejercicios del backup al abrir el modal (backup de ${Math.round((Date.now() - parsed.timestamp) / 1000 / 60)} minutos atrás)`);
                   return parsed.exercises;
                 }
                 return prev;
               });
             } else {
-              // Limpiar backup antiguo
+              // Limpiar backup muy antiguo (más de 30 días)
+              console.log('🗑️ Limpiando backup muy antiguo (>30 días)');
               sessionStorage.removeItem(backupKey);
             }
           }
@@ -177,7 +216,7 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                                         {setsConfig.map((set, idx) => (
                                             <div key={idx} className="grid grid-cols-12 gap-2 items-center mb-2">
                                                 <div className="col-span-1 text-[10px] font-mono text-zinc-600 text-center">{idx+1}</div>
-                                                <div className="col-span-8"><input type="text" value={set.time || ''} onChange={e => { const n = [...setsConfig]; n[idx].time = e.target.value; setSetsConfig(n); }} className="w-full bg-zinc-900 border border-red-500/30 rounded p-2 text-center text-white font-bold text-sm placeholder:text-red-500/50" placeholder="MM:SS" /></div>
+                                                <div className="col-span-8"><input type="text" value={set.time || ''} onChange={e => { const n = [...setsConfig]; n[idx].time = e.target.value; setSetsConfig(n); }} className="w-full bg-zinc-900 border border-red-500/30 rounded p-2 text-center text-white font-bold text-sm placeholder:text-red-500/50" placeholder="Minutos (ej: 30)" /></div>
                                                 <div className="col-span-2 flex justify-center"><button onClick={() => { if(setsConfig.length > 1) { const n = [...setsConfig]; n.splice(idx, 1); setSetsConfig(n); } }} className="text-zinc-700 hover:text-red-500"><Trash2 className="w-4 h-4" /></button></div>
                                             </div>
                                         ))}
@@ -290,9 +329,38 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                                   console.warn(`⚠️ Ejercicio "${ex.name}" sin sets`);
                                   return false;
                                 }
-                                const hasValidSets = ex.sets.some(set => (set.reps || 0) > 0);
-                                if (!hasValidSets) {
-                                  console.warn(`⚠️ Ejercicio "${ex.name}" sin sets válidos (todas las reps son 0)`);
+                                
+                                // Identificar si el ejercicio es cardio usando el catálogo
+                                const exerciseId = getCanonicalId(ex.name, catalog);
+                                const exerciseDef = catalog.find(e => e.id === exerciseId);
+                                const isCardio = exerciseDef?.type === 'cardio';
+                                
+                                // Para cardio: validar que tenga tiempo válido (puede ser número o string)
+                                // Para strength: validar que tenga reps > 0
+                                let hasValidSets;
+                                if (isCardio) {
+                                  hasValidSets = ex.sets.some(set => {
+                                    const time = set.time;
+                                    if (!time) return false;
+                                    // Aceptar números (minutos) o strings con formato de tiempo
+                                    if (typeof time === 'number' && time > 0) return true;
+                                    if (typeof time === 'string') {
+                                      const trimmed = time.trim();
+                                      // Formato numérico simple (ej: "30" para 30 minutos)
+                                      if (/^\d+$/.test(trimmed)) return true;
+                                      // Formato tiempo "MM:SS" o "HH:MM:SS"
+                                      if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(trimmed)) return true;
+                                    }
+                                    return false;
+                                  });
+                                  if (!hasValidSets) {
+                                    console.warn(`⚠️ Ejercicio cardio "${ex.name}" sin sets válidos (sin tiempo)`);
+                                  }
+                                } else {
+                                  hasValidSets = ex.sets.some(set => (set.reps || 0) > 0);
+                                  if (!hasValidSets) {
+                                    console.warn(`⚠️ Ejercicio "${ex.name}" sin sets válidos (todas las reps son 0)`);
+                                  }
                                 }
                                 return hasValidSets;
                               });
@@ -308,17 +376,25 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                               
                               console.log(`✅ Sesión guardada exitosamente`);
                               
-                              // Limpiar backup solo si el guardado fue exitoso
-                              try {
-                                sessionStorage.removeItem(backupKey);
-                              } catch (e) {
-                                // Ignorar errores al limpiar
-                              }
+                              // Limpiar backup solo si el guardado fue exitoso Y el usuario cierra el modal
+                              // No limpiar aquí, se limpiará cuando el usuario cierre el modal manualmente
+                              // Esto permite que si hay un error después, el backup se mantenga
                               
                               // Solo limpiar y cerrar si el guardado fue exitoso
                               setSessionExercises([]);
                               setSaveError(null);
                               setIsSaving(false);
+                              
+                              // Limpiar backup solo después de cerrar exitosamente
+                              setTimeout(() => {
+                                try {
+                                  sessionStorage.removeItem(backupKey);
+                                  console.log('🗑️ Backup limpiado después de guardado exitoso');
+                                } catch (e) {
+                                  // Ignorar errores al limpiar
+                                }
+                              }, 1000); // Esperar un poco para asegurar que el modal se cerró
+                              
                               onClose();
                             } catch (error: any) {
                               console.error('❌ Error al guardar sesión:', error);
@@ -328,22 +404,11 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                               let errorMessage = error?.message || 'Error al guardar la sesión. Por favor, intenta de nuevo.';
                               
                               if (isTimeout) {
-                                errorMessage += ' Tus ejercicios están guardados temporalmente. Puedes intentar guardar de nuevo sin perderlos.';
+                                errorMessage += ' Tus ejercicios están guardados automáticamente. Puedes intentar guardar de nuevo sin perderlos.';
                                 
-                                // Intentar recuperar backup si existe
-                                try {
-                                  const backup = sessionStorage.getItem(backupKey);
-                                  if (backup) {
-                                    const parsed = JSON.parse(backup);
-                                    // Restaurar ejercicios si el backup es reciente (menos de 1 hora)
-                                    if (parsed.exercises && Date.now() - parsed.timestamp < 3600000) {
-                                      setSessionExercises(parsed.exercises);
-                                      console.log('✅ Ejercicios recuperados del backup');
-                                    }
-                                  }
-                                } catch (e) {
-                                  console.warn('⚠️ No se pudo recuperar backup:', e);
-                                }
+                                // Los ejercicios ya están en sessionExercises y el backup se guarda automáticamente
+                                // No necesitamos recuperar del backup porque ya están en el estado
+                                console.log('✅ Los ejercicios se mantienen en el resumen. El backup se actualiza automáticamente.');
                               }
                               
                               setSaveError(errorMessage);

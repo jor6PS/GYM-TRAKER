@@ -1,13 +1,11 @@
 import React, { useState, useEffect } from 'react';
 // 1. Añadimos el icono 'Info'
 import { X, Swords, Crown, Loader2, Scale, Zap, AlertTriangle, FileText, Target, Info } from 'lucide-react';
-import { generateGroupAnalysis } from '../services/workoutProcessor';
+import { generateArenaDataWithoutAI } from '../services/arenaService';
 import { Workout, User } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useExercises } from '../contexts/ExerciseContext';
 import { useScrollLock } from '../hooks/useScrollLock';
-import { AIErrorDisplay } from './AIErrorDisplay';
-import { formatAIError, FormattedAIError } from '../services/workoutProcessor/helpers';
 
 interface ArenaModalProps {
   isOpen: boolean;
@@ -70,17 +68,37 @@ const DossierRenderer = ({ text }: { text: string }) => {
               className={isMatrix ? "overflow-x-auto w-full" : "w-full"}
               style={isMatrix ? { 
                 WebkitOverflowScrolling: 'touch',
-                scrollbarWidth: 'auto',
+                scrollbarWidth: 'thin',
                 scrollbarColor: 'rgba(212, 255, 0, 0.7) rgba(0, 0, 0, 0.3)',
                 overflowX: 'auto',
-                overflowY: 'visible'
+                overflowY: 'visible',
+                position: 'relative'
               } : {}}
             >
-                <table className={`text-left border-collapse ${isMatrix ? '' : 'w-full table-fixed'}`} style={isMatrix ? { width: minWidthStyle, minWidth: minWidthStyle } : { width: '100%' }}>
+                <table className={`text-left border-collapse ${isMatrix ? '' : 'w-full table-fixed'}`} style={isMatrix ? { width: minWidthStyle, minWidth: minWidthStyle, borderCollapse: 'separate', borderSpacing: 0 } : { width: '100%' }}>
                 <thead>
                     <tr className="bg-white/5 border-b border-white/10">
                     {tableRows[0].map((cell, idx) => (
-                        <th key={idx} className="px-4 py-2.5 font-black text-primary uppercase tracking-widest bg-zinc-900/50 text-[10px] whitespace-nowrap border-r border-white/5 last:border-0" style={{ minWidth: idx === 0 ? '140px' : '120px' }}>
+                        <th 
+                          key={idx} 
+                          className={`px-4 py-2.5 font-black text-primary uppercase tracking-widest text-[10px] whitespace-nowrap border-r border-white/5 last:border-0 ${
+                            idx === 0 && isMatrix ? '' : ''
+                          }`} 
+                          style={{ 
+                            minWidth: idx === 0 ? '140px' : '120px',
+                            ...(idx === 0 && isMatrix ? { 
+                              position: 'sticky',
+                              left: 0,
+                              zIndex: 30,
+                              backgroundColor: 'rgba(39, 39, 42, 0.98)',
+                              backdropFilter: 'blur(8px)',
+                              WebkitBackdropFilter: 'blur(8px)',
+                              boxShadow: idx === 0 ? '2px 0 8px rgba(0, 0, 0, 0.3)' : undefined
+                            } : {
+                              backgroundColor: 'rgba(39, 39, 42, 0.5)'
+                            })
+                          }}
+                        >
                             {cell}
                         </th>
                     ))}
@@ -90,10 +108,30 @@ const DossierRenderer = ({ text }: { text: string }) => {
                     {tableRows.slice(1).map((row, rowIdx) => (
                     <tr key={rowIdx} className="hover:bg-white/5 transition-colors group">
                         {row.map((cell, cellIdx) => (
-                        <td key={cellIdx} className={`px-4 py-2 font-mono text-zinc-300 border-r border-white/5 last:border-0 text-[10px] leading-tight align-middle ${cellIdx === 0 ? 'font-bold text-white whitespace-nowrap bg-zinc-900/20 sticky left-0 z-0' : 'whitespace-nowrap text-center'}`} style={cellIdx === 0 ? { minWidth: '140px' } : { minWidth: '120px' }}>
+                        <td 
+                          key={cellIdx} 
+                          className={`px-4 py-2 font-mono text-zinc-300 border-r border-white/5 last:border-0 text-[10px] leading-tight align-middle ${
+                            cellIdx === 0 
+                              ? 'font-bold text-white whitespace-nowrap' 
+                              : 'whitespace-nowrap text-center'
+                          }`} 
+                          style={{ 
+                            minWidth: cellIdx === 0 ? '140px' : '120px',
+                            ...(cellIdx === 0 && isMatrix ? { 
+                              position: 'sticky',
+                              left: 0,
+                              zIndex: 20,
+                              backgroundColor: 'rgba(24, 24, 27, 0.98)',
+                              backdropFilter: 'blur(8px)',
+                              WebkitBackdropFilter: 'blur(8px)',
+                              boxShadow: '2px 0 8px rgba(0, 0, 0, 0.3)',
+                              borderRight: '1px solid rgba(255, 255, 255, 0.1)'
+                            } : {})
+                          }}
+                        >
                             {cell === '---' || cell === '' ? <span className="opacity-10">-</span> : renderFormattedText(cell)}
                         </td>
-                        ))}
+                        ))} 
                     </tr>
                     ))}
                 </tbody>
@@ -175,7 +213,6 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
   const [analysis, setAnalysis] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [formattedError, setFormattedError] = useState<FormattedAIError | null>(null);
   const { t } = useLanguage();
   const { catalog } = useExercises();
 
@@ -193,7 +230,6 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
   const handleBattle = async () => {
     setLoading(true);
     setError(null);
-    setFormattedError(null);
     try {
         const usersPayload = friendsData.map(f => ({
             name: f.name,
@@ -201,70 +237,26 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
             userId: f.userId
         }));
 
-        const rawResult: any = await generateGroupAnalysis(usersPayload, catalog);
+        const rawResult = await generateArenaDataWithoutAI(usersPayload, catalog);
 
         // Validar que tenemos los datos mínimos necesarios
         if (!rawResult || !rawResult.rawStats || rawResult.rawStats.length === 0) {
             throw new Error("No se pudieron obtener los datos de análisis. Por favor, intenta de nuevo.");
         }
 
-        const maxVol = Math.max(...rawResult.rawStats.map((s: any) => s.totalVolume));
-        const rankings = rawResult.rawStats
-            .map((s: any) => ({
-                name: s.name,
-                // 2. Guardamos el volumen crudo para mostrarlo
-                rawVolume: s.totalVolume, 
-                score: maxVol > 0 ? (s.totalVolume / maxVol) * 100 : 0
-            }))
-            .sort((a: any, b: any) => b.score - a.score)
-            .map((u: any, index: number) => ({ ...u, rank: index + 1 }));
-
         setAnalysis({
-            winner: rawResult.winner || rawResult.alpha_user || rankings[0].name,
-            loser: rawResult.loser,
-            rankings: rawResult.rankings || rankings,
-            volume_table: rawResult.volume_table || rawResult.rawStats
-                .sort((a: any, b: any) => b.totalVolume - a.totalVolume)
-                .map((s: any) => ({ name: s.name, total_volume_kg: Math.round(s.totalVolume) })),
-            volume_verdict: rawResult.volume_verdict,
-            points_table: rawResult.points_table,
-            comparison_table: rawResult.comparison_table,
-            individual_records: rawResult.individual_records,
-            roast: rawResult.roast,
-            markdown_body: rawResult.markdown_report || "",
+            winner: rawResult.winner,
+            rankings: rawResult.rankings,
+            volume_table: rawResult.rawStats
+                .sort((a, b) => b.totalVolume - a.totalVolume)
+                .map((s) => ({ name: s.name, total_volume_kg: Math.round(s.totalVolume) })),
+            markdown_body: rawResult.markdownReport || "",
         });
 
     } catch (e: any) {
         console.error("Arena Error:", e);
-        
-        // Detectar errores específicos de JSON truncado
-        const errorMessage = e.message || "Error desconocido al contactar con la IA.";
-        const isJsonError = errorMessage.includes('JSON') || errorMessage.includes('parse') || errorMessage.includes('Unterminated string');
-        
-        if (isJsonError) {
-            // Intentar formatear el error de JSON de manera más amigable
-            const formatted = formatAIError(e);
-            // Si es un error de JSON, personalizar el mensaje
-            if (formatted.type === 'json_parse') {
-                setFormattedError({
-                    ...formatted,
-                    title: 'Error de Formato en el Análisis',
-                    message: 'La respuesta de la IA se cortó antes de completarse. Esto puede ocurrir cuando hay muchos datos. Por favor, intenta de nuevo.',
-                    details: 'Si el problema persiste, intenta con menos participantes o espera unos momentos antes de reintentar.'
-                });
-            } else {
-                setFormattedError(formatted);
-            }
-        } else {
-            // Para otros errores, usar el formateo normal
-            try {
-                const formatted = formatAIError(e);
-                setFormattedError(formatted);
-            } catch {
-                setFormattedError(null);
-                setError(errorMessage);
-            }
-        }
+        const errorMessage = e.message || "Error al generar el análisis. Por favor, intenta de nuevo.";
+        setError(errorMessage);
     } finally {
         setLoading(false);
     }
@@ -307,23 +299,7 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar relative">
             <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.04] pointer-events-none fixed"></div>
 
-            {formattedError && (
-                <div className="absolute inset-0 z-50 flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm">
-                    <AIErrorDisplay 
-                        error={formattedError} 
-                        onDismiss={() => {
-                            setError(null);
-                            setFormattedError(null);
-                        }}
-                        onRetry={() => {
-                            setError(null);
-                            setFormattedError(null);
-                            handleBattle();
-                        }}
-                    />
-                </div>
-            )}
-            {error && !formattedError && (
+            {error && (
                 <div className="absolute top-6 left-6 right-6 z-50 animate-in slide-in-from-top-4">
                     <div className="bg-red-500/10 border border-red-500/50 rounded-2xl p-4 shadow-2xl flex flex-col items-center text-center backdrop-blur-md">
                         <AlertTriangle className="w-8 h-8 text-red-500 mb-2" />
@@ -359,7 +335,7 @@ export const ArenaModal: React.FC<ArenaModalProps> = ({ isOpen, onClose, current
                         )}
                      </button>
                      <p className="mt-8 text-[10px] text-zinc-500 font-mono uppercase tracking-[0.2em] text-center opacity-60">
-                        AI-Powered Analysis • Volume • Matrix
+                        Data-Driven Analysis • Volume • Matrix
                      </p>
                 </div>
             ) : (

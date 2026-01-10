@@ -65,15 +65,38 @@ export const sanitizeWorkoutData = (data: WorkoutData, catalog: ExerciseDef[]): 
                 return;
             }
             
-            // CRÍTICO: Validar que al menos un set tenga reps > 0
-            const hasValidSets = ex.sets.some(set => (set.reps || 0) > 0);
-            if (!hasValidSets) {
-                console.warn(`⚠️ Ejercicio "${ex.name}" sin sets válidos (todas las reps son 0), saltando`);
-                return;
-            }
-            
+            // Obtener información del ejercicio del catálogo primero
             const id = getCanonicalId(ex.name, catalog);
             const def = catalog.find(d => d.id === id);
+            const isCardio = def?.type === 'cardio';
+            
+            // CRÍTICO: Validar sets según el tipo de ejercicio
+            // Para cardio: validar que tenga tiempo válido
+            // Para strength: validar que tenga reps > 0
+            let hasValidSets;
+            if (isCardio) {
+              hasValidSets = ex.sets.some(set => {
+                const time = set.time;
+                if (!time) return false;
+                // Aceptar números (minutos) o strings con formato de tiempo
+                if (typeof time === 'number' && time > 0) return true;
+                if (typeof time === 'string') {
+                  const trimmed = time.trim();
+                  // Formato numérico simple (ej: "30" para 30 minutos)
+                  if (/^\d+$/.test(trimmed)) return true;
+                  // Formato tiempo "MM:SS" o "HH:MM:SS"
+                  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(trimmed)) return true;
+                }
+                return false;
+              });
+            } else {
+              hasValidSets = ex.sets.some(set => (set.reps || 0) > 0);
+            }
+            
+            if (!hasValidSets) {
+              console.warn(`⚠️ Ejercicio "${ex.name}" sin sets válidos (${isCardio ? 'sin tiempo' : 'todas las reps son 0'}), saltando`);
+              return;
+            }
             
             enrichedExercises.push({
                 ...ex,

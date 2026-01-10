@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Workout, WorkoutPlan, WorkoutData, Exercise } from '../types';
 import { supabase } from '../services/supabase';
-import { sanitizeWorkoutData, parseLocalDate } from '../utils';
+import { sanitizeWorkoutData, parseLocalDate, getCanonicalId } from '../utils';
 import { ExerciseDef } from '../contexts/ExerciseContext';
 import { format, isSameDay } from 'date-fns';
 import { updateUserRecords, getUserRecords } from '../services/recordsService';
@@ -113,13 +113,39 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
     const validExercises = rawData.exercises.filter(ex => {
       if (!ex.name || !ex.name.trim()) return false;
       if (!ex.sets || !Array.isArray(ex.sets) || ex.sets.length === 0) return false;
-      // Validar que al menos un set tenga reps > 0
-      const hasValidSets = ex.sets.some(set => (set.reps || 0) > 0);
+      
+      // Identificar si el ejercicio es cardio usando el catálogo
+      const exerciseId = getCanonicalId(ex.name, catalog);
+      const exerciseDef = catalog.find(e => e.id === exerciseId);
+      const isCardio = exerciseDef?.type === 'cardio';
+      
+      // Para cardio: validar que tenga tiempo válido (puede ser número o string "MM:SS")
+      // Para strength: validar que tenga reps > 0
+      let hasValidSets;
+      if (isCardio) {
+        hasValidSets = ex.sets.some(set => {
+          const time = set.time;
+          if (!time) return false;
+          // Aceptar números (minutos) o strings con formato de tiempo
+          if (typeof time === 'number' && time > 0) return true;
+          if (typeof time === 'string') {
+            const trimmed = time.trim();
+            // Formato numérico simple (ej: "30" para 30 minutos)
+            if (/^\d+$/.test(trimmed)) return true;
+            // Formato tiempo "MM:SS" o "HH:MM:SS"
+            if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(trimmed)) return true;
+          }
+          return false;
+        });
+      } else {
+        hasValidSets = ex.sets.some(set => (set.reps || 0) > 0);
+      }
+      
       return hasValidSets;
     });
     
     if (validExercises.length === 0) {
-      throw new Error('Los ejercicios no tienen series válidas. Asegúrate de que cada ejercicio tenga al menos una serie con repeticiones.');
+      throw new Error('Los ejercicios no tienen series válidas. Asegúrate de que cada ejercicio tenga al menos una serie con repeticiones (fuerza) o tiempo (cardio).');
     }
     
     if (validExercises.length < rawData.exercises.length) {
@@ -133,7 +159,7 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
       throw new Error('Error al procesar los ejercicios. Intenta de nuevo.');
     }
     
-    const SAVE_TIMEOUT_MS = 60000; // 60 segundos timeout para el guardado completo (aumentado para sesiones largas)
+    const SAVE_TIMEOUT_MS = 90000; // 90 segundos timeout para el guardado completo (aumentado para sesiones largas)
     
     try {
       // Wrapper para timeout general del proceso
@@ -154,7 +180,7 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
               .eq('user_id', userId)
               .eq('date', dateToSave)
               .maybeSingle() as unknown as Promise<{ data: any; error: any }>,
-            25000, // 25 segundos timeout para verificación (aumentado para sesiones largas)
+            30000, // 30 segundos timeout para verificación (aumentado para sesiones largas)
             'Timeout al verificar workout existente'
           );
           
@@ -170,7 +196,7 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
                 .select('*')
                 .eq('id', existsCheck.data.id)
                 .single() as unknown as Promise<{ data: any; error: any }>,
-              20000, // 20 segundos timeout para obtener datos completos
+              25000, // 25 segundos timeout para obtener datos completos
               'Timeout al obtener datos completos del workout existente'
             );
             existingWorkoutInDb = fullQueryResult.data;
@@ -240,7 +266,7 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
                 .eq('id', existingWorkoutInDb.id)
                 .select()
                 .single() as unknown as Promise<{ data: any; error: any }>,
-              25000, // 25 segundos timeout para actualización (aumentado para sesiones largas)
+              30000, // 30 segundos timeout para actualización (aumentado para sesiones largas)
               'Timeout al actualizar workout'
             );
             const { data: updatedWorkoutData, error: updateError } = updateResult;
@@ -259,13 +285,14 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
             // CRÍTICO: Verificar que realmente se guardó correctamente en BD
             // Re-verificar desde BD para asegurarnos de que el guardado fue exitoso
             console.log(`✅ Verificando workout actualizado en BD...`);
+            // Verificación opcional - reducir timeout ya que es menos crítico
             const verifyResult = await withTimeout(
               supabase
                 .from('workouts')
                 .select('*')
                 .eq('id', updatedWorkoutData.id)
                 .single() as unknown as Promise<{ data: any; error: any }>,
-              20000, // 20 segundos timeout para verificación (aumentado)
+              15000, // 15 segundos timeout para verificación (reducido porque el update ya confirmó)
               'Timeout al verificar workout actualizado'
             );
             const { data: verifiedWorkout, error: verifyError } = verifyResult;
@@ -293,49 +320,47 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
       };
       
       // Actualizar records SOLO con los nuevos ejercicios
-      // IMPORTANTE: Esto se ejecuta DESPUÉS de confirmar que el workout se guardó
-      try {
-        console.log(`📊 Actualizando records para ${exercisesToAdd.length} ejercicios nuevos...`);
-        await withTimeout(
-          updateUserRecords(newExercisesWorkout, catalog),
-          20000, // 20 segundos timeout para actualización de records
-          'Timeout al actualizar records'
-        );
-        console.log(`✅ Records actualizados exitosamente`);
-      } catch (error) {
-        console.error('❌ Error updating records:', error);
-        // El workout ya está guardado, así que el error en records no debe bloquear
-        // pero es crítico loguearlo para debugging
-        // NO lanzar el error para no bloquear el guardado exitoso del workout
-      }
+      // IMPORTANTE: Esto se ejecuta de forma ASÍNCRONA para no bloquear el guardado
+      // El workout ya está guardado correctamente, así que los records se pueden actualizar en segundo plano
+      console.log(`📊 Actualizando records para ${exercisesToAdd.length} ejercicios nuevos (asíncrono)...`);
+      updateUserRecords(newExercisesWorkout, catalog)
+        .then(() => {
+          console.log(`✅ Records actualizados exitosamente en segundo plano`);
+        })
+        .catch((error) => {
+          console.error('❌ Error updating records (no crítico, el workout ya está guardado):', error);
+          // El workout ya está guardado, así que el error en records no es crítico
+        });
       
       console.log(`✅ Proceso de actualización completado exitosamente. Workout ID: ${verifiedWorkout.id}`);
       
-            // CRÍTICO: Forzar refresh de datos desde BD para asegurar consistencia
-            // Esto es opcional, no bloquear si falla
-            try {
-              console.log(`🔄 Refrescando estado local desde BD...`);
-              const refreshResult = await withTimeout(
-                supabase
-                  .from('workouts')
-                  .select('*')
-                  .eq('user_id', userId)
-                  .order('created_at', { ascending: true }) as unknown as Promise<{ data: any; error: any }>,
-                10000, // 10 segundos timeout para refresh
-                'Timeout al refrescar datos'
-              );
-              const { data: refreshedWorkouts, error: refreshError } = refreshResult;
-        
-        if (!refreshError && refreshedWorkouts) {
-          console.log(`🔄 Refrescando estado local desde BD después de actualizar. Workouts encontrados: ${refreshedWorkouts.length}`);
-          setWorkouts(refreshedWorkouts as Workout[]);
-        } else if (refreshError) {
-          console.error('⚠️ Error al refrescar workouts desde BD:', refreshError);
-        }
-      } catch (refreshErr) {
-        console.error('⚠️ Error al refrescar datos (no crítico):', refreshErr);
-        // No bloquear si el refresh falla, el workout ya está guardado
-      }
+            // Refresh opcional - hacer asíncrono para no bloquear
+            // El workout ya está guardado y en el estado local, así que el refresh puede ser en segundo plano
+            console.log(`🔄 Refrescando estado local desde BD (asíncrono)...`);
+            (async () => {
+              try {
+                const refreshResult = await withTimeout(
+                  supabase
+                    .from('workouts')
+                    .select('*')
+                    .eq('user_id', userId)
+                    .order('created_at', { ascending: true }) as unknown as Promise<{ data: any; error: any }>,
+                  10000, // 10 segundos timeout para refresh
+                  'Timeout al refrescar datos'
+                );
+                const { data: refreshedWorkouts, error: refreshError } = refreshResult;
+          
+                if (!refreshError && refreshedWorkouts) {
+                  console.log(`🔄 Estado local refrescado desde BD después de actualizar. Workouts encontrados: ${refreshedWorkouts.length}`);
+                  setWorkouts(refreshedWorkouts as Workout[]);
+                } else if (refreshError) {
+                  console.error('⚠️ Error al refrescar workouts desde BD (no crítico):', refreshError);
+                }
+              } catch (refreshErr) {
+                console.error('⚠️ Error al refrescar datos (no crítico):', refreshErr);
+                // No es crítico, el workout ya está guardado
+              }
+            })();
           } else {
             console.log(`➕ Creando nuevo workout para ${dateToSave}...`);
             
@@ -347,7 +372,7 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
                 source: 'web',
                 user_weight: currentUserWeight || 80
               }).select().single() as unknown as Promise<{ data: any; error: any }>,
-              25000, // 25 segundos timeout para inserción (aumentado para sesiones largas)
+              30000, // 30 segundos timeout para inserción (aumentado para sesiones largas)
               'Timeout al insertar workout'
             );
             const { data: inserted, error: insertError } = insertResult;
@@ -391,13 +416,14 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
             // CRÍTICO: Verificar que realmente se guardó correctamente en BD
             // Re-verificar desde BD para asegurarnos de que el guardado fue exitoso
             console.log(`✅ Verificando workout insertado en BD...`);
+            // Verificación opcional - reducir timeout ya que es menos crítico
             const verifyInsertResult = await withTimeout(
               supabase
                 .from('workouts')
                 .select('*')
                 .eq('id', inserted.id)
                 .single() as unknown as Promise<{ data: any; error: any }>,
-              20000, // 20 segundos timeout para verificación (aumentado)
+              15000, // 15 segundos timeout para verificación (reducido porque el insert ya confirmó)
               'Timeout al verificar workout insertado'
             );
             const { data: verifiedWorkout, error: verifyError } = verifyInsertResult;
@@ -424,51 +450,47 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
             });
             
             // Actualizar records con el workout completo (es nuevo, no hay duplicación)
-            // IMPORTANTE: Esto se ejecuta DESPUÉS de confirmar que el workout se guardó
-            try {
-              console.log(`📊 Actualizando records para ${data.exercises.length} ejercicios nuevos...`);
-              await withTimeout(
-                updateUserRecords(verifiedWorkout as Workout, catalog),
-                20000, // 20 segundos timeout para actualización de records
-                'Timeout al actualizar records'
-              );
-              console.log(`✅ Records actualizados exitosamente`);
-            } catch (error) {
-              console.error('❌ Error updating records:', error);
-              // El workout ya está guardado, así que el error en records no debe bloquear
-              // pero es crítico loguearlo para debugging
-              // NO lanzar el error para no bloquear el guardado exitoso del workout
-            }
+            // IMPORTANTE: Esto se ejecuta de forma ASÍNCRONA para no bloquear el guardado
+            // El workout ya está guardado correctamente, así que los records se pueden actualizar en segundo plano
+            console.log(`📊 Actualizando records para ${data.exercises.length} ejercicios nuevos (asíncrono)...`);
+            updateUserRecords(verifiedWorkout as Workout, catalog)
+              .then(() => {
+                console.log(`✅ Records actualizados exitosamente en segundo plano`);
+              })
+              .catch((error) => {
+                console.error('❌ Error updating records (no crítico, el workout ya está guardado):', error);
+                // El workout ya está guardado, así que el error en records no es crítico
+              });
             
             console.log(`✅ Proceso de guardado completado exitosamente. Workout ID: ${verifiedWorkout.id}`);
             
-            // CRÍTICO: Forzar refresh de datos desde BD para asegurar consistencia
-            // Esto garantiza que el estado local refleja exactamente lo que hay en BD
-            // Esto es opcional, no bloquear si falla
-            try {
-              console.log(`🔄 Refrescando estado local desde BD...`);
-              const refreshResult2 = await withTimeout(
-                supabase
-                  .from('workouts')
-                  .select('*')
-                  .eq('user_id', userId)
-                  .order('created_at', { ascending: true }) as unknown as Promise<{ data: any; error: any }>,
-                10000, // 10 segundos timeout para refresh
-                'Timeout al refrescar datos'
-              );
-              const { data: refreshedWorkouts, error: refreshError } = refreshResult2;
-              
-              if (!refreshError && refreshedWorkouts) {
-                console.log(`🔄 Refrescando estado local desde BD. Workouts encontrados: ${refreshedWorkouts.length}`);
-                setWorkouts(refreshedWorkouts as Workout[]);
-              } else if (refreshError) {
-                console.error('⚠️ Error al refrescar workouts desde BD:', refreshError);
-                // No lanzar error porque el workout ya se guardó correctamente
+            // Refresh opcional - hacer asíncrono para no bloquear
+            // El workout ya está guardado y en el estado local, así que el refresh puede ser en segundo plano
+            console.log(`🔄 Refrescando estado local desde BD (asíncrono)...`);
+            (async () => {
+              try {
+                const refreshResult2 = await withTimeout(
+                  supabase
+                    .from('workouts')
+                    .select('*')
+                    .eq('user_id', userId)
+                    .order('created_at', { ascending: true }) as unknown as Promise<{ data: any; error: any }>,
+                  10000, // 10 segundos timeout para refresh
+                  'Timeout al refrescar datos'
+                );
+                const { data: refreshedWorkouts, error: refreshError } = refreshResult2;
+                
+                if (!refreshError && refreshedWorkouts) {
+                  console.log(`🔄 Estado local refrescado desde BD. Workouts encontrados: ${refreshedWorkouts.length}`);
+                  setWorkouts(refreshedWorkouts as Workout[]);
+                } else if (refreshError) {
+                  console.error('⚠️ Error al refrescar workouts desde BD (no crítico):', refreshError);
+                }
+              } catch (refreshErr) {
+                console.error('⚠️ Error al refrescar datos (no crítico):', refreshErr);
+                // No es crítico, el workout ya está guardado
               }
-            } catch (refreshErr) {
-              console.error('⚠️ Error al refrescar datos (no crítico):', refreshErr);
-              // No lanzar error porque el workout ya se guardó correctamente
-            }
+            })();
           }
         })(),
         SAVE_TIMEOUT_MS,

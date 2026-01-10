@@ -132,12 +132,17 @@ export const getUserTotalVolume = async (userId: string): Promise<number> => {
   
   if (error) {
     console.error(`[getUserTotalVolume] Error fetching total volume for userId ${userId}:`, error);
+    const errorMsg = error?.message || String(error);
+    // Si es un error de permisos, proporcionar información útil
+    if (errorMsg.includes('RLS') || errorMsg.includes('permission') || errorMsg.includes('policy')) {
+      throw new Error(`Permisos RLS: No se puede leer el volumen del usuario. Ejecuta 'supabase_arena_rls_policies.sql' en Supabase.`);
+    }
     throw error;
   }
   
   if (data === null || data === undefined) {
     console.warn(`[getUserTotalVolume] data es null/undefined para userId ${userId} - posible problema de permisos RLS`);
-    throw new Error('No se pudo obtener datos - posible problema de permisos RLS');
+    throw new Error('No se pudo obtener datos - posible problema de permisos RLS. Ejecuta el script SQL de políticas RLS.');
   }
   
   const totalVolume = (data || []).reduce((sum, record) => sum + (record.total_volume_kg || 0), 0);
