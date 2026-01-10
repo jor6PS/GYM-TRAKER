@@ -14,7 +14,34 @@ interface SocialModalProps {
   onToggleFriend: (friendId: string, friendName: string, color: string) => void;
 }
 
-const FRIEND_COLORS = ['#38bdf8', '#f472b6', '#a78bfa', '#fb923c', '#2dd4bf'];
+// Ampliada paleta de colores para evitar repeticiones con muchos amigos
+// Colores diseñados para ser distintivos y visibles en el calendario
+const FRIEND_COLORS = [
+  '#38bdf8',  // Sky blue
+  '#f472b6',  // Pink
+  '#a78bfa',  // Purple
+  '#fb923c',  // Orange
+  '#2dd4bf',  // Teal
+  '#fbbf24',  // Amber
+  '#34d399',  // Emerald
+  '#60a5fa',  // Blue
+  '#f87171',  // Red
+  '#c084fc',  // Violet
+  '#22d3ee',  // Cyan
+  '#f97316',  // Orange (darker)
+  '#14b8a6',  // Teal (darker)
+  '#8b5cf6',  // Purple (darker)
+  '#ec4899',  // Pink (darker)
+  '#06b6d4',  // Cyan (darker)
+  '#3b82f6',  // Blue (brighter)
+  '#ef4444',  // Red (brighter)
+  '#10b981',  // Green
+  '#6366f1',  // Indigo
+  '#84cc16',  // Lime
+  '#eab308',  // Yellow
+  '#06b6d4',  // Sky
+  '#a855f7'   // Purple (lighter)
+];
 
 export const SocialModal: React.FC<SocialModalProps> = ({ isOpen, onClose, currentUser, activeFriends, onToggleFriend }) => {
   const [activeTab, setActiveTab] = useState<'friends' | 'requests' | 'search'>('friends');

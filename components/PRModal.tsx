@@ -10,15 +10,53 @@ import { getUserRecords, getUserTotalVolume, UserRecord } from '../services/reco
 import { supabase } from '../services/supabase';
 import { isCalisthenic, calculateSetVolume } from '../services/workoutProcessor/helpers';
 import { useScrollLock } from '../hooks/useScrollLock';
-import {
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Area,
-  AreaChart
-} from 'recharts';
+
+// Componente wrapper para lazy loading de recharts (reduce bundle inicial ~150KB)
+const ChartWrapper: React.FC<{ exerciseHistory: any[], chartColor: string }> = ({ exerciseHistory, chartColor }) => {
+  const [ChartComponents, setChartComponents] = useState<any>(null);
+  
+  useEffect(() => {
+    import('recharts').then(recharts => {
+      setChartComponents({
+        ResponsiveContainer: recharts.ResponsiveContainer,
+        AreaChart: recharts.AreaChart,
+        XAxis: recharts.XAxis,
+        YAxis: recharts.YAxis,
+        CartesianGrid: recharts.CartesianGrid,
+        Tooltip: recharts.Tooltip,
+        Area: recharts.Area
+      });
+    });
+  }, []);
+  
+  if (!ChartComponents) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+  
+  const { ResponsiveContainer, AreaChart, XAxis, YAxis, CartesianGrid, Tooltip, Area } = ChartComponents;
+  
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <AreaChart data={exerciseHistory} margin={{ top: 40, right: 0, left: -20, bottom: 0 }}>
+        <defs>
+          <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={chartColor} stopOpacity={0.3}/>
+            <stop offset="95%" stopColor={chartColor} stopOpacity={0}/>
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
+        <XAxis dataKey="date" tickFormatter={(val) => format(new Date(val), 'dd/MM')} stroke="#333" fontSize={10} fontWeight="bold" tickLine={false} axisLine={false} dy={10}/>
+        <YAxis stroke="#333" fontSize={10} fontWeight="bold" tickLine={false} axisLine={false}/>
+        <Tooltip contentStyle={{ backgroundColor: '#000', border: '1px solid #333', borderRadius: '12px', fontSize: '12px', color: '#fff' }} labelFormatter={(label) => format(new Date(label), 'MMM do, yyyy')}/>
+        <Area type="monotone" dataKey="value" stroke={chartColor} strokeWidth={4} fillOpacity={1} fill="url(#colorValue)"/>
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+};
 
 interface PRModalProps {
   isOpen: boolean;
@@ -787,7 +825,7 @@ export const PRModal: React.FC<PRModalProps> = ({ isOpen, onClose, workouts, ini
                     <div className="bg-zinc-900/30 border border-white/5 rounded-[2.5rem] p-6 h-80 w-full relative">
                         <div className="absolute top-4 left-6 text-[10px] font-black text-zinc-700 uppercase tracking-widest">Evolución de Intensidad</div>
                         {exerciseHistory.length > 1 ? (
-                            <ResponsiveContainer width="100%" height="100%"><AreaChart data={exerciseHistory} margin={{ top: 40, right: 0, left: -20, bottom: 0 }}><defs><linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={chartColor} stopOpacity={0.3}/><stop offset="95%" stopColor={chartColor} stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} /><XAxis dataKey="date" tickFormatter={(val) => format(new Date(val), 'dd/MM')} stroke="#333" fontSize={10} fontWeight="bold" tickLine={false} axisLine={false} dy={10}/><YAxis stroke="#333" fontSize={10} fontWeight="bold" tickLine={false} axisLine={false}/><Tooltip contentStyle={{ backgroundColor: '#000', border: '1px solid #333', borderRadius: '12px', fontSize: '12px', color: '#fff' }} labelFormatter={(label) => format(new Date(label), 'MMM do, yyyy')}/><Area type="monotone" dataKey="value" stroke={chartColor} strokeWidth={4} fillOpacity={1} fill="url(#colorValue)"/></AreaChart></ResponsiveContainer>
+                            <ChartWrapper exerciseHistory={exerciseHistory} chartColor={chartColor} />
                         ) : <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-800"><TrendingUp className="w-12 h-12 mb-2" /><span className="text-xs font-bold uppercase tracking-widest">Datos Insuficientes</span></div>}
                     </div>
 

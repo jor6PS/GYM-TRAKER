@@ -166,5 +166,67 @@ export default defineConfig(({ mode }) => {
       // ROBUSTNESS: Check both API_KEY and VITE_API_KEY to prevent user error
       'process.env.API_KEY': JSON.stringify(env.API_KEY || env.VITE_API_KEY),
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            // Separar librerías de node_modules en chunks dedicados
+            if (id.includes('node_modules')) {
+              // React y React DOM
+              if (id.includes('react') || id.includes('react-dom') || id.includes('scheduler')) {
+                return 'vendor-react';
+              }
+              // Google GenAI
+              if (id.includes('@google/genai')) {
+                return 'vendor-ai';
+              }
+              // Supabase
+              if (id.includes('@supabase')) {
+                return 'vendor-supabase';
+              }
+              // Recharts (gráficos pesados - se carga lazy en PRModal)
+              // Aunque se carga lazy, si se incluye en algún bundle, va al chunk de charts
+              if (id.includes('recharts')) {
+                return 'vendor-charts';
+              }
+              // Date-fns
+              if (id.includes('date-fns')) {
+                return 'vendor-dates';
+              }
+              // Lucide icons
+              if (id.includes('lucide-react')) {
+                return 'vendor-icons';
+              }
+              // Resto de node_modules
+              return 'vendor';
+            }
+            
+            // Separar modales pesados en chunks propios
+            if (id.includes('components/PRModal')) {
+              return 'modal-pr';
+            }
+            if (id.includes('components/ArenaModal')) {
+              return 'modal-arena';
+            }
+            if (id.includes('components/MonthlySummaryModal')) {
+              return 'modal-summary';
+            }
+            
+            // Servicios relacionados con IA (carga condicional)
+            if (id.includes('services/workoutProcessor') || id.includes('workoutProcessor/')) {
+              return 'services-ai';
+            }
+          }
+        }
+      },
+      // Aumentar límite de advertencia pero mantener optimización
+      chunkSizeWarningLimit: 600,
+      // Optimizar para producción
+      minify: 'esbuild', // Más rápido que terser, produce bundles más pequeños
+      sourcemap: false, // Desactivar sourcemaps en producción para reducir tamaño
+      // Optimizar para producción
+      target: 'esnext',
+      cssCodeSplit: true, // Separar CSS por chunk
+    },
   };
 });

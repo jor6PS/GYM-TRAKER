@@ -3,7 +3,7 @@ import { WorkoutData, Workout, GlobalReportData, MaxComparisonEntry, GroupAnalys
 import { format, isSameMonth, isAfter } from "date-fns";
 import subMonths from "date-fns/subMonths";
 import es from 'date-fns/locale/es';
-import { getCanonicalId, getLocalizedName } from "../utils";
+import { getCanonicalId, getLocalizedName, sanitizeWorkoutData } from "../utils";
 import { ExerciseDef } from "../contexts/ExerciseContext";
 import { getAIClient } from "./workoutProcessor/aiClient";
 import { generateWithFallback, REPORT_MODELS, AUDIO_MODELS } from "./workoutProcessor/fallback";
@@ -16,6 +16,7 @@ import {
   handleAIError 
 } from "./workoutProcessor/helpers";
 import { getUserRecords, getUserTotalVolume } from "./recordsService";
+import { getExerciseCatalog } from "./supabase";
 
 // Interfaces internas
 interface UserStats {
@@ -452,7 +453,7 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string,
         const ai = getAIClient();
         let exerciseCatalog = catalog;
         if (!exerciseCatalog) {
-          const { getExerciseCatalog } = await import('./supabase');
+          // getExerciseCatalog ya está importado estáticamente
           exerciseCatalog = await getExerciseCatalog();
         }
         const commonExercises = exerciseCatalog?.slice(0, 30).map(ex => ex.es || ex.en || ex.id).join(', ') || '';
@@ -501,7 +502,7 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string,
         if (!rawData.exercises) rawData.exercises = [];
         
         if (exerciseCatalog && rawData.exercises.length > 0) {
-          const { sanitizeWorkoutData } = await import('../utils');
+          // sanitizeWorkoutData ya está importado estáticamente
           return sanitizeWorkoutData(rawData, exerciseCatalog);
         }
         return rawData;
