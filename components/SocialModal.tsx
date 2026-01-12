@@ -12,6 +12,7 @@ interface SocialModalProps {
   currentUser: User;
   activeFriends: string[]; 
   onToggleFriend: (friendId: string, friendName: string, color: string) => void;
+  onToggleAllFriends: (allFriends: { id: string; name: string }[]) => Promise<void>;
 }
 
 // Ampliada paleta de colores para evitar repeticiones con muchos amigos
@@ -43,7 +44,7 @@ const FRIEND_COLORS = [
   '#a855f7'   // Purple (lighter)
 ];
 
-export const SocialModal: React.FC<SocialModalProps> = ({ isOpen, onClose, currentUser, activeFriends, onToggleFriend }) => {
+export const SocialModal: React.FC<SocialModalProps> = ({ isOpen, onClose, currentUser, activeFriends, onToggleFriend, onToggleAllFriends }) => {
   const [activeTab, setActiveTab] = useState<'friends' | 'requests' | 'search'>('friends');
   const [friends, setFriends] = useState<Friend[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -226,7 +227,21 @@ export const SocialModal: React.FC<SocialModalProps> = ({ isOpen, onClose, curre
                             <p>Tu lista está vacía. Busca a tus amigos por nombre.</p>
                         </div>
                     ) : (
-                        acceptedFriends.map((friend, idx) => {
+                        <>
+                            <button
+                                onClick={() => onToggleAllFriends(acceptedFriends.map(f => ({ id: f.id, name: f.name })))}
+                                disabled={isLoading}
+                                className={`w-full py-2.5 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+                                    acceptedFriends.every(f => activeFriends.includes(f.id))
+                                        ? 'bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20'
+                                        : 'bg-primary/10 text-primary border-primary/30 hover:bg-primary/20'
+                                } disabled:opacity-50`}
+                            >
+                                {acceptedFriends.every(f => activeFriends.includes(f.id))
+                                    ? 'Deseleccionar Todos'
+                                    : 'Seleccionar Todos'}
+                            </button>
+                            {acceptedFriends.map((friend, idx) => {
                             const isActive = activeFriends.includes(friend.id);
                             const color = FRIEND_COLORS[idx % FRIEND_COLORS.length];
 
@@ -273,7 +288,8 @@ export const SocialModal: React.FC<SocialModalProps> = ({ isOpen, onClose, curre
                                     </div>
                                 </div>
                             );
-                        })
+                        })}
+                        </>
                     )}
                 </div>
             )}

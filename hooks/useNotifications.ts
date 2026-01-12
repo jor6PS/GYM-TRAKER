@@ -1,6 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Workout } from '../types';
 import { format, isToday, parseISO } from 'date-fns';
+import { supabase, getFriendships } from '../services/supabase';
+import { getFriendWorkouts } from '../services/supabase';
+import type { RealtimeChannel } from '@supabase/supabase-js';
+
+// Paleta de colores para amigos (debe coincidir con SocialModal y useFriends)
+const FRIEND_COLORS = [
+  '#38bdf8', '#f472b6', '#a78bfa', '#fb923c', '#2dd4bf', '#fbbf24', '#34d399',
+  '#60a5fa', '#f87171', '#c084fc', '#22d3ee', '#f97316', '#14b8a6', '#8b5cf6',
+  '#ec4899', '#06b6d4', '#3b82f6', '#ef4444', '#10b981', '#6366f1', '#84cc16',
+  '#eab308', '#06b6d4', '#a855f7'
+];
 
 export interface Notification {
   id: string;
@@ -74,24 +85,291 @@ export const useNotifications = (): UseNotificationsReturn => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const lastCheckedWorkoutIdsRef = useRef<Set<string>>(new Set());
   const isInitializedRef = useRef(false);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const allFriendsRef = useRef<Map<string, { name: string; color: string }>>(new Map());
 
-  // Cargar notificaciones al iniciar
-  useEffect(() => {
-    const stored = getStoredNotifications();
-    setNotifications(stored);
+  // Función para crear una notificación desde un workout
+  const createNotificationFromWorkout = useCallback((workout: Workout, friendId: string, friendName: string, friendColor: string) => {
+    if (!isInitializedRef.current) return;
+
+    const workoutId = workout.id;
     
-    // Cargar IDs de workouts ya procesados
-    const storedIds = localStorage.getItem('gym_tracker_processed_workouts');
-    if (storedIds) {
-      try {
-        lastCheckedWorkoutIdsRef.current = new Set(JSON.parse(storedIds));
-      } catch {
-        lastCheckedWorkoutIdsRef.current = new Set();
-      }
+    // Verificar si ya hemos notificado sobre este workout
+    if (lastCheckedWorkoutIdsRef.current.has(workoutId)) {
+      return;
     }
-    
-    isInitializedRef.current = true;
+
+    // Verificar si ya existe una notificación para este workout
+    setNotifications(prev => {
+      const existingNotification = prev.find(
+        n => n.workoutId === workoutId && n.friendId === friendId
+      );
+      if (existingNotification) {
+        return prev;
+      }
+
+      // Verificar que el workout es de hoy
+      try {
+        const workoutDate = typeof workout.date === 'string' ? parseISO(workout.date) : new Date(workout.date);
+        if (!isToday(workoutDate)) {
+          return prev;
+        }
+      } catch {
+        return prev;
+      }
+
+      // Obtener cantidad de ejercicios
+      const exerciseCount = workout.structured_data?.exercises?.length || 0;
+      if (exerciseCount === 0) return prev;
+
+      // Crear nueva notificación
+      let workoutDateStr: string;
+      const workoutDate = workout.date as any;
+      if (typeof workoutDate === 'string') {
+        workoutDateStr = workoutDate;
+      } else if (workoutDate instanceof Date) {
+        workoutDateStr = workoutDate.toISOString();
+      } else {
+        workoutDateStr = new Date(workoutDate).toISOString();
+      }
+      
+      const notification: Notification = {
+        id: `${workoutId}-${friendId}-${Date.now()}`,
+        friendId,
+        friendName,
+        friendColor,
+        workoutId,
+        workoutDate: workoutDateStr,
+        exerciseCount,
+        createdAt: new Date().toISOString(),
+        read: false
+      };
+
+      lastCheckedWorkoutIdsRef.current.add(workoutId);
+      
+      // Guardar IDs procesados
+      try {
+        localStorage.setItem(
+          'gym_tracker_processed_workouts',
+          JSON.stringify(Array.from(lastCheckedWorkoutIdsRef.current))
+        );
+      } catch (error) {
+        console.error('Error saving processed workouts:', error);
+      }
+
+      return [notification, ...prev];
+    });
   }, []);
+
+  // Cargar notificaciones y configurar Realtime al iniciar
+  useEffect(() => {
+    const initialize = async () => {
+      // Cargar notificaciones guardadas
+      const stored = getStoredNotifications();
+      setNotifications(stored);
+      
+      // Cargar IDs de workouts ya procesados
+      const storedIds = localStorage.getItem('gym_tracker_processed_workouts');
+      if (storedIds) {
+        try {
+          lastCheckedWorkoutIdsRef.current = new Set(JSON.parse(storedIds));
+        } catch {
+          lastCheckedWorkoutIdsRef.current = new Set();
+        }
+      }
+
+      // Obtener lista de todos los amigos aceptados
+      try {
+        const friends = await getFriendships();
+        const acceptedFriends = friends.filter(f => f.status === 'accepted');
+        
+        // Crear mapa de amigos con colores
+        const friendsMap = new Map<string, { name: string; color: string }>();
+        acceptedFriends.forEach((friend, idx) => {
+          const color = FRIEND_COLORS[idx % FRIEND_COLORS.length];
+          friendsMap.set(friend.id, { name: friend.name, color });
+        });
+        allFriendsRef.current = friendsMap;
+
+        // Verificar workouts existentes de hoy que aún no se han notificado
+        if (acceptedFriends.length > 0) {
+          const friendIds = acceptedFriends.map(f => f.id);
+          try {
+            const allWorkouts = await getFriendWorkouts(friendIds);
+            const todayWorkouts = allWorkouts.filter(workout => {
+              try {
+                const workoutDate = typeof workout.date === 'string' ? parseISO(workout.date) : new Date(workout.date);
+                return isToday(workoutDate);
+              } catch {
+                return false;
+              }
+            });
+
+            // Crear notificaciones para workouts de hoy que aún no se han procesado
+            todayWorkouts.forEach(workout => {
+              const friendInfo = allFriendsRef.current.get(workout.user_id);
+              if (friendInfo) {
+                createNotificationFromWorkout(workout, workout.user_id, friendInfo.name, friendInfo.color);
+              }
+            });
+          } catch (error) {
+            console.error('Error verificando workouts existentes:', error);
+          }
+        }
+
+        // Configurar suscripción Realtime para escuchar cambios de todos los amigos
+        if (acceptedFriends.length > 0) {
+          // Limpiar suscripción anterior si existe
+          if (channelRef.current) {
+            supabase.removeChannel(channelRef.current);
+            channelRef.current = null;
+          }
+
+          const channel = supabase
+            .channel(`notifications-workouts-${Date.now()}`)
+            .on(
+              'postgres_changes',
+              {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'workouts'
+              },
+              async (payload) => {
+                // Cuando se inserta un nuevo workout, verificar si es de uno de nuestros amigos
+                const newWorkout = payload.new as Workout;
+                const friendId = newWorkout.user_id;
+                
+                // Verificar si es un amigo aceptado
+                const friendInfo = allFriendsRef.current.get(friendId);
+                if (friendInfo) {
+                  console.log(`🔔 Nuevo workout detectado para amigo ${friendInfo.name} (${friendId})`);
+                  
+                  // El payload de Realtime puede no incluir structured_data completo
+                  // Hacer una consulta para obtener el workout completo
+                  try {
+                    const { data: fullWorkout, error } = await supabase
+                      .from('workouts')
+                      .select('*')
+                      .eq('id', newWorkout.id)
+                      .single();
+                    
+                    if (error || !fullWorkout) {
+                      console.error('Error obteniendo workout completo:', error);
+                      return;
+                    }
+
+                    const workout = fullWorkout as Workout;
+                    const exerciseCount = workout.structured_data?.exercises?.length || 0;
+                    if (exerciseCount > 0) {
+                      const workoutDate = typeof workout.date === 'string' 
+                        ? parseISO(workout.date) 
+                        : new Date(workout.date);
+                      if (isToday(workoutDate)) {
+                        createNotificationFromWorkout(workout, friendId, friendInfo.name, friendInfo.color);
+                      }
+                    }
+                  } catch (error) {
+                    console.error('Error procesando nuevo workout:', error);
+                  }
+                }
+              }
+            )
+            .subscribe((status) => {
+              if (status === 'SUBSCRIBED') {
+                console.log('✅ Suscrito a cambios de workouts para notificaciones');
+              } else if (status === 'CHANNEL_ERROR') {
+                console.error('❌ Error en suscripción Realtime de notificaciones');
+              }
+            });
+
+          channelRef.current = channel;
+        }
+      } catch (error) {
+        console.error('Error inicializando notificaciones:', error);
+      }
+      
+      isInitializedRef.current = true;
+    };
+
+    initialize();
+
+    // Limpiar al desmontar
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [createNotificationFromWorkout]);
+
+  // Actualizar lista de amigos periódicamente (cada 5 minutos) para detectar nuevos amigos
+  useEffect(() => {
+    if (!isInitializedRef.current) return;
+
+    const updateFriendsList = async () => {
+      try {
+        const friends = await getFriendships();
+        const acceptedFriends = friends.filter(f => f.status === 'accepted');
+        
+        // Actualizar mapa de amigos
+        const friendsMap = new Map<string, { name: string; color: string }>();
+        acceptedFriends.forEach((friend, idx) => {
+          const color = FRIEND_COLORS[idx % FRIEND_COLORS.length];
+          friendsMap.set(friend.id, { name: friend.name, color });
+        });
+        allFriendsRef.current = friendsMap;
+
+        // Si hay nuevos amigos y no hay suscripción activa, crear una nueva
+        if (acceptedFriends.length > 0 && !channelRef.current) {
+          const channel = supabase
+            .channel(`notifications-workouts-${Date.now()}`)
+            .on(
+              'postgres_changes',
+              {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'workouts'
+              },
+              async (payload) => {
+                const newWorkout = payload.new as Workout;
+                const friendId = newWorkout.user_id;
+                const friendInfo = allFriendsRef.current.get(friendId);
+                if (friendInfo) {
+                  console.log(`🔔 Nuevo workout detectado para amigo ${friendInfo.name} (${friendId})`);
+                  const exerciseCount = newWorkout.structured_data?.exercises?.length || 0;
+                  if (exerciseCount > 0) {
+                    try {
+                      const workoutDate = typeof newWorkout.date === 'string' 
+                        ? parseISO(newWorkout.date) 
+                        : new Date(newWorkout.date);
+                      if (isToday(workoutDate)) {
+                        createNotificationFromWorkout(newWorkout, friendId, friendInfo.name, friendInfo.color);
+                      }
+                    } catch (error) {
+                      console.error('Error procesando fecha del workout:', error);
+                    }
+                  }
+                }
+              }
+            )
+            .subscribe((status) => {
+              if (status === 'SUBSCRIBED') {
+                console.log('✅ Suscrito a cambios de workouts para notificaciones');
+              }
+            });
+          channelRef.current = channel;
+        }
+      } catch (error) {
+        console.error('Error actualizando lista de amigos:', error);
+      }
+    };
+
+    // Actualizar inmediatamente y luego cada 5 minutos
+    updateFriendsList();
+    const interval = setInterval(updateFriendsList, 5 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, [createNotificationFromWorkout]);
 
   // Guardar notificaciones cuando cambian
   useEffect(() => {

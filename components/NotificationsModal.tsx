@@ -1,7 +1,7 @@
 import React from 'react';
-import { X, Bell, Trash2, CheckCheck, Dumbbell, Calendar } from 'lucide-react';
+import { X, Bell, Trash2, CheckCheck, Calendar } from 'lucide-react';
 import { Notification } from '../hooks/useNotifications';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, isToday, isYesterday } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useScrollLock } from '../hooks/useScrollLock';
 
@@ -48,6 +48,19 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
       return format(date, 'dd/MM/yyyy HH:mm', { locale: es });
     } catch {
       return dateString;
+    }
+  };
+
+  const getWorkoutDateMessage = (workoutDateString: string) => {
+    try {
+      const workoutDate = parseISO(workoutDateString);
+      if (isYesterday(workoutDate)) {
+        return 'Ha registrado ejercicios ayer';
+      } else {
+        return `Ha registrado ejercicios`;
+      }
+    } catch {
+      return 'Ha registrado ejercicios';
     }
   };
 
@@ -151,17 +164,12 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                         )}
                       </div>
                       <p className="text-zinc-300 text-sm mb-2">
-                        Ha añadido {notification.exerciseCount}{' '}
-                        {notification.exerciseCount === 1 ? 'ejercicio' : 'ejercicios'} hoy
+                        {getWorkoutDateMessage(notification.workoutDate)}
                       </p>
                       <div className="flex items-center gap-3 text-xs text-zinc-500">
                         <div className="flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
                           <span>{formatNotificationTime(notification.createdAt)}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Dumbbell className="w-3 h-3" />
-                          <span>{notification.exerciseCount} ejercicios</span>
                         </div>
                       </div>
                     </div>

@@ -69,7 +69,7 @@ function App() {
   } = useWorkouts(currentUser?.id || null);
   
   // Friends hook
-  const { activeFriends, friendsWorkouts, toggleFriend } = useFriends();
+  const { activeFriends, friendsWorkouts, toggleFriend, toggleAllFriends } = useFriends();
   
   // Notifications hook
   const {
@@ -686,7 +686,8 @@ function App() {
             onClose={() => { closeSocialModal(); checkPendingRequests(); }} 
             currentUser={currentUser} 
             activeFriends={activeFriends.map(f => f.userId)} 
-            onToggleFriend={handleToggleFriend} 
+            onToggleFriend={handleToggleFriend}
+            onToggleAllFriends={toggleAllFriends}
           />
         )}
         {currentUser && showArenaModal && (
