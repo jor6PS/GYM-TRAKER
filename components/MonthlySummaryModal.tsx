@@ -520,10 +520,11 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
             )}
             <button
               onClick={handleForceRecalc}
-              className="flex items-center gap-2 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 rounded-full transition-colors"
+              className="flex items-center justify-center gap-2 px-2 py-2 sm:px-3 sm:py-2 text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 rounded-full transition-colors"
+              title="Recalcular"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              Recalcular
+              <span className="hidden sm:inline">Recalcular</span>
             </button>
             <button onClick={onClose} className="p-2 text-zinc-600 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-colors"><X className="w-5 h-5" /></button>
           </div>
