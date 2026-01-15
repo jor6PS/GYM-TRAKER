@@ -1,6 +1,7 @@
 
 
 export type MetricType = 'strength' | 'cardio';
+export type TrainingGoal = 'fuerza' | 'mantenimiento' | 'adelgazar' | 'hipertrofia' | 'resistencia';
 
 export interface Set {
   reps?: number;

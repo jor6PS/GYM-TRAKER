@@ -83,6 +83,7 @@ const saveLastCheckTime = () => {
 
 export const useNotifications = (): UseNotificationsReturn => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [isInitialized, setIsInitialized] = useState(false);
   const lastCheckedWorkoutIdsRef = useRef<Set<string>>(new Set());
   const isInitializedRef = useRef(false);
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -177,6 +178,10 @@ export const useNotifications = (): UseNotificationsReturn => {
           lastCheckedWorkoutIdsRef.current = new Set();
         }
       }
+
+      // Marcar inicialización antes de procesar workouts
+      isInitializedRef.current = true;
+      setIsInitialized(true);
 
       // Obtener lista de todos los amigos aceptados
       try {
@@ -288,7 +293,6 @@ export const useNotifications = (): UseNotificationsReturn => {
         console.error('Error inicializando notificaciones:', error);
       }
       
-      isInitializedRef.current = true;
     };
 
     initialize();
@@ -302,9 +306,9 @@ export const useNotifications = (): UseNotificationsReturn => {
     };
   }, [createNotificationFromWorkout]);
 
-  // Actualizar lista de amigos periódicamente (cada 5 minutos) para detectar nuevos amigos
+  // Actualizar lista de amigos periódicamente para detectar nuevos amigos
   useEffect(() => {
-    if (!isInitializedRef.current) return;
+    if (!isInitialized) return;
 
     const updateFriendsList = async () => {
       try {
@@ -318,6 +322,31 @@ export const useNotifications = (): UseNotificationsReturn => {
           friendsMap.set(friend.id, { name: friend.name, color });
         });
         allFriendsRef.current = friendsMap;
+
+        // Verificar workouts recientes para notificaciones (fallback si Realtime falla)
+        if (acceptedFriends.length > 0) {
+          try {
+            const friendIds = acceptedFriends.map(f => f.id);
+            const allWorkouts = await getFriendWorkouts(friendIds);
+            const todayWorkouts = allWorkouts.filter(workout => {
+              try {
+                const workoutDate = typeof workout.date === 'string' ? parseISO(workout.date) : new Date(workout.date);
+                return isToday(workoutDate);
+              } catch {
+                return false;
+              }
+            });
+
+            todayWorkouts.forEach(workout => {
+              const friendInfo = allFriendsRef.current.get(workout.user_id);
+              if (friendInfo) {
+                createNotificationFromWorkout(workout, workout.user_id, friendInfo.name, friendInfo.color);
+              }
+            });
+          } catch (error) {
+            console.error('Error verificando workouts recientes:', error);
+          }
+        }
 
         // Si hay nuevos amigos y no hay suscripción activa, crear una nueva
         if (acceptedFriends.length > 0 && !channelRef.current) {
@@ -364,12 +393,25 @@ export const useNotifications = (): UseNotificationsReturn => {
       }
     };
 
-    // Actualizar inmediatamente y luego cada 5 minutos
+    // Actualizar inmediatamente y luego cada minuto (fallback sin Realtime)
     updateFriendsList();
-    const interval = setInterval(updateFriendsList, 5 * 60 * 1000);
+    const interval = setInterval(updateFriendsList, 60 * 1000);
 
-    return () => clearInterval(interval);
-  }, [createNotificationFromWorkout]);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        updateFriendsList();
+      }
+    };
+
+    window.addEventListener('focus', updateFriendsList);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', updateFriendsList);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [createNotificationFromWorkout, isInitialized]);
 
   // Guardar notificaciones cuando cambian
   useEffect(() => {

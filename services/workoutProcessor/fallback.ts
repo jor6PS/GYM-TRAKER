@@ -3,12 +3,37 @@ import { GoogleGenAI } from "@google/genai";
 // Model lists for fallback
 // Nota: Algunos modelos pueden no estar disponibles en todas las regiones/versiones de API
 export const REPORT_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-2.0-flash',
-  'gemini-1.5-pro',
-  'gemini-2.0-pro-exp-02-05',
+  // --- Serie Gemini 3 (Preview / Next-Gen) ---
   'gemini-3-pro-preview',
-  'gemini-3-flash-preview'
+  'gemini-3-flash-preview',
+  'gemini-3-pro-image-preview',
+
+// --- Serie Gemini 2.5 (Estándar Actual / GA) ---
+  'gemini-2.5-pro',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-2.5-ultra',
+  'gemini-2.5-flash-image',
+
+// --- Serie Gemini 2.0 (Generación Anterior Reciente) ---
+  'gemini-2.0-pro',
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-lite-preview',
+  'gemini-2.0-pro-exp-02-05',
+  'gemini-2.0-flash-exp',
+
+// --- Serie Gemini 1.5 (Legacy / Mantenimiento) ---
+  'gemini-1.5-pro',
+  'gemini-1.5-pro-002',
+  'gemini-1.5-flash',
+  'gemini-1.5-flash-002',
+  'gemini-1.5-flash-8b',
+
+// --- Serie Gemini 1.0 (Deprecated / Solo compatibilidad) ---
+  'gemini-1.0-pro',
+  'gemini-1.0-pro-vision',
+  'text-embedding-004',
+  'aqa'
 ];
 
 export const AUDIO_MODELS = [

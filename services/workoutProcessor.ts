@@ -1,5 +1,5 @@
 import { Type } from "@google/genai";
-import { WorkoutData, Workout, GlobalReportData, MaxComparisonEntry, GroupAnalysisData } from "../types";
+import { WorkoutData, Workout, GlobalReportData, MaxComparisonEntry, GroupAnalysisData, TrainingGoal } from "../types";
 import { format, isSameMonth, isAfter } from "date-fns";
 import subMonths from "date-fns/subMonths";
 import es from 'date-fns/locale/es';
@@ -43,7 +43,8 @@ export const generateGlobalReport = async (
   currentWeight: number = 80,
   userHeight: number = 180,
   userAge: number = 25,
-  userId?: string
+  userId?: string,
+  trainingGoal?: TrainingGoal
 ): Promise<GlobalReportData> => {
     try {
         const now = new Date();
@@ -179,6 +180,9 @@ export const generateGlobalReport = async (
         // Si no hay userId, calcular desde workouts como fallback
         // NO recalcular desde workouts porque el volumen almacenado en BD es la fuente de verdad
         const recentHistory: any[] = [];
+        let totalSessions = 0;
+        let monthlySessions = 0;
+        const weeklySessionsMap = new Map<string, number>();
         
         // OPTIMIZACIÓN: Cache para parsing de structured_data
         const parsedWorkoutCache = new Map<Workout, any>();
@@ -187,6 +191,12 @@ export const generateGlobalReport = async (
             const wDate = new Date(w.date);
             const isThisMonth = isSameMonth(wDate, now);
             const isRecent = isAfter(wDate, lookbackDate);
+            totalSessions += 1;
+            if (isThisMonth) monthlySessions += 1;
+            if (isRecent) {
+                const weekKey = format(wDate, 'yyyy-ww');
+                weeklySessionsMap.set(weekKey, (weeklySessionsMap.get(weekKey) || 0) + 1);
+            }
 
             const historicUserWeight = w.user_weight || currentWeight;
             
@@ -280,12 +290,22 @@ export const generateGlobalReport = async (
             .filter(item => item.monthlyMax > 0)
             .sort((a, b) => b.monthlyMax - a.monthlyMax);
 
+        const weeklySessions = Array.from(weeklySessionsMap.entries())
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([week, count]) => ({ week, count }));
+
         // 4. PROMPT ENGINEERING (DETALLADO Y COMPLETO + SECCIÓN 3.5)
         const systemInstruction = `Eres un Entrenador de Alto Rendimiento experto en biomecánica y programación.
         
         ROL: Tu tono es **constructivo, profesional, técnico y alentador**. Evita el lenguaje agresivo o de "gym-bro" burlón. Tu objetivo es educar y guiar hacia la mejora continua.
 
         DATOS PROPORCIONADOS: Historial de entrenamientos detallado (series, reps, pesos), 1RMs y volúmenes, además de biometría del usuario.
+        CONSISTENCIA: Usa los conteos de sesiones reales proporcionados y NO inventes cifras.
+
+        OBJETIVO: Si se proporciona un objetivo de entrenamiento, TODO el análisis debe estar alineado con ese objetivo. 
+        - Menciona el objetivo explícitamente en cada sección.
+        - Ajusta el enfoque de cada sección (3.1 a 3.5), el análisis de evolución (4), el veredicto (5) y el plan de acción (6) para favorecer el objetivo.
+        - No limites el objetivo solo al plan; úsalo como lente principal en todo el informe.
 
         ESTRUCTURA DE RESPUESTA (JSON):
         {
@@ -293,7 +313,8 @@ export const generateGlobalReport = async (
           "equiv_monthly": "String corto. Comparación VISUAL del peso mensual con objetos cotidianos o animales.",
           "analysis": "Markdown detallado siguiendo la estructura:
             ## 3 - AUDITORÍA FORENSE DEL MES
-            Analiza patrones. ¿Hubo constancia? ¿Se rompió algún récord histórico?
+            Analiza patrones globales del rendimiento. Reporta la consistencia usando los conteos reales de sesiones (total, mensual y semanal). 
+            No inventes números.
             ### 3.1 - Mapeo de Volumen Efectivo
             (Tabla de series semanales por grupo muscular y Veredicto: Mantenimiento/MAV/Sobreentrenamiento)
             ### 3.2 - Ratios de Equilibrio Estructural
@@ -351,10 +372,18 @@ export const generateGlobalReport = async (
         
         console.log(`[Crónicas] Enviando a IA: totalVolume=${Math.round(totalVolume)}kg, monthlyVolume=${Math.round(monthlyVolume)}kg`);
         
+        const goalInstruction = trainingGoal
+            ? `Objetivo de entrenamiento declarado: ${trainingGoal}. Enfoca TODO el informe (secciones 3.1 a 3.5, 4, 5 y 6) para favorecer este objetivo. Menciona el objetivo en cada sección y explica cómo los hallazgos afectan ese objetivo sin sacrificar salud ni tecnica.`
+            : '';
+
         const prompt = `Analiza mi rendimiento para optimizar mi progreso. 
         Biometría: Edad ${userAge} años, Peso Corporal ${currentWeight}kg, Altura ${userHeight}cm.
         Peso Total Histórico: ${Math.round(totalVolume)}kg. 
         Peso Levantado este mes: ${Math.round(monthlyVolume)}kg. 
+        Sesiones totales registradas: ${totalSessions}.
+        Sesiones del mes actual: ${monthlySessions}.
+        Sesiones semanales recientes (formato semana, conteo): ${JSON.stringify(weeklySessions)}.
+        ${goalInstruction}
         
         INSTRUCCIÓN CRÍTICA Y OBLIGATORIA: 
         - DEBES incluir SIEMPRE la sección "### 3.5 - Potencia Relativa" en tu análisis.
