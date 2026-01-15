@@ -526,7 +526,13 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
               <RefreshCw className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Recalcular</span>
             </button>
-            <button onClick={onClose} className="p-2 text-zinc-600 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-colors"><X className="w-5 h-5" /></button>
+            <button
+              onClick={onClose}
+              className="p-1.5 sm:p-2 text-zinc-600 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-colors"
+              title="Cerrar"
+            >
+              <X className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
           </div>
         </div>
         
