@@ -4,6 +4,7 @@ import { CalendarView } from './components/CalendarView';
 import { RestTimer } from './components/RestTimer';
 import { LoginScreen } from './components/LoginScreen';
 import { ResetPasswordScreen } from './components/ResetPasswordScreen'; 
+import { SetupScreen } from './components/SetupScreen';
 import { AppHeader } from './components/AppHeader';
 import { ActionDock } from './components/ActionDock';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
@@ -40,7 +41,16 @@ export default function AppWrapper() {
 }
 
 function App() {
+  if (!isConfigured) {
+    return <SetupScreen />;
+  }
+
+  return <ConfiguredApp />;
+}
+
+function ConfiguredApp() {
   const { t } = useLanguage();
+
   const { catalog, isLoading: catalogLoading } = useExercises();
   
   // Auth hook
@@ -314,7 +324,6 @@ function App() {
     }
   }, [currentUser, realAdminUser, setCurrentUser, setRealAdminUser, openProfileModal]);
 
-  if (!isConfigured) return <div className="min-h-screen bg-black flex items-center justify-center text-white">Config error</div>;
   if (sessionLoading || catalogLoading) return <div className="min-h-screen bg-background flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
   if (currentUser && isRecoveryMode) return <ResetPasswordScreen onSuccess={() => setIsRecoveryMode(false)} />;
   if (!currentUser) return <LoginScreen />;
@@ -723,4 +732,3 @@ function App() {
     </div>
   );
 }
-

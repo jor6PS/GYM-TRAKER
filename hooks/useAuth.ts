@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { User } from '../types';
-import { supabase, getCurrentProfile } from '../services/supabase';
+import { supabase, getCurrentProfile, isConfigured } from '../services/supabase';
 
 interface UseAuthReturn {
   currentUser: User | null;
@@ -51,6 +51,15 @@ export const useAuth = (): UseAuthReturn => {
   }, []);
 
   useEffect(() => {
+    if (!isConfigured) {
+      setCurrentUser(null);
+      setRealAdminUser(null);
+      setSessionLoading(false);
+      return () => {
+        isMountedRef.current = false;
+      };
+    }
+
     isMountedRef.current = true;
     let isMounted = true;
     
@@ -144,4 +153,3 @@ export const useAuth = (): UseAuthReturn => {
     logout
   };
 };
-

@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { getExerciseCatalog } from '../services/supabase';
+import { getExerciseCatalog, isConfigured } from '../services/supabase';
 
 export interface ExerciseDef {
   id: string;
@@ -22,6 +22,12 @@ export const ExerciseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    if (!isConfigured) {
+      setCatalog([]);
+      setIsLoading(false);
+      return;
+    }
+
     const loadCatalog = async () => {
       try {
         const data = await getExerciseCatalog();

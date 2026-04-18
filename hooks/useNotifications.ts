@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Workout } from '../types';
 import { format, isToday, parseISO } from 'date-fns';
-import { supabase, getFriendships } from '../services/supabase';
-import { getFriendWorkouts } from '../services/supabase';
+import { supabase, getFriendships, getFriendWorkouts, isConfigured } from '../services/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 // Paleta de colores para amigos (debe coincidir con SocialModal y useFriends)
@@ -570,4 +569,3 @@ export const useNotifications = (): UseNotificationsReturn => {
     checkForNewNotifications
   };
 };
-
