@@ -2,12 +2,12 @@
 import React from 'react';
 import { Edit3 } from 'lucide-react';
 import { AudioRecorder } from './AudioRecorder';
-import { WorkoutData } from '../types';
+import { WorkoutData, WorkoutSaveResult } from '../types';
 
 interface ActionDockProps {
   label: string;
   onOpenUnified: () => void;
-  onWorkoutProcessed: (data: WorkoutData) => void;
+  onWorkoutProcessed: (data: WorkoutData) => Promise<WorkoutSaveResult>;
 }
 
 export const ActionDock: React.FC<ActionDockProps> = ({ label, onOpenUnified, onWorkoutProcessed }) => {

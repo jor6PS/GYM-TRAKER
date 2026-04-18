@@ -25,6 +25,11 @@ export interface WorkoutData {
   notes?: string;
 }
 
+export interface WorkoutSaveResult {
+  status: 'saved' | 'queued';
+  message?: string;
+}
+
 export interface Workout {
   id: string;
   user_id: string;

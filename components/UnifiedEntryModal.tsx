@@ -8,11 +8,12 @@ import { format } from 'date-fns';
 import { getCanonicalId, normalizeText, getExerciseIcon } from '../utils';
 import { EditExerciseModal } from './EditExerciseModal';
 import { useScrollLock } from '../hooks/useScrollLock';
+import { clearWorkoutSessionDraft, loadWorkoutSessionDraft, saveWorkoutSessionDraft } from '../services/workoutStorage';
 
 interface UnifiedEntryModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onWorkoutProcessed: (data: WorkoutData) => void;
+  onWorkoutProcessed: (data: WorkoutData) => Promise<{ status: 'saved' | 'queued'; message?: string }>;
   pastWorkouts: Workout[];
   plans: WorkoutPlan[];
   onOpenCreatePlan: () => void;
@@ -47,11 +48,7 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
   useEffect(() => {
     if (sessionExercises.length > 0) {
       try {
-        const backupKey = 'workout_session_backup';
-        sessionStorage.setItem(backupKey, JSON.stringify({
-          exercises: sessionExercises,
-          timestamp: Date.now()
-        }));
+        saveWorkoutSessionDraft(sessionExercises);
         console.log(`💾 Backup automático guardado: ${sessionExercises.length} ejercicios`);
       } catch (e) {
         console.warn('⚠️ Error al guardar backup automático:', e);
@@ -65,11 +62,7 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
     
     const intervalId = setInterval(() => {
       try {
-        const backupKey = 'workout_session_backup';
-        sessionStorage.setItem(backupKey, JSON.stringify({
-          exercises: sessionExercises,
-          timestamp: Date.now()
-        }));
+        saveWorkoutSessionDraft(sessionExercises);
         console.log(`💾 Backup periódico guardado: ${sessionExercises.length} ejercicios`);
       } catch (e) {
         console.warn('⚠️ Error al guardar backup periódico:', e);
@@ -84,12 +77,12 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
     if (isOpen) {
       try {
         const backupKey = 'workout_session_backup';
-        const backup = sessionStorage.getItem(backupKey);
+        const backup = loadWorkoutSessionDraft();
         if (backup) {
-          const parsed = JSON.parse(backup);
           // Restaurar ejercicios si el backup existe y no hay ejercicios actualmente
           // El tiempo de expiración es ahora de 30 días (muy largo para mantener persistencia)
           const MAX_BACKUP_AGE = 30 * 24 * 60 * 60 * 1000; // 30 días
+          const parsed = JSON.parse(backup);
           if (parsed.exercises && Array.isArray(parsed.exercises) && parsed.exercises.length > 0) {
             if (Date.now() - parsed.timestamp < MAX_BACKUP_AGE) {
               // Solo restaurar si realmente no hay ejercicios
@@ -105,7 +98,7 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
             } else {
               // Limpiar backup muy antiguo (más de 30 días)
               console.log('🗑️ Limpiando backup muy antiguo (>30 días)');
-              sessionStorage.removeItem(backupKey);
+              clearWorkoutSessionDraft();
             }
           }
         }
@@ -388,7 +381,7 @@ export const UnifiedEntryModal: React.FC<UnifiedEntryModalProps> = ({
                               // Limpiar backup solo después de cerrar exitosamente
                               setTimeout(() => {
                                 try {
-                                  sessionStorage.removeItem(backupKey);
+                                  clearWorkoutSessionDraft();
                                   console.log('🗑️ Backup limpiado después de guardado exitoso');
                                 } catch (e) {
                                   // Ignorar errores al limpiar

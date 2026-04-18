@@ -1,16 +1,26 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Workout, WorkoutPlan, WorkoutData, Exercise } from '../types';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Exercise, Workout, WorkoutData, WorkoutPlan, WorkoutSaveResult } from '../types';
 import { supabase } from '../services/supabase';
-import { sanitizeWorkoutData, parseLocalDate, getCanonicalId } from '../utils';
+import { sanitizeWorkoutData, getCanonicalId } from '../utils';
 import { ExerciseDef } from '../contexts/ExerciseContext';
-import { format, isSameDay } from 'date-fns';
-import { updateUserRecords, getUserRecords } from '../services/recordsService';
+import { format } from 'date-fns';
+import { updateUserRecords } from '../services/recordsService';
+import {
+  countPendingWorkoutSaves,
+  createPendingWorkoutSave,
+  getPendingWorkoutSaves,
+  PendingWorkoutSave,
+  removePendingWorkoutSave,
+  upsertPendingWorkoutSave
+} from '../services/workoutStorage';
 
 interface UseWorkoutsReturn {
   workouts: Workout[];
   plans: WorkoutPlan[];
+  pendingSyncCount: number;
+  syncStatusMessage: string | null;
   fetchData: () => Promise<void>;
-  handleWorkoutProcessed: (rawData: WorkoutData, selectedDate: Date, currentUserWeight: number, catalog: ExerciseDef[]) => Promise<void>;
+  handleWorkoutProcessed: (rawData: WorkoutData, selectedDate: Date, currentUserWeight: number, catalog: ExerciseDef[]) => Promise<WorkoutSaveResult>;
   confirmDeleteWorkout: (workoutId: string, catalog?: ExerciseDef[]) => Promise<void>;
   confirmDeletePlan: (planId: string) => Promise<void>;
   handleSavePlan: (plan: WorkoutPlan, userId: string) => Promise<void>;
@@ -19,10 +29,140 @@ interface UseWorkoutsReturn {
   deleteExercise: (workoutId: string, exerciseIndex: number, catalog?: ExerciseDef[]) => Promise<void>;
 }
 
+const SAVE_TIMEOUT_MS = 20000;
+const SYNC_INTERVAL_MS = 30000;
+
+const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(errorMessage)), timeoutMs))
+  ]);
+};
+
+const isRecoverableSaveError = (error: any) => {
+  const message = String(error?.message || error || '').toLowerCase();
+  return (
+    message.includes('timeout') ||
+    message.includes('failed to fetch') ||
+    message.includes('network') ||
+    message.includes('fetch') ||
+    message.includes('offline') ||
+    message.includes('load failed')
+  );
+};
+
+const mergeWorkoutData = (base: WorkoutData, incoming: WorkoutData, catalog: ExerciseDef[]) => {
+  const mergedExercises = [...(base.exercises || [])];
+  const existingById = new Set(mergedExercises.map(exercise => getCanonicalId(exercise.name, catalog)));
+
+  incoming.exercises.forEach(exercise => {
+    const canonicalId = getCanonicalId(exercise.name, catalog);
+    if (!existingById.has(canonicalId)) {
+      mergedExercises.push(exercise);
+      existingById.add(canonicalId);
+    }
+  });
+
+  return {
+    ...base,
+    exercises: mergedExercises,
+    notes: [base.notes, incoming.notes].filter(Boolean).join('\n').trim() || undefined
+  };
+};
+
 export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [plans, setPlans] = useState<WorkoutPlan[]>([]);
   const [previousUserId, setPreviousUserId] = useState<string | null>(null);
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [syncStatusMessage, setSyncStatusMessage] = useState<string | null>(null);
+  const syncInFlightRef = useRef(false);
+
+  const refreshPendingSyncCount = useCallback(() => {
+    setPendingSyncCount(countPendingWorkoutSaves(userId || undefined));
+  }, [userId]);
+
+  const upsertWorkoutState = useCallback((workout: Workout) => {
+    setWorkouts(prev => {
+      const sanitized = prev.filter(item => item.id !== `pending:${workout.user_id}:${workout.date}`);
+      const existingIndex = sanitized.findIndex(item => item.id === workout.id);
+
+      if (existingIndex === -1) {
+        return [...sanitized, workout].sort((a, b) => (
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        ));
+      }
+
+      const next = [...sanitized];
+      next[existingIndex] = workout;
+      return next;
+    });
+  }, []);
+
+  const persistWorkoutToSupabase = useCallback(async (
+    entry: PendingWorkoutSave,
+    catalog: ExerciseDef[]
+  ): Promise<Workout> => {
+    const existingResult = await withTimeout(
+      supabase
+        .from('workouts')
+        .select('*')
+        .eq('user_id', entry.userId)
+        .eq('date', entry.date)
+        .maybeSingle() as unknown as Promise<{ data: any; error: any }>,
+      SAVE_TIMEOUT_MS,
+      'Timeout al verificar workout existente'
+    );
+
+    if (existingResult.error && existingResult.error.code !== 'PGRST116') {
+      throw existingResult.error;
+    }
+
+    if (existingResult.data) {
+      const mergedData = mergeWorkoutData(existingResult.data.structured_data, entry.data, catalog);
+      const updateResult = await withTimeout(
+        supabase
+          .from('workouts')
+          .update({
+            structured_data: mergedData,
+            user_weight: entry.userWeight || 80
+          })
+          .eq('id', existingResult.data.id)
+          .select()
+          .single() as unknown as Promise<{ data: any; error: any }>,
+        SAVE_TIMEOUT_MS,
+        'Timeout al actualizar workout'
+      );
+
+      if (updateResult.error || !updateResult.data) {
+        throw updateResult.error || new Error('No se pudo actualizar el workout');
+      }
+
+      return updateResult.data as Workout;
+    }
+
+    const insertResult = await withTimeout(
+      supabase
+        .from('workouts')
+        .insert({
+          user_id: entry.userId,
+          date: entry.date,
+          structured_data: entry.data,
+          source: 'web',
+          user_weight: entry.userWeight || 80
+        })
+        .select()
+        .single() as unknown as Promise<{ data: any; error: any }>,
+      SAVE_TIMEOUT_MS,
+      'Timeout al insertar workout'
+    );
+
+    if (insertResult.error || !insertResult.data) {
+      throw insertResult.error || new Error('No se pudo guardar el workout');
+    }
+
+    return insertResult.data as Workout;
+  }, []);
 
   const fetchData = useCallback(async () => {
     if (!userId) {
@@ -31,575 +171,324 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
         setPlans([]);
         setPreviousUserId(null);
       }
+      setPendingSyncCount(0);
       return;
     }
-    
-    console.log('useWorkouts: Fetching data for userId:', userId, 'previousUserId:', previousUserId);
-    
+
     const [wData, pData] = await Promise.all([
       supabase.from('workouts').select('*').eq('user_id', userId).order('created_at', { ascending: true }),
       supabase.from('workout_plans').select('*').eq('user_id', userId)
     ]);
-    
-    console.log('useWorkouts: Workouts fetched:', wData.data?.length || 0, 'Error:', wData.error);
-    if (wData.error) console.error('useWorkouts: Error fetching workouts:', wData.error);
-    
+
     if (wData.data) {
-      setWorkouts(wData.data as Workout[]);
-      
-      // Verificar si el usuario tiene records, si no, procesar workouts existentes
-      // Esto se hará cuando se cargue el catalog en App.tsx
+      const remoteWorkouts = wData.data as Workout[];
+      const pendingEntries = getPendingWorkoutSaves(userId);
+      const pendingByDate = new Map(pendingEntries.map(entry => [entry.date, entry]));
+
+      const hydratedWorkouts = remoteWorkouts.map(workout => {
+        const pendingEntry = pendingByDate.get(workout.date);
+        if (!pendingEntry) return workout;
+        return {
+          ...workout,
+          structured_data: mergeWorkoutData(workout.structured_data, pendingEntry.data, [])
+        };
+      });
+
+      pendingEntries.forEach(entry => {
+        if (!hydratedWorkouts.some(workout => workout.date === entry.date)) {
+          hydratedWorkouts.push({
+            id: `pending:${entry.id}`,
+            user_id: entry.userId,
+            date: entry.date,
+            structured_data: entry.data,
+            source: 'web',
+            created_at: entry.createdAt,
+            user_weight: entry.userWeight
+          });
+        }
+      });
+
+      setWorkouts(hydratedWorkouts.sort((a, b) => (
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      )));
     } else {
       setWorkouts([]);
     }
+
     if (pData.data) {
       setPlans(pData.data as WorkoutPlan[]);
     } else {
       setPlans([]);
     }
+
     setPreviousUserId(userId);
-  }, [userId, previousUserId]);
+    refreshPendingSyncCount();
+  }, [userId, previousUserId, refreshPendingSyncCount]);
+
+  const syncPendingWorkouts = useCallback(async (catalog: ExerciseDef[] = []) => {
+    if (!userId || syncInFlightRef.current) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+
+    const queue = getPendingWorkoutSaves(userId);
+    if (queue.length === 0) {
+      refreshPendingSyncCount();
+      return;
+    }
+
+    syncInFlightRef.current = true;
+    let syncedCount = 0;
+
+    try {
+      for (const entry of queue) {
+        try {
+          const savedWorkout = await persistWorkoutToSupabase(entry, catalog);
+          upsertWorkoutState(savedWorkout);
+          removePendingWorkoutSave(entry.id);
+          syncedCount += 1;
+
+          updateUserRecords(savedWorkout, catalog).catch(error => {
+            console.error('Error updating records after sync:', error);
+          });
+        } catch (error) {
+          console.error('Error syncing pending workout:', error);
+          if (isRecoverableSaveError(error)) {
+            upsertPendingWorkoutSave({
+              ...entry,
+              updatedAt: new Date().toISOString(),
+              retryCount: entry.retryCount + 1,
+              lastError: String(error instanceof Error ? error.message : error)
+            });
+          }
+        }
+      }
+
+      if (syncedCount > 0) {
+        setSyncStatusMessage(
+          syncedCount === 1
+            ? 'Se sincronizo 1 entrenamiento pendiente.'
+            : `Se sincronizaron ${syncedCount} entrenamientos pendientes.`
+        );
+      }
+    } finally {
+      syncInFlightRef.current = false;
+      refreshPendingSyncCount();
+      await fetchData();
+    }
+  }, [fetchData, persistWorkoutToSupabase, refreshPendingSyncCount, upsertWorkoutState, userId]);
 
   useEffect(() => {
-    console.log('useWorkouts useEffect triggered - userId:', userId, 'previousUserId:', previousUserId);
     if (userId) {
       if (userId !== previousUserId) {
-        console.log('useWorkouts: userId changed from', previousUserId, 'to', userId);
-        // Limpiar workouts anteriores cuando cambia el usuario
         setWorkouts([]);
         setPlans([]);
-        // Cargar nuevos datos
-        fetchData();
+        void fetchData();
       } else if (previousUserId === null) {
-        // Primera carga
-        console.log('useWorkouts: Primera carga para userId:', userId);
-        fetchData();
+        void fetchData();
       }
     } else if (previousUserId !== null) {
-      // Solo limpiar si realmente no hay userId
-      console.log('useWorkouts: Limpiando porque userId es null');
       setWorkouts([]);
       setPlans([]);
       setPreviousUserId(null);
     }
   }, [userId, previousUserId, fetchData]);
 
-  // Helper para agregar timeout a promesas
-  const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> => {
-    return Promise.race([
-      promise,
-      new Promise<T>((_, reject) => 
-        setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
-      )
-    ]);
-  };
+  useEffect(() => {
+    if (!userId) return;
+
+    const triggerSync = () => {
+      void syncPendingWorkouts();
+    };
+
+    triggerSync();
+    window.addEventListener('online', triggerSync);
+    window.addEventListener('focus', triggerSync);
+    const intervalId = window.setInterval(triggerSync, SYNC_INTERVAL_MS);
+
+    return () => {
+      window.removeEventListener('online', triggerSync);
+      window.removeEventListener('focus', triggerSync);
+      window.clearInterval(intervalId);
+    };
+  }, [userId, syncPendingWorkouts]);
 
   const handleWorkoutProcessed = useCallback(async (
     rawData: WorkoutData,
     selectedDate: Date,
     currentUserWeight: number,
     catalog: ExerciseDef[]
-  ) => {
+  ): Promise<WorkoutSaveResult> => {
     if (!userId) {
-      throw new Error('Usuario no autenticado. Por favor, inicia sesión.');
+      throw new Error('Usuario no autenticado. Por favor, inicia sesion.');
     }
-    
-    // CRÍTICO: Validar que haya ejercicios antes de procesar
+
     if (!rawData.exercises || rawData.exercises.length === 0) {
-      throw new Error('No hay ejercicios para guardar. Añade al menos un ejercicio antes de guardar.');
+      throw new Error('No hay ejercicios para guardar. Anade al menos un ejercicio antes de guardar.');
     }
-    
-    // CRÍTICO: Validar que todos los ejercicios tengan sets válidos
+
     const validExercises = rawData.exercises.filter(ex => {
-      if (!ex.name || !ex.name.trim()) return false;
-      if (!ex.sets || !Array.isArray(ex.sets) || ex.sets.length === 0) return false;
-      
-      // Identificar si el ejercicio es cardio usando el catálogo
+      if (!ex.name?.trim()) return false;
+      if (!Array.isArray(ex.sets) || ex.sets.length === 0) return false;
+
       const exerciseId = getCanonicalId(ex.name, catalog);
-      const exerciseDef = catalog.find(e => e.id === exerciseId);
+      const exerciseDef = catalog.find(item => item.id === exerciseId);
       const isCardio = exerciseDef?.type === 'cardio';
-      
-      // Para cardio: validar que tenga tiempo válido (puede ser número o string "MM:SS")
-      // Para strength: validar que tenga reps > 0
-      let hasValidSets;
+
       if (isCardio) {
-        hasValidSets = ex.sets.some(set => {
+        return ex.sets.some(set => {
           const time = set.time;
           if (!time) return false;
-          // Aceptar números (minutos) o strings con formato de tiempo
-          if (typeof time === 'number' && time > 0) return true;
-          if (typeof time === 'string') {
-            const trimmed = time.trim();
-            // Formato numérico simple (ej: "30" para 30 minutos)
-            if (/^\d+$/.test(trimmed)) return true;
-            // Formato tiempo "MM:SS" o "HH:MM:SS"
-            if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(trimmed)) return true;
-          }
-          return false;
+          if (typeof time === 'number') return time > 0;
+          const trimmed = time.trim();
+          return /^\d+$/.test(trimmed) || /^\d{1,2}:\d{2}(:\d{2})?$/.test(trimmed);
         });
-      } else {
-        hasValidSets = ex.sets.some(set => (set.reps || 0) > 0);
       }
-      
-      return hasValidSets;
+
+      return ex.sets.some(set => (set.reps || 0) > 0);
     });
-    
+
     if (validExercises.length === 0) {
-      throw new Error('Los ejercicios no tienen series válidas. Asegúrate de que cada ejercicio tenga al menos una serie con repeticiones (fuerza) o tiempo (cardio).');
+      throw new Error('Los ejercicios no tienen series validas. Asegurate de incluir repeticiones o tiempo.');
     }
-    
-    if (validExercises.length < rawData.exercises.length) {
-      console.warn(`⚠️ Se filtraron ${rawData.exercises.length - validExercises.length} ejercicios sin sets válidos`);
-    }
-    
+
     const data = sanitizeWorkoutData({ ...rawData, exercises: validExercises }, catalog);
-    
-    // Validación final después de sanitizar
-    if (!data.exercises || data.exercises.length === 0) {
-      throw new Error('Error al procesar los ejercicios. Intenta de nuevo.');
-    }
-    
-    const SAVE_TIMEOUT_MS = 90000; // 90 segundos timeout para el guardado completo (aumentado para sesiones largas)
-    
-    try {
-      // Wrapper para timeout general del proceso
-      await withTimeout(
-        (async () => {
-          const dateToSave = format(selectedDate, 'yyyy-MM-dd');
-          console.log(`💾 Guardando workout para fecha: ${dateToSave} con ${data.exercises.length} ejercicios`);
-          
-          // CRÍTICO: Verificar en la BD si ya existe un workout para esta fecha antes de guardar
-          // Esto previene duplicados si hay problemas de conexión
-          console.log(`🔍 Verificando workout existente para fecha: ${dateToSave}...`);
-          
-          // Primero, verificar solo existencia (más rápido)
-          const existsCheck = await withTimeout(
-            supabase
-              .from('workouts')
-              .select('id')
-              .eq('user_id', userId)
-              .eq('date', dateToSave)
-              .maybeSingle() as unknown as Promise<{ data: any; error: any }>,
-            30000, // 30 segundos timeout para verificación (aumentado para sesiones largas)
-            'Timeout al verificar workout existente'
-          );
-          
-          let existingWorkoutInDb = null;
-          let fetchError = existsCheck.error;
-          
-          // Si existe, obtener los datos completos
-          if (existsCheck.data && !existsCheck.error) {
-            console.log(`📋 Workout existente encontrado (ID: ${existsCheck.data.id}), obteniendo datos completos...`);
-            const fullQueryResult = await withTimeout(
-              supabase
-                .from('workouts')
-                .select('*')
-                .eq('id', existsCheck.data.id)
-                .single() as unknown as Promise<{ data: any; error: any }>,
-              25000, // 25 segundos timeout para obtener datos completos
-              'Timeout al obtener datos completos del workout existente'
-            );
-            existingWorkoutInDb = fullQueryResult.data;
-            if (fullQueryResult.error) {
-              fetchError = fullQueryResult.error;
-            }
+    const dateToSave = format(selectedDate, 'yyyy-MM-dd');
+    const existingPending = getPendingWorkoutSaves(userId).find(entry => entry.date === dateToSave);
+
+    const queueEntry = existingPending ? {
+      ...existingPending,
+      data: mergeWorkoutData(existingPending.data, data, catalog),
+      userWeight: currentUserWeight || existingPending.userWeight,
+      updatedAt: new Date().toISOString()
+    } : createPendingWorkoutSave(userId, dateToSave, data, currentUserWeight || 80);
+
+    upsertPendingWorkoutSave(queueEntry);
+    refreshPendingSyncCount();
+
+    setWorkouts(prev => {
+      const existingWorkout = prev.find(workout => workout.user_id === userId && workout.date === dateToSave);
+      if (!existingWorkout) {
+        return [
+          ...prev,
+          {
+            id: `pending:${queueEntry.id}`,
+            user_id: userId,
+            date: dateToSave,
+            structured_data: queueEntry.data,
+            source: 'web',
+            created_at: queueEntry.createdAt,
+            user_weight: queueEntry.userWeight
           }
-          
-          if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 = no rows returned, es normal
-            console.error('❌ Error al verificar workout existente en BD:', fetchError);
-            // Si es un timeout, lanzar error más descriptivo
-            if (fetchError.message?.includes('Timeout') || fetchError.message?.includes('timeout')) {
-              throw new Error('La verificación del workout tardó demasiado. Esto puede ocurrir con muchos ejercicios o conexión lenta. Por favor, intenta guardar de nuevo. Tus ejercicios se han guardado temporalmente y no se perderán.');
-            }
-            // Para otros errores, continuar de todas formas pero loguear
-          }
-          
-          if (existingWorkoutInDb) {
-            console.log(`📋 Workout existente encontrado en BD para ${dateToSave}, actualizando...`);
-      
-      // Verificar si los ejercicios nuevos ya están en el workout existente
-      const existingExercises = existingWorkoutInDb.structured_data?.exercises || [];
-      const newExerciseNames = data.exercises.map(ex => ex.name?.trim()).filter(Boolean);
-      const existingExerciseNames = existingExercises.map((ex: any) => ex.name?.trim()).filter(Boolean);
-      
-      // Filtrar ejercicios que ya existen (comparando por nombre)
-      const exercisesToAdd = data.exercises.filter(ex => {
-        const exName = ex.name?.trim();
-        return exName && !existingExerciseNames.includes(exName);
-      });
-      
-      if (exercisesToAdd.length === 0) {
-            console.log(`ℹ️ Todos los ejercicios ya están en el workout. Actualizando estado local.`);
-            // Actualizar el estado local con los datos de la BD
-            setWorkouts((prev: Workout[]) => {
-              const existing = prev.find((w: Workout) => w.id === existingWorkoutInDb.id);
-              if (!existing) {
-                return [...prev, existingWorkoutInDb as Workout];
-              }
-              // Actualizar el workout existente con los datos más recientes de la BD
-              return prev.map((w: Workout) => 
-                w.id === existingWorkoutInDb.id ? (existingWorkoutInDb as Workout) : w
-              );
-            });
-            // No es un error, simplemente no hay nada nuevo que agregar
-            // No retornar error para que el modal se cierre normalmente
-            return;
-          }
-      
-            console.log(`➕ Agregando ${exercisesToAdd.length} ejercicios nuevos (${data.exercises.length - exercisesToAdd.length} ya existían)`);
-            
-            const updatedData = {
-              ...existingWorkoutInDb.structured_data,
-              exercises: [...existingExercises, ...exercisesToAdd],
-              notes: (existingWorkoutInDb.structured_data?.notes || '') + (data.notes ? `\n${data.notes}` : '')
-            };
-            
-            // CRÍTICO: Verificar que el update sea exitoso
-            console.log(`💾 Actualizando workout en BD...`);
-            const updateResult = await withTimeout(
-              supabase
-                .from('workouts')
-                .update({ 
-                  structured_data: updatedData, 
-                  user_weight: currentUserWeight || 80 
-                })
-                .eq('id', existingWorkoutInDb.id)
-                .select()
-                .single() as unknown as Promise<{ data: any; error: any }>,
-              30000, // 30 segundos timeout para actualización (aumentado para sesiones largas)
-              'Timeout al actualizar workout'
-            );
-            const { data: updatedWorkoutData, error: updateError } = updateResult;
-      
-      if (updateError) {
-        console.error('❌ Error al actualizar workout en BD:', updateError);
-        throw new Error(`Error al guardar workout: ${updateError.message}`);
+        ];
       }
-      
-      if (!updatedWorkoutData) {
-        throw new Error('No se recibió el workout actualizado de la BD');
-      }
-      
-      console.log(`✅ Workout actualizado exitosamente en BD. ID: ${updatedWorkoutData.id}`);
-      
-            // CRÍTICO: Verificar que realmente se guardó correctamente en BD
-            // Re-verificar desde BD para asegurarnos de que el guardado fue exitoso
-            console.log(`✅ Verificando workout actualizado en BD...`);
-            // Verificación opcional - reducir timeout ya que es menos crítico
-            const verifyResult = await withTimeout(
-              supabase
-                .from('workouts')
-                .select('*')
-                .eq('id', updatedWorkoutData.id)
-                .single() as unknown as Promise<{ data: any; error: any }>,
-              15000, // 15 segundos timeout para verificación (reducido porque el update ya confirmó)
-              'Timeout al verificar workout actualizado'
-            );
-            const { data: verifiedWorkout, error: verifyError } = verifyResult;
-      
-      if (verifyError || !verifiedWorkout) {
-        console.error('❌ ERROR CRÍTICO: El workout no se guardó correctamente en BD después de actualizar:', verifyError);
-        throw new Error('El workout no se guardó correctamente en la base de datos');
-      }
-      
-      // Actualizar estado local con los datos confirmados de la BD
-      setWorkouts((prev: Workout[]) => prev.map((w: Workout) => 
-        w.id === verifiedWorkout.id ? (verifiedWorkout as Workout) : w
+
+      return prev.map(workout => (
+        workout.user_id === userId && workout.date === dateToSave
+          ? { ...workout, structured_data: mergeWorkoutData(workout.structured_data, queueEntry.data, catalog) }
+          : workout
       ));
-      
-      // CRÍTICO: Solo procesar los NUEVOS ejercicios, no todos los del workout
-      // SOLO actualizar records DESPUÉS de verificar que el workout se guardó correctamente
-      const newExercisesWorkout: Workout = {
-        ...verifiedWorkout,
-        structured_data: {
-          ...verifiedWorkout.structured_data,
-          exercises: exercisesToAdd, // SOLO los nuevos ejercicios
-          notes: data.notes || ''
-        },
-        user_weight: currentUserWeight || 80
+    });
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setSyncStatusMessage('Entrenamiento guardado en este dispositivo. Se sincronizara automaticamente cuando vuelva la conexion.');
+      return {
+        status: 'queued',
+        message: 'Entrenamiento guardado sin conexion.'
       };
-      
-      // Actualizar records SOLO con los nuevos ejercicios
-      // IMPORTANTE: Esto se ejecuta de forma ASÍNCRONA para no bloquear el guardado
-      // El workout ya está guardado correctamente, así que los records se pueden actualizar en segundo plano
-      console.log(`📊 Actualizando records para ${exercisesToAdd.length} ejercicios nuevos (asíncrono)...`);
-      updateUserRecords(newExercisesWorkout, catalog)
-        .then(() => {
-          console.log(`✅ Records actualizados exitosamente en segundo plano`);
-        })
-        .catch((error) => {
-          console.error('❌ Error updating records (no crítico, el workout ya está guardado):', error);
-          // El workout ya está guardado, así que el error en records no es crítico
-        });
-      
-      console.log(`✅ Proceso de actualización completado exitosamente. Workout ID: ${verifiedWorkout.id}`);
-      
-            // Refresh opcional - hacer asíncrono para no bloquear
-            // El workout ya está guardado y en el estado local, así que el refresh puede ser en segundo plano
-            console.log(`🔄 Refrescando estado local desde BD (asíncrono)...`);
-            (async () => {
-              try {
-                const refreshResult = await withTimeout(
-                  supabase
-                    .from('workouts')
-                    .select('*')
-                    .eq('user_id', userId)
-                    .order('created_at', { ascending: true }) as unknown as Promise<{ data: any; error: any }>,
-                  10000, // 10 segundos timeout para refresh
-                  'Timeout al refrescar datos'
-                );
-                const { data: refreshedWorkouts, error: refreshError } = refreshResult;
-          
-                if (!refreshError && refreshedWorkouts) {
-                  console.log(`🔄 Estado local refrescado desde BD después de actualizar. Workouts encontrados: ${refreshedWorkouts.length}`);
-                  setWorkouts(refreshedWorkouts as Workout[]);
-                } else if (refreshError) {
-                  console.error('⚠️ Error al refrescar workouts desde BD (no crítico):', refreshError);
-                }
-              } catch (refreshErr) {
-                console.error('⚠️ Error al refrescar datos (no crítico):', refreshErr);
-                // No es crítico, el workout ya está guardado
-              }
-            })();
-          } else {
-            console.log(`➕ Creando nuevo workout para ${dateToSave}...`);
-            
-            const insertResult = await withTimeout(
-              supabase.from('workouts').insert({
-                user_id: userId,
-                date: dateToSave,
-                structured_data: data,
-                source: 'web',
-                user_weight: currentUserWeight || 80
-              }).select().single() as unknown as Promise<{ data: any; error: any }>,
-              30000, // 30 segundos timeout para inserción (aumentado para sesiones largas)
-              'Timeout al insertar workout'
-            );
-            const { data: inserted, error: insertError } = insertResult;
-            
-            if (insertError) {
-              console.error('❌ Error al insertar workout en BD:', insertError);
-              
-              // Si el error es de duplicado único (posible problema de conexión anterior)
-              if (insertError.code === '23505') { // PostgreSQL unique violation
-                console.warn('⚠️ Posible duplicado detectado. Verificando en BD...');
-                // Intentar obtener el workout que ya existe
-                const { data: existingAfterError } = await supabase
-                  .from('workouts')
-                  .select('*')
-                  .eq('user_id', userId)
-                  .eq('date', dateToSave)
-                  .maybeSingle();
-                
-                if (existingAfterError) {
-                  console.log(`✅ El workout ya existe en BD (probablemente se guardó anteriormente). Usando el existente.`);
-                  setWorkouts((prev: Workout[]) => {
-                    const existing = prev.find((w: Workout) => w.id === existingAfterError.id);
-                    if (!existing) {
-                      return [...prev, existingAfterError as Workout];
-                    }
-                    return prev;
-                  });
-                  return; // No intentar guardar de nuevo
-                }
-              }
-              
-              throw new Error(`Error al guardar workout: ${insertError.message}`);
-            }
-            
-            if (!inserted) {
-              throw new Error('No se pudo insertar el workout: respuesta vacía de la base de datos');
-            }
-            
-            console.log(`✅ Workout insertado exitosamente en BD. ID: ${inserted.id}`);
-            
-            // CRÍTICO: Verificar que realmente se guardó correctamente en BD
-            // Re-verificar desde BD para asegurarnos de que el guardado fue exitoso
-            console.log(`✅ Verificando workout insertado en BD...`);
-            // Verificación opcional - reducir timeout ya que es menos crítico
-            const verifyInsertResult = await withTimeout(
-              supabase
-                .from('workouts')
-                .select('*')
-                .eq('id', inserted.id)
-                .single() as unknown as Promise<{ data: any; error: any }>,
-              15000, // 15 segundos timeout para verificación (reducido porque el insert ya confirmó)
-              'Timeout al verificar workout insertado'
-            );
-            const { data: verifiedWorkout, error: verifyError } = verifyInsertResult;
-            
-            if (verifyError || !verifiedWorkout) {
-              console.error('❌ ERROR CRÍTICO: El workout no se guardó correctamente en BD después de insertar:', verifyError);
-              throw new Error('El workout no se guardó correctamente en la base de datos');
-            }
-            
-            // Actualizar estado local con el workout confirmado desde BD
-            setWorkouts((prev: Workout[]) => {
-              // Verificar que no esté ya en la lista (por si acaso)
-              const existing = prev.find((w: Workout) => w.id === verifiedWorkout.id);
-              if (!existing) {
-                console.log(`✅ Workout agregado al estado local. ID: ${verifiedWorkout.id}`);
-                return [...prev, verifiedWorkout as Workout];
-              } else {
-                // Si ya existe, actualizarlo con los datos confirmados de BD
-                console.log(`✅ Workout actualizado en estado local. ID: ${verifiedWorkout.id}`);
-                return prev.map((w: Workout) => 
-                  w.id === verifiedWorkout.id ? (verifiedWorkout as Workout) : w
-                );
-              }
-            });
-            
-            // Actualizar records con el workout completo (es nuevo, no hay duplicación)
-            // IMPORTANTE: Esto se ejecuta de forma ASÍNCRONA para no bloquear el guardado
-            // El workout ya está guardado correctamente, así que los records se pueden actualizar en segundo plano
-            console.log(`📊 Actualizando records para ${data.exercises.length} ejercicios nuevos (asíncrono)...`);
-            updateUserRecords(verifiedWorkout as Workout, catalog)
-              .then(() => {
-                console.log(`✅ Records actualizados exitosamente en segundo plano`);
-              })
-              .catch((error) => {
-                console.error('❌ Error updating records (no crítico, el workout ya está guardado):', error);
-                // El workout ya está guardado, así que el error en records no es crítico
-              });
-            
-            console.log(`✅ Proceso de guardado completado exitosamente. Workout ID: ${verifiedWorkout.id}`);
-            
-            // Refresh opcional - hacer asíncrono para no bloquear
-            // El workout ya está guardado y en el estado local, así que el refresh puede ser en segundo plano
-            console.log(`🔄 Refrescando estado local desde BD (asíncrono)...`);
-            (async () => {
-              try {
-                const refreshResult2 = await withTimeout(
-                  supabase
-                    .from('workouts')
-                    .select('*')
-                    .eq('user_id', userId)
-                    .order('created_at', { ascending: true }) as unknown as Promise<{ data: any; error: any }>,
-                  10000, // 10 segundos timeout para refresh
-                  'Timeout al refrescar datos'
-                );
-                const { data: refreshedWorkouts, error: refreshError } = refreshResult2;
-                
-                if (!refreshError && refreshedWorkouts) {
-                  console.log(`🔄 Estado local refrescado desde BD. Workouts encontrados: ${refreshedWorkouts.length}`);
-                  setWorkouts(refreshedWorkouts as Workout[]);
-                } else if (refreshError) {
-                  console.error('⚠️ Error al refrescar workouts desde BD (no crítico):', refreshError);
-                }
-              } catch (refreshErr) {
-                console.error('⚠️ Error al refrescar datos (no crítico):', refreshErr);
-                // No es crítico, el workout ya está guardado
-              }
-            })();
-          }
-        })(),
-        SAVE_TIMEOUT_MS,
-        `Timeout general al guardar workout (más de ${SAVE_TIMEOUT_MS/1000}s)`
-      );
-    } catch (error: any) {
-      console.error('❌ Error en handleWorkoutProcessed:', error);
-      throw error; // Re-lanzar el error para que el componente lo maneje
     }
-  }, [userId, fetchData]);
+
+    try {
+      const savedWorkout = await persistWorkoutToSupabase(queueEntry, catalog);
+      upsertWorkoutState(savedWorkout);
+      removePendingWorkoutSave(queueEntry.id);
+      refreshPendingSyncCount();
+      setSyncStatusMessage(null);
+
+      updateUserRecords(savedWorkout, catalog).catch(error => {
+        console.error('Error updating records after save:', error);
+      });
+
+      void fetchData();
+      return { status: 'saved' };
+    } catch (error: any) {
+      console.error('Error en handleWorkoutProcessed:', error);
+      if (isRecoverableSaveError(error)) {
+        upsertPendingWorkoutSave({
+          ...queueEntry,
+          updatedAt: new Date().toISOString(),
+          retryCount: queueEntry.retryCount + 1,
+          lastError: String(error?.message || error)
+        });
+        refreshPendingSyncCount();
+        setSyncStatusMessage('Entrenamiento guardado en este dispositivo. Se sincronizara automaticamente en segundo plano.');
+        return {
+          status: 'queued',
+          message: 'El entrenamiento quedo pendiente de sincronizacion.'
+        };
+      }
+
+      removePendingWorkoutSave(queueEntry.id);
+      refreshPendingSyncCount();
+      throw error;
+    }
+  }, [fetchData, persistWorkoutToSupabase, refreshPendingSyncCount, upsertWorkoutState, userId]);
 
   const confirmDeleteWorkout = useCallback(async (workoutId: string, catalog?: ExerciseDef[]) => {
-    console.log(`🗑️ Iniciando eliminación de workout ID: ${workoutId}`);
-    
-    // Guardar referencia al workout antes de intentar eliminarlo (por si necesitamos revertir)
+    console.log(`Iniciando eliminacion de workout ID: ${workoutId}`);
+
     const workoutToDelete = workouts.find((w: Workout) => w.id === workoutId);
-    
-    // CRÍTICO: Primero intentar eliminar de la BD, luego actualizar estado local
+
     const { error: deleteError } = await supabase
       .from('workouts')
       .delete()
       .eq('id', workoutId);
-    
+
     if (deleteError) {
-      console.error('❌ Error al eliminar workout de BD:', deleteError);
+      console.error('Error al eliminar workout de BD:', deleteError);
       throw new Error(`Error al eliminar workout: ${deleteError.message}`);
     }
-    
-    console.log(`✅ Workout eliminado de BD. Verificando eliminación...`);
-    
-    // CRÍTICO: Verificar que realmente se eliminó de la BD
+
     const { data: verifyDelete, error: verifyError } = await supabase
       .from('workouts')
       .select('id')
       .eq('id', workoutId)
       .maybeSingle();
-    
+
     if (verifyError && verifyError.code !== 'PGRST116') {
-      console.error('❌ Error al verificar eliminación:', verifyError);
-      throw new Error(`Error al verificar eliminación: ${verifyError.message}`);
+      throw new Error(`Error al verificar eliminacion: ${verifyError.message}`);
     }
-    
+
     if (verifyDelete) {
-      console.error('❌ ERROR CRÍTICO: El workout todavía existe en BD después de eliminar');
-      throw new Error('El workout no se eliminó correctamente de la base de datos');
+      throw new Error('El workout no se elimino correctamente de la base de datos');
     }
-    
-    console.log(`✅ Verificación exitosa: workout eliminado de BD`);
-    
-    // Solo ahora actualizar el estado local
+
     setWorkouts((prev: Workout[]) => prev.filter((w: Workout) => w.id !== workoutId));
-    
-    // CRÍTICO: Recalcular SOLO los records de los ejercicios que estaban en el workout eliminado
-    // Esto es más eficiente y evita problemas con ejercicios que no tienen más workouts
+
     if (userId && catalog && workoutToDelete) {
       try {
         const { recalculateExerciseRecord } = await import('../services/recordsService');
         const exercisesToRecalculate = workoutToDelete.structured_data?.exercises || [];
-        
-        // Obtener todos los workouts RESTANTES (después de la eliminación)
-        // Esto es importante para que recalculateExerciseRecord tenga los datos correctos
-        const { data: remainingWorkouts, error: fetchError } = await supabase
+        const { data: remainingWorkouts } = await supabase
           .from('workouts')
           .select('*')
           .eq('user_id', userId);
-        
-        if (fetchError) {
-          console.error('❌ Error obteniendo workouts restantes para recalcular records:', fetchError);
-          // Continuar de todas formas, recalculateExerciseRecord obtendrá los workouts internamente
-        }
-        
-        console.log(`📊 Recalculando records para ${exercisesToRecalculate.length} ejercicios del workout eliminado...`);
-        console.log(`  📋 Workouts restantes: ${remainingWorkouts?.length || 0}`);
-        
-        // Recalcular cada ejercicio individualmente
+
         for (const exercise of exercisesToRecalculate) {
           if (exercise.name && exercise.name.trim()) {
-            try {
-              const exerciseName = exercise.name.trim();
-              console.log(`  🔄 Recalculando record para "${exerciseName}"...`);
-              
-              // Pasar los workouts restantes para que use los datos actualizados
-              await recalculateExerciseRecord(
-                userId, 
-                exerciseName, 
-                catalog,
-                remainingWorkouts as Workout[] | undefined
-              );
-              
-              console.log(`  ✅ Record recalculado/eliminado para "${exerciseName}"`);
-            } catch (error) {
-              console.error(`  ❌ Error recalculando record para "${exercise.name}":`, error);
-              // Continuar con el siguiente ejercicio aunque este falle
-            }
+            await recalculateExerciseRecord(
+              userId,
+              exercise.name.trim(),
+              catalog,
+              remainingWorkouts as Workout[] | undefined
+            );
           }
         }
-        
-        console.log(`✅ Records recalculados para todos los ejercicios del workout eliminado`);
       } catch (error) {
         console.error('Error recalculating records after workout deletion:', error);
-        // No lanzar error aquí, ya que el workout se eliminó correctamente
       }
     }
-    
-    // Forzar re-fetch para asegurar sincronización completa
+
     await fetchData();
-    
-    console.log(`✅ Eliminación completada exitosamente para workout ID: ${workoutId}`);
-  }, [userId, workouts, fetchData]);
+  }, [fetchData, userId, workouts]);
 
   const confirmDeletePlan = useCallback(async (planId: string) => {
     setPlans((prev: WorkoutPlan[]) => prev.filter((p: WorkoutPlan) => p.id !== planId));
@@ -614,7 +503,7 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
 
   const updatePlan = useCallback(async (plan: WorkoutPlan, userId: string) => {
     const payload = { name: plan.name, exercises: plan.exercises, user_id: userId };
-    
+
     if (plans.some((p: WorkoutPlan) => p.id === plan.id)) {
       await supabase.from('workout_plans').update(payload).eq('id', plan.id);
       setPlans((prev: WorkoutPlan[]) => prev.map((p: WorkoutPlan) => p.id === plan.id ? { ...p, ...payload } : p));
@@ -632,104 +521,64 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
   ) => {
     const workout = workouts.find((w: Workout) => w.id === workoutId);
     if (!workout) {
-      console.error(`❌ Workout ${workoutId} no encontrado en el estado local`);
-      return;
+      throw new Error(`Workout ${workoutId} no encontrado en el estado local`);
     }
-    
-    console.log(`💾 Actualizando ejercicio ${exerciseIndex} en workout ${workoutId}...`);
-    
+
     const newExercises = [...workout.structured_data.exercises];
     newExercises[exerciseIndex] = exercise;
     const updatedData = { ...workout.structured_data, exercises: newExercises };
-    
-    // Actualizar estado local optimísticamente
-    setWorkouts((prev: Workout[]) => prev.map((w: Workout) => 
+
+    setWorkouts((prev: Workout[]) => prev.map((w: Workout) =>
       w.id === workoutId ? { ...w, structured_data: updatedData } : w
     ));
-    
-    // CRÍTICO: Actualizar en BD y verificar que se guardó correctamente
+
     const { data: updatedWorkoutData, error: updateError } = await supabase
       .from('workouts')
       .update({ structured_data: updatedData })
       .eq('id', workoutId)
       .select()
       .single();
-    
-    if (updateError) {
-      console.error('❌ Error al actualizar ejercicio en BD:', updateError);
-      // Revertir el cambio optimista en caso de error
-      setWorkouts((prev: Workout[]) => prev.map((w: Workout) => 
+
+    if (updateError || !updatedWorkoutData) {
+      setWorkouts((prev: Workout[]) => prev.map((w: Workout) =>
         w.id === workoutId ? workout : w
       ));
-      throw new Error(`Error al guardar ejercicio: ${updateError.message}`);
+      throw new Error(`Error al guardar ejercicio: ${updateError?.message || 'respuesta vacia'}`);
     }
-    
-    if (!updatedWorkoutData) {
-      console.error('❌ No se recibió el workout actualizado de la BD');
-      // Revertir el cambio optimista
-      setWorkouts((prev: Workout[]) => prev.map((w: Workout) => 
-        w.id === workoutId ? workout : w
-      ));
-      throw new Error('No se recibió el workout actualizado de la base de datos');
-    }
-    
-    console.log(`✅ Ejercicio actualizado exitosamente en BD. Workout ID: ${updatedWorkoutData.id}`);
-    
-    // CRÍTICO: Verificar que realmente se guardó correctamente en BD
+
     const { data: verifiedWorkout, error: verifyError } = await supabase
       .from('workouts')
       .select('*')
       .eq('id', updatedWorkoutData.id)
       .single();
-    
+
     if (verifyError || !verifiedWorkout) {
-      console.error('❌ ERROR CRÍTICO: El workout no se guardó correctamente en BD después de actualizar ejercicio:', verifyError);
-      // Revertir el cambio optimista
-      setWorkouts((prev: Workout[]) => prev.map((w: Workout) => 
+      setWorkouts((prev: Workout[]) => prev.map((w: Workout) =>
         w.id === workoutId ? workout : w
       ));
-      throw new Error('El workout no se guardó correctamente en la base de datos');
+      throw new Error('El workout no se guardo correctamente en la base de datos');
     }
-    
-    // Actualizar estado local con los datos confirmados de la BD
-    setWorkouts((prev: Workout[]) => prev.map((w: Workout) => 
+
+    setWorkouts((prev: Workout[]) => prev.map((w: Workout) =>
       w.id === workoutId ? (verifiedWorkout as Workout) : w
     ));
-    
-    // CRÍTICO: Recalcular SOLO el record del ejercicio editado, no todos los records
-    // Esto evita que se pierdan records de otros ejercicios si hay un error
-    // IMPORTANTE: Si el nombre del ejercicio cambió, recalcular ambos (antiguo y nuevo)
+
     if (userId && catalog && exercise.name) {
       try {
         const oldExerciseName = workout.structured_data.exercises[exerciseIndex]?.name?.trim();
         const newExerciseName = exercise.name.trim();
-        
-        // Si el nombre cambió, recalcular ambos records
+        const { recalculateExerciseRecord } = await import('../services/recordsService');
+
         if (oldExerciseName && oldExerciseName !== newExerciseName) {
-          console.log(`📊 El nombre del ejercicio cambió de "${oldExerciseName}" a "${newExerciseName}", recalculando ambos records...`);
-          const { recalculateExerciseRecord } = await import('../services/recordsService');
-          
-          // Recalcular el record del nombre antiguo (puede que ya no exista en workouts, pero mantener datos históricos)
           await recalculateExerciseRecord(userId, oldExerciseName, catalog);
-          
-          // Recalcular el record del nombre nuevo
-          await recalculateExerciseRecord(userId, newExerciseName, catalog);
-          
-          console.log(`✅ Records recalculados para ambos nombres`);
-        } else {
-          // El nombre no cambió, solo recalcular el record del ejercicio
-          console.log(`📊 Recalculando record del ejercicio "${exercise.name}" después de editar...`);
-          const { recalculateExerciseRecord } = await import('../services/recordsService');
-          await recalculateExerciseRecord(userId, newExerciseName, catalog);
-          console.log(`✅ Record del ejercicio "${exercise.name}" recalculado exitosamente`);
         }
+
+        await recalculateExerciseRecord(userId, newExerciseName, catalog);
       } catch (error) {
-        console.error(`❌ Error recalculating record for exercise "${exercise.name}":`, error);
-        // No lanzar el error para no bloquear la actualización del ejercicio
-        // pero loguearlo para debugging
+        console.error(`Error recalculating record for exercise "${exercise.name}":`, error);
       }
     }
-  }, [workouts, userId]);
+  }, [userId, workouts]);
 
   const deleteExercise = useCallback(async (
     workoutId: string,
@@ -738,18 +587,15 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
   ) => {
     const workout = workouts.find((w: Workout) => w.id === workoutId);
     if (!workout) return;
-    
-    // Guardar el nombre del ejercicio que se va a eliminar para recalcular su record después
+
     const exerciseToDelete = workout.structured_data.exercises[exerciseIndex];
     const exerciseName = exerciseToDelete?.name?.trim();
-    
+
     const newExercises = [...workout.structured_data.exercises];
     newExercises.splice(exerciseIndex, 1);
-    
-    // Si no quedan ejercicios, eliminar el workout completo
+
     if (newExercises.length === 0) {
       await confirmDeleteWorkout(workoutId, catalog);
-      // Si había un ejercicio eliminado, recalcular su record (puede haber otros workouts con ese ejercicio)
       if (exerciseName && userId && catalog) {
         try {
           const { recalculateExerciseRecord } = await import('../services/recordsService');
@@ -760,81 +606,59 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
       }
       return;
     }
-    
+
     const updatedData = { ...workout.structured_data, exercises: newExercises };
-    
-    // Actualizar estado local optimísticamente
-    setWorkouts((prev: Workout[]) => prev.map((w: Workout) => 
+
+    setWorkouts((prev: Workout[]) => prev.map((w: Workout) =>
       w.id === workoutId ? { ...w, structured_data: updatedData } : w
     ));
-    
-    // CRÍTICO: Actualizar en BD y verificar que se guardó correctamente
+
     const { data: updatedWorkoutData, error: updateError } = await supabase
       .from('workouts')
       .update({ structured_data: updatedData })
       .eq('id', workoutId)
       .select()
       .single();
-    
-    if (updateError) {
-      console.error('❌ Error al eliminar ejercicio en BD:', updateError);
-      // Revertir el cambio optimista
-      setWorkouts((prev: Workout[]) => prev.map((w: Workout) => 
+
+    if (updateError || !updatedWorkoutData) {
+      setWorkouts((prev: Workout[]) => prev.map((w: Workout) =>
         w.id === workoutId ? workout : w
       ));
-      throw new Error(`Error al eliminar ejercicio: ${updateError.message}`);
+      throw new Error(`Error al eliminar ejercicio: ${updateError?.message || 'respuesta vacia'}`);
     }
-    
-    if (!updatedWorkoutData) {
-      console.error('❌ No se recibió el workout actualizado de la BD');
-      // Revertir el cambio optimista
-      setWorkouts((prev: Workout[]) => prev.map((w: Workout) => 
-        w.id === workoutId ? workout : w
-      ));
-      throw new Error('No se recibió el workout actualizado de la base de datos');
-    }
-    
-    // CRÍTICO: Verificar que realmente se guardó correctamente en BD
+
     const { data: verifiedWorkout, error: verifyError } = await supabase
       .from('workouts')
       .select('*')
       .eq('id', workoutId)
       .single();
-    
+
     if (verifyError || !verifiedWorkout) {
-      console.error('❌ ERROR CRÍTICO: El workout no se guardó correctamente en BD después de eliminar ejercicio:', verifyError);
-      // Revertir el cambio optimista
-      setWorkouts((prev: Workout[]) => prev.map((w: Workout) => 
+      setWorkouts((prev: Workout[]) => prev.map((w: Workout) =>
         w.id === workoutId ? workout : w
       ));
-      throw new Error('El workout no se guardó correctamente en la base de datos');
+      throw new Error('El workout no se guardo correctamente en la base de datos');
     }
-    
-    // Actualizar estado local con los datos confirmados de la BD
-    setWorkouts((prev: Workout[]) => prev.map((w: Workout) => 
+
+    setWorkouts((prev: Workout[]) => prev.map((w: Workout) =>
       w.id === workoutId ? (verifiedWorkout as Workout) : w
     ));
-    
-    // CRÍTICO: Recalcular SOLO el record del ejercicio eliminado, no todos los records
-    // Esto evita que se pierdan records de otros ejercicios si hay un error
-    // Si no quedan más workouts con ese ejercicio, el record se eliminará automáticamente
+
     if (exerciseName && userId && catalog) {
       try {
-        console.log(`📊 Recalculando record del ejercicio "${exerciseName}" después de eliminar...`);
         const { recalculateExerciseRecord } = await import('../services/recordsService');
         await recalculateExerciseRecord(userId, exerciseName, catalog);
-        console.log(`✅ Record del ejercicio "${exerciseName}" recalculado exitosamente`);
       } catch (error) {
-        console.error(`❌ Error recalculating record for deleted exercise "${exerciseName}":`, error);
-        // No lanzar el error para no bloquear la eliminación del ejercicio
-        // pero loguearlo para debugging
+        console.error(`Error recalculating record for deleted exercise "${exerciseName}":`, error);
       }
     }
-  }, [workouts, confirmDeleteWorkout, userId]);
+  }, [confirmDeleteWorkout, userId, workouts]);
 
   return {
     workouts,
     plans,
+    pendingSyncCount,
+    syncStatusMessage,
     fetchData,
     handleWorkoutProcessed,
     confirmDeleteWorkout,
@@ -845,4 +669,3 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
     deleteExercise
   };
 };
-

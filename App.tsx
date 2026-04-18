@@ -69,6 +69,8 @@ function ConfiguredApp() {
   const {
     workouts,
     plans,
+    pendingSyncCount,
+    syncStatusMessage,
     handleWorkoutProcessed: baseHandleWorkoutProcessed,
     confirmDeleteWorkout: baseConfirmDeleteWorkout,
     confirmDeletePlan: baseConfirmDeletePlan,
@@ -220,7 +222,7 @@ function ConfiguredApp() {
     }
     
     try {
-      await baseHandleWorkoutProcessed(
+      return await baseHandleWorkoutProcessed(
         rawData,
         selectedDate,
         currentUser.weight || 80,
@@ -352,6 +354,21 @@ function ConfiguredApp() {
       />
 
       <main className="max-w-md mx-auto px-4 pt-24 space-y-6">
+        {(pendingSyncCount > 0 || syncStatusMessage) && (
+          <section className={`rounded-[1.75rem] border px-4 py-3 ${pendingSyncCount > 0 ? 'bg-amber-500/10 border-amber-400/30 text-amber-200' : 'bg-emerald-500/10 border-emerald-400/30 text-emerald-200'}`}>
+            <div className="text-[10px] font-black uppercase tracking-[0.2em]">
+              {pendingSyncCount > 0 ? 'Sincronizacion pendiente' : 'Sincronizacion completada'}
+            </div>
+            <div className="mt-1 text-sm font-semibold">
+              {pendingSyncCount > 0
+                ? `${pendingSyncCount} entrenamiento${pendingSyncCount === 1 ? '' : 's'} pendiente${pendingSyncCount === 1 ? '' : 's'} de subir.`
+                : syncStatusMessage}
+            </div>
+            {pendingSyncCount > 0 && syncStatusMessage && (
+              <div className="mt-1 text-xs text-amber-100/80">{syncStatusMessage}</div>
+            )}
+          </section>
+        )}
         {/* Panel de Administración - Siempre visible para admins cuando NO está viendo como otro usuario */}
         {currentUser && currentUser.role === 'admin' && !realAdminUser && (
           <AdminPanel 

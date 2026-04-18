@@ -3,13 +3,13 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Square, Loader2, AlertCircle } from 'lucide-react';
 import { clsx } from 'clsx';
 import { processWorkoutAudio } from '../services/workoutProcessor';
-import { WorkoutData } from '../types';
+import { WorkoutData, WorkoutSaveResult } from '../types';
 import { useExercises } from '../contexts/ExerciseContext';
 import { AIErrorDisplay } from './AIErrorDisplay';
 import { formatAIError, FormattedAIError } from '../services/workoutProcessor/helpers';
 
 interface AudioRecorderProps {
-  onWorkoutProcessed: (data: WorkoutData) => void;
+  onWorkoutProcessed: (data: WorkoutData) => Promise<WorkoutSaveResult>;
 }
 
 export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onWorkoutProcessed }) => {
@@ -119,7 +119,7 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onWorkoutProcessed
           }
           
           // Si todo está bien, procesar los datos
-          onWorkoutProcessed(data);
+          await onWorkoutProcessed(data);
           setIsProcessing(false);
         } catch (err: any) {
             console.error("AI Processing Error:", err);
