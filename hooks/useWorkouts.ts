@@ -31,6 +31,11 @@ interface UseWorkoutsReturn {
 
 const SAVE_TIMEOUT_MS = 20000;
 const SYNC_INTERVAL_MS = 30000;
+const PENDING_ID_PREFIX = 'pending:';
+
+const getPendingEntryIdFromWorkoutId = (workoutId: string) => (
+  workoutId.startsWith(PENDING_ID_PREFIX) ? workoutId.slice(PENDING_ID_PREFIX.length) : null
+);
 
 const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> => {
   return Promise.race([
@@ -436,6 +441,14 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
     console.log(`Iniciando eliminacion de workout ID: ${workoutId}`);
 
     const workoutToDelete = workouts.find((w: Workout) => w.id === workoutId);
+    const pendingEntryId = getPendingEntryIdFromWorkoutId(workoutId);
+
+    if (pendingEntryId) {
+      removePendingWorkoutSave(pendingEntryId);
+      setWorkouts((prev: Workout[]) => prev.filter((w: Workout) => w.id !== workoutId));
+      refreshPendingSyncCount();
+      return;
+    }
 
     const { error: deleteError } = await supabase
       .from('workouts')
@@ -491,13 +504,21 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
   }, [fetchData, userId, workouts]);
 
   const confirmDeletePlan = useCallback(async (planId: string) => {
+    const previousPlans = plans;
     setPlans((prev: WorkoutPlan[]) => prev.filter((p: WorkoutPlan) => p.id !== planId));
-    await supabase.from('workout_plans').delete().eq('id', planId);
-  }, []);
+    const { error } = await supabase.from('workout_plans').delete().eq('id', planId);
+    if (error) {
+      setPlans(previousPlans);
+      throw new Error(`Error al eliminar rutina: ${error.message}`);
+    }
+  }, [plans]);
 
   const handleSavePlan = useCallback(async (plan: WorkoutPlan, userId: string) => {
     const payload = { name: plan.name, exercises: plan.exercises, user_id: userId };
-    const { data } = await supabase.from('workout_plans').insert(payload).select().single();
+    const { data, error } = await supabase.from('workout_plans').insert(payload).select().single();
+    if (error || !data) {
+      throw new Error(`Error al guardar rutina: ${error?.message || 'respuesta vacia'}`);
+    }
     if (data) setPlans((prev: WorkoutPlan[]) => [...prev, data as WorkoutPlan]);
   }, []);
 
@@ -505,10 +526,18 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
     const payload = { name: plan.name, exercises: plan.exercises, user_id: userId };
 
     if (plans.some((p: WorkoutPlan) => p.id === plan.id)) {
-      await supabase.from('workout_plans').update(payload).eq('id', plan.id);
+      const previousPlans = plans;
       setPlans((prev: WorkoutPlan[]) => prev.map((p: WorkoutPlan) => p.id === plan.id ? { ...p, ...payload } : p));
+      const { error } = await supabase.from('workout_plans').update(payload).eq('id', plan.id);
+      if (error) {
+        setPlans(previousPlans);
+        throw new Error(`Error al actualizar rutina: ${error.message}`);
+      }
     } else {
-      const { data } = await supabase.from('workout_plans').insert(payload).select().single();
+      const { data, error } = await supabase.from('workout_plans').insert(payload).select().single();
+      if (error || !data) {
+        throw new Error(`Error al crear rutina: ${error?.message || 'respuesta vacia'}`);
+      }
       if (data) setPlans((prev: WorkoutPlan[]) => [...prev, data as WorkoutPlan]);
     }
   }, [plans]);
@@ -527,6 +556,23 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
     const newExercises = [...workout.structured_data.exercises];
     newExercises[exerciseIndex] = exercise;
     const updatedData = { ...workout.structured_data, exercises: newExercises };
+    const pendingEntryId = getPendingEntryIdFromWorkoutId(workoutId);
+
+    if (pendingEntryId) {
+      const pendingEntry = getPendingWorkoutSaves(userId || undefined).find(entry => entry.id === pendingEntryId);
+      if (pendingEntry) {
+        upsertPendingWorkoutSave({
+          ...pendingEntry,
+          data: updatedData,
+          updatedAt: new Date().toISOString()
+        });
+        refreshPendingSyncCount();
+      }
+      setWorkouts((prev: Workout[]) => prev.map((w: Workout) =>
+        w.id === workoutId ? { ...w, structured_data: updatedData } : w
+      ));
+      return;
+    }
 
     setWorkouts((prev: Workout[]) => prev.map((w: Workout) =>
       w.id === workoutId ? { ...w, structured_data: updatedData } : w
@@ -608,6 +654,23 @@ export const useWorkouts = (userId: string | null): UseWorkoutsReturn => {
     }
 
     const updatedData = { ...workout.structured_data, exercises: newExercises };
+    const pendingEntryId = getPendingEntryIdFromWorkoutId(workoutId);
+
+    if (pendingEntryId) {
+      const pendingEntry = getPendingWorkoutSaves(userId || undefined).find(entry => entry.id === pendingEntryId);
+      if (pendingEntry) {
+        upsertPendingWorkoutSave({
+          ...pendingEntry,
+          data: updatedData,
+          updatedAt: new Date().toISOString()
+        });
+        refreshPendingSyncCount();
+      }
+      setWorkouts((prev: Workout[]) => prev.map((w: Workout) =>
+        w.id === workoutId ? { ...w, structured_data: updatedData } : w
+      ));
+      return;
+    }
 
     setWorkouts((prev: Workout[]) => prev.map((w: Workout) =>
       w.id === workoutId ? { ...w, structured_data: updatedData } : w

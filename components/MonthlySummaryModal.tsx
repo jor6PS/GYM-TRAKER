@@ -572,11 +572,11 @@ export const MonthlySummaryModal: React.FC<MonthlySummaryModalProps> = ({ isOpen
                       error={formattedError} 
                       onDismiss={() => { setError(null); setFormattedError(null); onClose(); }}
                       onRetry={() => {
+                        handleForceRecalc();
                         setError(null);
                         setFormattedError(null);
                         isLoadingRef.current = false;
                         // Simular re-apertura para reintentar
-                        const fakeEvent = new Event('retry');
                         // En la práctica, simplemente reseteamos el estado y dejamos que el effect se dispare si isOpen sigue true
                       }}
                     />

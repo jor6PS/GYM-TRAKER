@@ -261,8 +261,9 @@ function ConfiguredApp() {
     setDeletePlanId(null); // Cerrar el modal inmediatamente
     try {
       await baseConfirmDeletePlan(planIdToDelete);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting plan:', error);
+      alert(`Error al eliminar la rutina: ${error.message || 'Error desconocido'}`);
       // El modal ya está cerrado, pero podríamos mostrar un error si es necesario
     }
   }, [deletePlanId, baseConfirmDeletePlan]);
@@ -273,8 +274,9 @@ function ConfiguredApp() {
     setDeleteExerciseInfo(null); // Cerrar el modal inmediatamente
     try {
       await deleteExercise(workoutId, exerciseIndex, catalog);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting exercise:', error);
+      alert(`Error al eliminar el ejercicio: ${error.message || 'Error desconocido'}`);
     }
   }, [deleteExerciseInfo, deleteExercise, catalog]);
 

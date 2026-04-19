@@ -10,7 +10,7 @@ import { useScrollLock } from '../hooks/useScrollLock';
 interface CreatePlanModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (plan: WorkoutPlan) => void;
+  onSave: (plan: WorkoutPlan) => void | Promise<void>;
   initialPlan?: WorkoutPlan | null;
 }
 
@@ -26,6 +26,8 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
   const [newExSets, setNewExSets] = useState(3);
   const [newExReps, setNewExReps] = useState(10);
   const [newExWeight, setNewExWeight] = useState(0);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   
   useScrollLock(isOpen);
 
@@ -42,6 +44,8 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
       setNewExSets(3);
       setNewExReps(10);
       setNewExWeight(0);
+      setIsSaving(false);
+      setSaveError(null);
     }
   }, [isOpen, initialPlan]);
 
@@ -82,7 +86,7 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
     setExercises(updated);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim() || exercises.length === 0) return;
     const plan: WorkoutPlan = {
       id: initialPlan ? initialPlan.id : crypto.randomUUID(),
@@ -90,8 +94,16 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
       name,
       exercises
     };
-    onSave(plan);
-    onClose();
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      await onSave(plan);
+      onClose();
+    } catch (error: any) {
+      setSaveError(error?.message || 'No se pudo guardar la rutina. Intentalo de nuevo.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -181,9 +193,15 @@ export const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClos
           </div>
         </div>
         <div className="p-4 border-t border-white/10 bg-black flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 rounded text-xs font-mono font-bold text-subtext hover:text-white transition-colors uppercase">Cancelar</button>
-          <button onClick={handleSave} disabled={exercises.length === 0 || !name} className="px-4 py-2 bg-primary hover:bg-primaryHover text-black font-bold font-mono text-xs uppercase rounded shadow-glow disabled:opacity-50 disabled:shadow-none transition-all flex items-center gap-2">
-            <Save className="w-4 h-4" /> {initialPlan ? 'Actualizar' : 'Guardar'}
+          {saveError && (
+            <div className="mr-auto max-w-[55%] text-[11px] text-red-400 font-bold leading-snug">
+              {saveError}
+            </div>
+          )}
+          <button onClick={onClose} disabled={isSaving} className="px-4 py-2 rounded text-xs font-mono font-bold text-subtext hover:text-white transition-colors uppercase disabled:opacity-40">Cancelar</button>
+          <button onClick={handleSave} disabled={isSaving || exercises.length === 0 || !name} className="px-4 py-2 bg-primary hover:bg-primaryHover text-black font-bold font-mono text-xs uppercase rounded shadow-glow disabled:opacity-50 disabled:shadow-none transition-all flex items-center gap-2">
+            {isSaving ? <span className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" /> : <Save className="w-4 h-4" />}
+            {isSaving ? 'Guardando...' : initialPlan ? 'Actualizar' : 'Guardar'}
           </button>
         </div>
       </div>
