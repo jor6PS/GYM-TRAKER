@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { ArrowRight, Lock, Loader2, AlertCircle, User as UserIcon, CheckCircle2, AtSign, Mail } from 'lucide-react';
+import { ArrowRight, Lock, Loader2, AlertCircle, User as UserIcon, CheckCircle2, AtSign, Mail, RefreshCw } from 'lucide-react';
 import { supabase, resolveUserEmail, sendPasswordResetEmail } from '../services/supabase';
 import { AppLogo } from '../utils';
 import { useLanguage } from '../contexts/LanguageContext';
+import { isLikelyConnectivityError, repairInstalledAppCache } from '../services/pwaRecovery';
 
 interface LoginScreenProps {}
 
@@ -14,7 +15,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isRepairing, setIsRepairing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showRepairAction, setShowRepairAction] = useState(false);
   
   // Confirmation states
   const [signUpConfirmation, setSignUpConfirmation] = useState(false);
@@ -24,7 +27,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true); setError(null);
+    setIsLoading(true); setError(null); setShowRepairAction(false);
     
     try {
       if (authMode === 'signup') {
@@ -63,15 +66,31 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
         if (signInError) throw signInError;
       }
     } catch (err: any) {
-      setError(err.message || "An unexpected error occurred.");
+      const offline = typeof navigator !== 'undefined' && !navigator.onLine;
+      setError(offline ? "Parece que el móvil no tiene conexión a internet ahora mismo." : (err.message || "An unexpected error occurred."));
+      setShowRepairAction(offline || isLikelyConnectivityError(err));
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleRepairInstalledApp = async () => {
+    setIsRepairing(true);
+    setError(null);
+
+    try {
+      await repairInstalledAppCache();
+    } catch (err) {
+      console.warn('[LoginScreen] No se pudo reparar la cache de la PWA:', err);
+    } finally {
+      window.location.replace('/');
     }
   };
 
   const resetState = (mode: AuthMode) => {
     setAuthMode(mode);
     setError(null);
+    setShowRepairAction(false);
     setSignUpConfirmation(false);
     setRecoveryConfirmation(false);
   };
@@ -187,14 +206,27 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
           )}
 
           {error && (
-            <div className="flex items-center gap-3 text-danger text-sm font-medium bg-danger/5 p-4 rounded-xl border border-danger/10">
-              <AlertCircle className="w-5 h-5 shrink-0" />
-              {error}
+            <div className="text-danger text-sm font-medium bg-danger/5 p-4 rounded-xl border border-danger/10 space-y-3">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
+              {showRepairAction && (
+                <button
+                  type="button"
+                  onClick={handleRepairInstalledApp}
+                  disabled={isRepairing}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl border border-danger/20 bg-danger/10 px-3 py-2 text-xs font-extrabold text-danger hover:bg-danger/15 disabled:opacity-60"
+                >
+                  {isRepairing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  Actualizar app instalada
+                </button>
+              )}
             </div>
           )}
 
           <button 
-            type="submit" disabled={isLoading}
+            type="submit" disabled={isLoading || isRepairing}
             className="w-full bg-text hover:bg-subtext text-background font-extrabold py-4 rounded-2xl transition-all shadow-xl hover:shadow-2xl active:scale-95 flex items-center justify-center gap-2 mt-4"
           >
             {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : (

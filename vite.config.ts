@@ -8,6 +8,13 @@ import { join } from 'path';
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, (process as any).cwd(), '');
+  const buildId =
+    env.CF_PAGES_COMMIT_SHA ||
+    env.GITHUB_SHA ||
+    process.env.CF_PAGES_COMMIT_SHA ||
+    process.env.GITHUB_SHA ||
+    new Date().toISOString();
+
   return {
     plugins: [
       react(),
@@ -164,6 +171,7 @@ export default defineConfig(({ mode }) => {
       // Replaces specific env var usage
       // ROBUSTNESS: Check both API_KEY and VITE_API_KEY to prevent user error
       'process.env.API_KEY': JSON.stringify(env.API_KEY || env.VITE_API_KEY),
+      __APP_BUILD_ID__: JSON.stringify(buildId),
     },
     build: {
       rollupOptions: {

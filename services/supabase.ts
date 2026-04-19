@@ -18,6 +18,21 @@ export const supabase = createClient(
     }
 );
 
+const REQUEST_TIMEOUT_MS = 12000;
+
+const withTimeout = async <T,>(promise: PromiseLike<T>, label: string): Promise<T> => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`${label} timeout`)), REQUEST_TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([Promise.resolve(promise), timeout]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+};
+
 /**
  * Resuelve un nombre de usuario o un email a un email válido para el login.
  */
@@ -28,18 +43,27 @@ export const resolveUserEmail = async (identifier: string): Promise<string> => {
   if (!isConfigured) throw new Error("Base de datos no configurada.");
   
   try {
-    const { data, error } = await supabase.rpc('get_email_by_username', { 
-        username_input: cleanId 
-    });
+    const { data, error } = await withTimeout(
+      supabase.rpc('get_email_by_username', { username_input: cleanId }),
+      'resolveUserEmail'
+    );
 
-    if (error) throw new Error("Error de comunicación con el servidor.");
+    if (error) {
+      console.error('[resolveUserEmail] Supabase RPC error:', error);
+      throw new Error("Error de comunicación con el servidor.");
+    }
     if (!data || !Array.isArray(data) || data.length === 0 || !data[0].email_out) {
         throw new Error(`El usuario "${cleanId}" no existe.`);
     }
     
     return data[0].email_out;
   } catch (e: any) {
-    throw new Error(e.message || "No se pudo validar el usuario.");
+    console.error('[resolveUserEmail] No se pudo validar el usuario:', e);
+    const message = e?.message || '';
+    if (/timeout|failed to fetch|network|fetch|abort/i.test(message)) {
+      throw new Error("No se pudo conectar con el servidor. Comprueba tu internet o actualiza la app instalada.");
+    }
+    throw new Error(message || "No se pudo validar el usuario.");
   }
 };
 
