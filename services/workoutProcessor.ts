@@ -359,6 +359,26 @@ export const generateGlobalReport = async (
             ...",
           "score": número 1-10
         }`;
+        const improvedGlobalSystemInstruction = `Eres un entrenador personal senior especializado en fuerza, hipertrofia, recomposicion corporal y prevencion de lesiones. Analizas datos reales de entrenamiento y devuelves un informe util para usuarios de una app movil.
+
+CONTRATO DE SALIDA:
+- Devuelve SOLO JSON valido con estas claves exactas: equiv_global, equiv_monthly, analysis, score.
+- "analysis" debe ser Markdown renderizable por la app. No uses bloques de codigo, HTML, tablas enormes ni JSON dentro del markdown.
+- Respeta estos encabezados exactos: ## 3 - AUDITORIA DEL MES, ### 3.1 - Volumen efectivo, ### 3.2 - Equilibrio muscular, ### 3.3 - Intensidad y progresion, ### 3.4 - Fatiga y recuperacion, ### 3.5 - Potencia relativa, ## 4 - EVOLUCION, ## 5 - VEREDICTO, ## 6 - PLAN DE ACCION.
+- El plan debe usar obligatoriamente este formato para que la app pueda guardarlo:
+**DIA 1: [Enfoque]**
+* [Nombre de ejercicio] | [Series]x[Reps] | [Peso sugerido]
+- Repite el formato para DIA 2 y DIA 3. Evita listas anidadas dentro de cada dia.
+- Usa nombres de ejercicios existentes en la comparativa si encajan. Si necesitas un ejercicio nuevo, usa un nombre comun en espanol y facil de encontrar en catalogo.
+
+CRITERIO COMO EXPERTO:
+- Prioriza seguridad, tecnica, progresion sostenible y adherencia.
+- No inventes sesiones, marcas ni volumen. Si falta informacion, dilo de forma breve y trabaja con lo disponible.
+- Distingue fuerza, hipertrofia, mantenimiento, resistencia o adelgazamiento si hay objetivo declarado.
+- Sugiere pesos realistas: fuerza 80-90% de 1RM estimado, hipertrofia 65-80%, resistencia 45-65%, descarga 50-60%. Si no hay marca fiable, usa "RPE 7-8" o "peso moderado".
+- Para calistenia o peso corporal, usa progresiones, lastre si procede, o reps objetivo.
+- Las alertas deben aparecer solo si hay una razon clara: escribe **ALERTA ROJA: ...** para que la app lo resalte.
+- "score" debe ser un numero de 1 a 10 basado en consistencia, equilibrio, progresion y recuperacion.`;
         
         // Validación: Si todos los workouts son del mes actual, el volumen histórico debería ser igual al mensual
         // (a menos que haya volumen previo de meses anteriores en los records)
@@ -395,6 +415,31 @@ export const generateGlobalReport = async (
         Historial detallado del mes (Sets, Reps y Pesos): ${JSON.stringify(recentHistory)}.
         
         Genera el informe profesional completo sin omitir detalles.`;
+        const improvedGlobalPrompt = `Analiza estos datos de entrenamiento y crea un informe accionable para una app movil.
+
+PERFIL:
+- Edad: ${userAge} anos
+- Peso corporal: ${currentWeight}kg
+- Altura: ${userHeight}cm
+- Objetivo: ${trainingGoal || 'no declarado'}
+
+RESUMEN REAL:
+- Volumen historico: ${Math.round(totalVolume)}kg
+- Volumen del mes actual: ${Math.round(monthlyVolume)}kg
+- Sesiones totales registradas: ${totalSessions}
+- Sesiones del mes actual: ${monthlySessions}
+- Sesiones semanales recientes: ${JSON.stringify(weeklySessions)}
+
+DATOS DE FUERZA:
+- Comparativa de maximos. Usa estos nombres exactos cuando propongas ejercicios: ${JSON.stringify(maxComparison.slice(0, 30))}
+- Historial reciente con series, reps y pesos: ${JSON.stringify(recentHistory)}
+
+REGLAS PARA EL INFORME:
+- Incluye siempre "### 3.5 - Potencia relativa" y compara marcas con el peso corporal y edad.
+- No afirmes benchmarks exactos si no hay ejercicio equivalente claro; usa rangos prudentes y lenguaje honesto.
+- En el plan de 3 dias, ajusta volumen e intensidad al objetivo y evita repetir un patron que ya este sobrecargado.
+- Cada dia debe tener 5-7 ejercicios, calentamiento breve opcional y pesos sugeridos realistas.
+- Usa el separador "|" en cada ejercicio del plan para que la app pueda convertirlo en rutina guardable.`;
 
         const ai = getAIClient();
         
@@ -413,8 +458,8 @@ export const generateGlobalReport = async (
         const response = await generateWithFallback(
             ai, 
             REPORT_MODELS, 
-            prompt, 
-            systemInstruction,
+            improvedGlobalPrompt, 
+            improvedGlobalSystemInstruction,
             schema
         );
 
@@ -495,6 +540,7 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string,
                         type: Type.OBJECT,
                         properties: {
                             name: { type: Type.STRING },
+                            unilateral: { type: Type.BOOLEAN },
                             sets: {
                                 type: Type.ARRAY,
                                 items: {
@@ -516,10 +562,24 @@ export const processWorkoutAudio = async (audioBase64: string, mimeType: string,
             },
             required: ["exercises"]
         };
-        const systemInstruction = `Extrae datos de entrenamiento desde audio en español. Usa nombres de ejercicios en español. Formato: "ejercicio, peso, series, reps". Ejemplos: "Press Banca 80kg 3x10" → {name:"Press Banca", sets:[{reps:10, weight:80, unit:"kg"} x3]}. Si dice "kilos" o "kg" → unit:"kg". Si dice "libras" o "lbs" → unit:"lbs". Extrae TODOS los ejercicios mencionados.`;
-        const prompt = `Extrae los ejercicios del audio.${commonExercises ? ` Ejercicios comunes: ${commonExercises}` : ''}`;
+        const improvedAudioSystemInstruction = `Eres un registrador experto de entrenamientos de gimnasio. Convierte audio en espanol en JSON limpio para la app.
+
+CONTRATO DE SALIDA:
+- Devuelve SOLO JSON valido con "exercises" y, si aporta valor, "notes".
+- Cada ejercicio debe tener "name" en espanol y "sets" como array expandido: si el usuario dice "3x10", crea 3 objetos de serie.
+- Cada serie de fuerza debe incluir "reps", "weight" si se menciona, "unit" como "kg" o "lbs", y "rpe" solo si se dijo claramente.
+- Si no se menciona peso, omite "weight" o usa 0 solo en calistenia/peso corporal.
+- Si el usuario dice "mancuerna a una mano", "por lado", "cada pierna" o similar, marca "unilateral": true en el ejercicio.
+- Normaliza unidades: "kilos", "kg", "kilogramos" => "kg"; "libras", "lb", "lbs" => "lbs".
+- No inventes ejercicios, pesos, repeticiones ni RPE. Si algo es dudoso, ponlo en "notes" y extrae solo lo seguro.
+- Manten nombres compatibles con catalogo cuando sea posible: "Press Banca", "Sentadilla", "Peso Muerto", "Dominadas", "Remo".
+
+EJEMPLOS:
+"Press banca 80 kilos 3 por 10" => {"name":"Press Banca","sets":[{"reps":10,"weight":80,"unit":"kg"},{"reps":10,"weight":80,"unit":"kg"},{"reps":10,"weight":80,"unit":"kg"}]}
+"Curl alterno 12 kilos cada brazo 4 de 12" => {"name":"Curl Biceps Alterno","unilateral":true,"sets":[{"reps":12,"weight":12,"unit":"kg"},{"reps":12,"weight":12,"unit":"kg"},{"reps":12,"weight":12,"unit":"kg"},{"reps":12,"weight":12,"unit":"kg"}]}`;
+        const improvedAudioPrompt = `Extrae todos los ejercicios mencionados en el audio y devuelve el JSON exacto que espera la app.${commonExercises ? ` Usa estos nombres como referencia de catalogo cuando encajen: ${commonExercises}.` : ''}`;
         
-        const response = await generateWithFallback(ai, AUDIO_MODELS, prompt, systemInstruction, schema, { inlineData: { mimeType, data: audioBase64 } });
+        const response = await generateWithFallback(ai, AUDIO_MODELS, improvedAudioPrompt, improvedAudioSystemInstruction, schema, { inlineData: { mimeType, data: audioBase64 } });
         
         let rawData;
         try {
